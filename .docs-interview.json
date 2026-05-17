@@ -1,0 +1,151 @@
+{
+  "phase": "container",
+  "current_container": null,
+  "current_component": null,
+  "step": 0,
+  "answers": {
+    "system_name": "Kids Desktop Speaker Software Platform",
+    "system_description": "Software running on Raspberry Pi Zero W for a small form factor streaming speaker targeting kids and young adults",
+    "persons": ["child", "parent"],
+    "person_details": {
+      "child": "Uses the speaker to play back audio from their smart devices (iPad, iPhone, etc.)",
+      "parent": "Plays back audio on the speaker when the child does not have their own device. Sends text messages to the device for TTS announcements."
+    },
+    "external_systems": ["spotify", "airplay", "home assistant", "iqaudio pi-codec zero"],
+    "external_system_details": {
+      "spotify": "Streams audio playback through the Spotify service",
+      "airplay": "Streams audio from any app on an Apple device (iPad, iPhone, etc.)",
+      "home assistant": "Smart home automation integration, enabling automation ideas (e.g., scheduled playback, event-triggered announcements)",
+      "iqaudio pi-codec zero": "Hardware audio HAT providing DAC, ADC, speaker amplifier, headphone output (WM8731 codec)"
+    },
+    "relationships": [
+      {
+        "from": "child",
+        "to": "Kids Desktop Speaker Software Platform",
+        "label": "Controls playback and selects audio source",
+        "technology": "Spotify Connect, AirPlay, HTTPS (web UI)"
+      },
+      {
+        "from": "parent",
+        "to": "Kids Desktop Speaker Software Platform",
+        "label": "Controls playback, selects source, sends custom TTS messages",
+        "technology": "Spotify Connect, AirPlay, HTTPS (web UI), TBD (for TTS)"
+      },
+      {
+        "from": "Kids Desktop Speaker Software Platform",
+        "to": "spotify",
+        "label": "Streams audio",
+        "technology": "Spotify Connect"
+      },
+      {
+        "from": "Kids Desktop Speaker Software Platform",
+        "to": "airplay",
+        "label": "Receives audio (single connection, AirPlay 1)",
+        "technology": "AirPlay"
+      },
+      {
+        "from": "Kids Desktop Speaker Software Platform",
+        "to": "home assistant",
+        "label": "Control speaker functions, auto-discovered on local network",
+        "technology": "TBD (API with auth, local network only, auto-discovery)"
+      },
+      {
+        "from": "Kids Desktop Speaker Software Platform",
+        "to": "iqaudio pi-codec zero",
+        "label": "Drives audio output",
+        "technology": "ALSA (snd-soc-iqaudio-codec)"
+      }
+    ],
+    "system_requirements": [
+      "Auto-source-select: when a new source starts, previous source stops playback",
+      "Fade to mute on source switch (short fade out)",
+      "Fade from mute to previous volume when new source starts playback",
+      "Local-network API for external control (Home Assistant, etc.)",
+      "API must be authenticated, local network only",
+      "Auto-discovery where possible (mDNS, SSDP, etc.)"
+    ],
+    "containers": ["web-interface", "api-server", "audio-player", "bluetooth-service", "camilladsp", "tts-engine", "ota-updater", "hat-audio-driver"],
+    "container_details": {
+      "web-interface": {
+        "technology": "Leptos (Rust WASM) + Axum",
+        "description": "Browser-based control panel with Player (playback, track skip, volume, sleep timer) and Config (radio/podcast sources, alarm, API tokens) sections. Also handles Wi-Fi setup, TTS, OTA, system info. SSR with client hydration.",
+        "sections": ["player", "config"],
+        "player_features": ["playback control", "next/previous track", "volume", "sleep timer"],
+        "config_features": ["add internet radio sources", "add podcast sources", "alarm settings", "create API tokens"],
+        "additional_pages": ["Wi-Fi setup", "TTS messages", "OTA updates", "system info"],
+        "auth": "handled by API Server; UI stores token",
+        "offline": "Connecting overlay with auto-retry; controls disabled; SSR content visible"
+      },
+      "api-server": {
+        "technology": "Axum (Rust)",
+        "description": "Single Axum binary serving REST + WebSocket API and Leptos frontend. Token auth. mDNS/SSDP auto-discovery. Exposes playback, sources, config, BT pairing, CamillaDSP config, TTS, OTA, system info. Does NOT expose network config or ALSA mixer.",
+        "auth": "simple API token (bearer)",
+        "exposed": ["playback", "sources", "volume", "sleep-timer", "alarms", "radio", "podcasts", "tts", "tokens", "bluetooth", "camilladsp", "ota", "system info"],
+        "not_exposed": ["network/wifi config", "ALSA mixer settings"],
+        "websocket_events": ["playback_state", "volume_changed", "source_changed", "bluetooth_status", "dsp_status", "ota_status", "system_status", "tts_announcement"],
+        "auto_discovery": ["mDNS", "SSDP"]
+      },
+      "audio-player": {
+        "technology": "Rust + librespot (separate process)",
+        "description": "Core audio playback engine managing audio sources, source switching with CamillaDSP fades, TTS priority ducking, sleep timer. Pipeline: source -> ALSA loopback -> CamillaDSP -> HAT.",
+        "spotify": "librespot (Rust, v0.8.0, mature)",
+        "airplay": "TBD: rairplay (Rust, early) vs shairport-sync (C, mature)",
+        "radio_podcasts": "TBD: MPD (C, proven by Volumio) vs custom Rust (rodio+stream-download) vs GStreamer",
+        "source_priority": ["TTS (highest)", "AirPlay", "Spotify Connect", "Radio/Podcasts (lowest)"],
+        "tts_behavior": "duck current source, play TTS, restore volume",
+        "fading": "delegated to CamillaDSP TCP API",
+        "open_questions": ["CamillaDSP runtime source switching?", "AirPlay library choice", "Radio/podcast backend choice"]
+      },
+      "bluetooth-service": {
+        "technology": "Rust + bluer (v0.17.4) + BlueZ",
+        "description": "AVRCP remote control from paired BT keypad/knob. Optional A2DP audio input under evaluation.",
+        "profiles": ["AVRCP (primary)", "A2DP (optional, under evaluation)"],
+        "pairing": "Just Works, 60s discoverable timeout",
+        "a2dp_decision": "pending: recommend AVRCP-only for v1, add A2DP later as feature toggle",
+        "a2dp_concerns": ["SBC-only on Pi Zero W (no AAC/aptX/LDAC)", "PulseAudio/PipeWire overhead", "another source for switching logic"]
+      },
+      "camilladsp": {
+        "technology": "CamillaDSP (Rust, external) + systemd",
+        "description": "Software DSP engine. Master volume, EQ profiles, DSP pipeline. Two-channel ALSA loopback mixer for TTS ducking. Predefined profiles + user-uploaded configs. TCP socket (localhost only) controlled by API Server. Source routing at ALSA level, not via config reload.",
+        "deployment": "systemd service",
+        "volume": "master volume for entire speaker",
+        "profiles": ["Flat", "Bass Boost", "Night Mode", "Custom (user-uploaded)"],
+        "tcp_socket": "127.0.0.1 only, not exposed to LAN",
+        "source_routing": "ALSA level: one source per loopback ch, no CamillaDSP config reload on switch",
+        "tts_pipeline": "two loopback channels (ch0=main, ch1=TTS), CamillaDSP mixer with per-input volume"
+      },
+      "tts-engine": {
+        "technology": "Piper + piper-tts-rs (Rust FFI)",
+        "description": "Offline TTS using Piper neural synthesis. Writes to dedicated ALSA loopback channel. FIFO queue for messages. Multi-language (EN primary). Fully offline.",
+        "engine": "Piper (C++/ONNX, 10.9k stars, mature)",
+        "rust_wrapper": "piper-tts-rs v0.1.4 (early-stage, fallback: piper CLI subprocess)",
+        "offline_only": true,
+        "languages": "EN primary, others if Piper models available; EN-only fallback for v1",
+        "queue": "FIFO, max ~10 messages, reject when full",
+        "audio_output": "direct ALSA PCM to dedicated loopback channel",
+        "open_questions": ["Per-source ALSA channels: should each source get its own loopback channel?", "CamillaDSP mixer per-input volume API support", "CamillaDSP extension needs", "ALSA loopback channel limits on Pi Zero W"]
+      },
+      "ota-updater": {
+        "technology": "Rust + NixOS (nixos-rebuild)",
+        "description": "Atomic full-system OTA updates via NixOS generations. GitHub Releases as update source. Auto-rollback on boot failure. Scheduled reboots in low-activity windows. User data on persistent partition.",
+        "os": "NixOS (declarative flake defining entire system)",
+        "update_source": "GitHub Releases API",
+        "update_mechanism": "nixos-rebuild switch --upgrade (atomic, auto-rollback)",
+        "rollback": "built-in NixOS: auto on boot fail, manual via API",
+        "reboot_scheduling": "user-configured timeslot + activity detection",
+        "user_data": "persistent partition, survives generations (impermanence pattern)",
+        "open_questions": ["NixOS on Pi Zero W validation (ARMv6)", "Release signing strategy (GPG vs minisign vs Nix trust)", "nixos-rpi-zero-w project is from 2022, needs revalidation"]
+      },
+      "hat-audio-driver": {
+        "technology": "ALSA / Linux kernel / NixOS",
+        "description": "Kernel driver for IQaudIO Pi-Codec Zero (WM8731 codec). Configured declaratively via NixOS flake (device tree overlay, kernel modules, ALSA loopback). Mixer state initialised by systemd, then CamillaDSP takes over.",
+        "kernel_module": "snd-soc-iqaudio-codec",
+        "device_overlay": "iqaudio-codec",
+        "loopback_module": "snd-aloop (channels TBD per per-source architecture)",
+        "nixos_managed": true
+      }
+    },
+    "component_details": {}
+  },
+  "completed": ["system_context", "container_diagram", "container:web-interface", "container:api-server", "container:audio-player", "container:bluetooth-service", "container:camilladsp", "container:tts-engine", "container:ota-updater", "container:hat-audio-driver"]
+}

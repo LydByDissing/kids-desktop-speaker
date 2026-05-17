@@ -1,2 +1,7 @@
-sphinx-needs
-sphinx-rtd-theme
+sphinx>=7.0.0
+sphinx-rtd-theme>=2.0.0
+sphinxcontrib-plantuml>=0.22
+myst-parser>=2.0.0
+sphinx-needs>=2.0.0
+linkify-it-py>=2.0.0
+sphinx-autobuild>=2021.3.14
