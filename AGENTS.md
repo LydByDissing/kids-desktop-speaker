@@ -43,15 +43,19 @@ The software platform has 8 containers:
 
 ### Open Investigation Items
 
-These require research or prototyping before implementation decisions can be made:
-
 1. **NixOS on Pi Zero W** [P0] — ARMv6 validation. Blocks all OTA work. `KDS-d5m`
-2. **Per-source ALSA channels** [P1] — Should each source get its own loopback channel? Depends on CamillaDSP mixer API. `KDS-vdp`
-3. **AirPlay receiver** [P1] — rairplay (Rust, early) vs shairport-sync (C, proven). `KDS-oab`
-4. **Internet radio / podcast backend** [P1] — MPD (proven by Volumio) vs custom Rust vs GStreamer. `KDS-u47`
-5. **Release signing** [P2] — GPG, minisign, or Nix built-in trust model. `KDS-8oi`
-6. **piper-tts-rs maturity** [P2] — FFI wrapper early-stage; fallback to CLI subprocess. `KDS-m6q`
-7. **A2DP decision** [P3] — Recommend AVRCP-only for v1; evaluate A2DP later. `KDS-1hn`
+2. **AirPlay receiver** [P1] — rairplay (Rust, early) vs shairport-sync (C, proven). `KDS-oab`
+3. **Internet radio / podcast backend** [P1] — MPD (proven by Volumio) vs custom Rust vs GStreamer. `KDS-u47`
+4. **Release signing** [P2] — GPG, minisign, or Nix built-in trust model. `KDS-8oi`
+5. **piper-tts-rs maturity** [P2] — FFI wrapper early-stage; fallback to CLI subprocess. `KDS-m6q`
+6. **A2DP decision** [P3] — Recommend AVRCP-only for v1; evaluate A2DP later. `KDS-1hn`
+
+### Resolved
+
+- **Per-source volume** — CamillaDSP 5 faders + Volume filters confirmed. `KDS-vdp` ✅
+  - 6-channel snd-aloop: ch0-1 main, ch2-3 TTS, ch4-5 Bluetooth
+  - TTS ducking via SetFaderVolume(Main, -20dB) — runtime only, no config reload
+  - Source switching by writing to ch0-1, CamillaDSP config unchanged
 
 ## Documentation
 
