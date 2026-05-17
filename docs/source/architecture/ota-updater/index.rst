@@ -3,7 +3,7 @@ Ota Updater
 
 Over-the-air update system for the Kids Desktop Speaker. Handles updates for
 the **entire system** — OS, software platform, DSP configs, and voice models —
-using NixOS as the declarative foundation.
+with atomic updates and automatic rollback.
 
 .. important::
 
@@ -15,28 +15,111 @@ using NixOS as the declarative foundation.
    update itself. Without OTA, every change requires manual SD card flashing
    and on-device tinkering, which kills velocity.
 
-   **Implementation order**: (1) Validate NixOS on Pi Zero W → (2) Write the
-   NixOS flake → (3) Set up GitHub Actions CI/CD → (4) Implement the OTA
-   Updater service → (5) Close the loop: tag → build → deploy → update.
+   **Implementation order**: (1) Decide OS + OTA strategy → (2) Validate on
+   Pi Zero W hardware → (3) Build CI/CD pipeline → (4) Implement OTA
+   service → (5) Close the loop: tag → build → deploy → update.
 
-Technology Choice
------------------
+Operating System — Decision Pending
+-------------------------------------
 
-- **Operating system**: `NixOS`_ (24 763 stars, mature)
-- **Declarative config**: NixOS flake defining the entire system
-- **Update source**: GitHub Releases API
-- **Update mechanism**: ``nixos-rebuild switch --upgrade`` (atomic, with automatic rollback)
-- **Orchestration**: Rust service managing the update lifecycle
-- **Process**: Standalone Rust binary
+NixOS was initially chosen for its declarative config and atomic updates,
+but **ARMv6 (Pi Zero W) support is uncertain**. The community
+`nixos-rpi-zero-w`_ project (38 stars) was last updated in 2022, and
+NixOS's official ARMv6 support is minimal. This needs validation before
+committing.
 
-.. _NixOS: https://nixos.org/
+.. _nixos-rpi-zero-w: https://github.com/cyber-murmel/nixos-rpi-zero-w
 
-Why NixOS
-~~~~~~~~~
+.. todo::
 
-With eight containers, their dependencies (BlueZ, ALSA, CamillaDSP, Piper),
-and the OS layer, the platform needs an **orchestration engine** that manages
-the whole stack declaratively. NixOS is the right fit:
+   **OS + OTA strategy decision needed.** Evaluate these options:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 20 30 35
+
+   * - Option
+     - OS
+     - OTA Mechanism
+     - Trade-offs
+   * - **A**
+     - NixOS
+     - ``nixos-rebuild switch``
+     - Declarative, atomic, rollback built in. **Risk: ARMv6 support
+       uncertain.** Needs validation. If it works, this is the best option.
+   * - **B**
+     - Raspberry Pi OS
+     - `RAUC`_ (A/B partitions)
+     - ARMv6 proven. A/B partition scheme: write new image to inactive
+       partition, switch bootloader, reboot. Rollback = switch back.
+       RAUC has a `Pi bootloader backend`_. Not declarative — services
+       managed by systemd + custom scripts.
+   * - **C**
+     - Raspberry Pi OS
+     - `Mender`_ (A/B partitions)
+     - ARMv6 proven. Similar A/B approach to RAUC. Has a managed cloud
+       option or self-hosted. More complex than RAUC. Commercial backing.
+   * - **D**
+     - Yocto + RAUC
+     - RAUC (A/B partitions)
+     - Full control over image. Reproducible builds. Steep learning curve.
+       Heavy build system. Best for production at scale, overkill for v1.
+   * - **E**
+     - Raspberry Pi OS
+     - Custom script (no atomic)
+     - Simplest. ``apt update`` + ``systemctl restart``. No atomic updates,
+       no rollback. Risk of broken state. Only acceptable as last resort.
+
+   .. _RAUC: https://github.com/rauc/rauc
+   .. _Pi bootloader backend: https://github.com/Rtone/raspberrypi-firmware-rauc-bootloader-backend
+   .. _Mender: https://github.com/mendersoftware/mender
+
+**Recommendation**: Try **Option A (NixOS)** first — if ARMv6 boots and
+runs, it's the best fit. If validation fails, fall back to **Option B
+(Raspberry Pi OS + RAUC)**, which gives us atomic A/B updates on a
+proven ARMv6 platform at the cost of losing NixOS's declarative config.
+
+Technology Choice (Pending OS Decision)
+----------------------------------------
+
+The OTA service technology depends on the OS choice:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 30 50
+
+   * - OS Decision
+     - OTA Mechanism
+     - Rust OTA Service Role
+   * - NixOS
+     - ``nixos-rebuild switch --upgrade``
+     - Check GitHub Releases, download closure, trigger rebuild, manage
+       reboot scheduling
+   * - Pi OS + RAUC
+     - RAUC A/B partition install
+     - Check GitHub Releases, download image bundle, call ``rauc install``,
+       manage reboot scheduling, report slot status
+   * - Pi OS + Mender
+     - Mender client A/B install
+     - Check GitHub Releases, trigger Mender deployment, manage reboot
+       scheduling
+
+Regardless of OS choice, the Rust OTA service always:
+
+- Checks GitHub Releases for new versions
+- Downloads updates in the background
+- Schedules reboots during low-activity windows
+- Reports status via API Server (REST + WebSocket)
+- Triggers rollback if the update fails
+
+Previous NixOS Analysis
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The analysis below assumed NixOS. It remains valid if NixOS is confirmed.
+If a different OS is chosen, the same principles apply but the
+implementation differs.
+
+If NixOS is confirmed, these benefits apply:
 
 .. list-table::
    :header-rows: 1

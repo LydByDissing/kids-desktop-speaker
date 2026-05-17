@@ -32,11 +32,14 @@ The software platform has 8 containers:
 **OTA is the force multiplier.** With OTA + CI/CD in place, every change ships by tagging a release — the device pulls and applies it automatically. This must be working before any other feature implementation.
 
 **Implementation order:**
-1. Validate NixOS on Pi Zero W (ARMv6) — `KDS-d5m`
-2. Write the NixOS flake for the entire system — `KDS-eeu`
-3. Set up GitHub Actions CI/CD (build + release on tag) — `KDS-4vc`
-4. Implement the OTA Updater service — `KDS-3zt`
-5. Close the loop: tag → CI builds → device pulls → atomic update
+1. Decide OS + OTA strategy (NixOS vs Pi OS + RAUC) — `KDS-d5m`
+2. Validate chosen OS on Pi Zero W hardware — `KDS-d5m`
+3. Build system config (NixOS flake or Pi OS image) — `KDS-eeu`
+4. Set up GitHub Actions CI/CD (build + release on tag) — `KDS-4vc`
+5. Implement the OTA Updater service — `KDS-3zt`
+6. Close the loop: tag → CI builds → device pulls → atomic update
+
+**OS decision**: Try NixOS first (declarative, atomic, rollback built in). If ARMv6 support fails, fall back to Raspberry Pi OS + RAUC (A/B partitions, proven on ARMv6).
 
 ### Open Investigation Items
 
