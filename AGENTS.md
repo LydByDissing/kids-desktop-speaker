@@ -39,7 +39,7 @@ The software platform has 8 containers:
 5. Implement the OTA Updater service — `KDS-3zt`
 6. Close the loop: tag → CI builds → device pulls → atomic update
 
-**OS decision**: Try NixOS first (declarative, atomic, rollback built in). If ARMv6 support fails, fall back to Raspberry Pi OS + RAUC (A/B partitions, proven on ARMv6).
+**OS decision**: Try NixOS first (declarative, atomic, rollback built in). If ARMv6 support fails, fall back to Raspberry Pi OS + RAUC (A/B partitions, proven on ARMv6). Validation happens in CI (cross-compile) + real hardware (boot test). See KDS-d5m for the 3-step validation plan.
 
 ### Open Investigation Items
 
