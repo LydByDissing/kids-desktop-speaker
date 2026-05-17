@@ -5,6 +5,20 @@ Over-the-air update system for the Kids Desktop Speaker. Handles updates for
 the **entire system** — OS, software platform, DSP configs, and voice models —
 using NixOS as the declarative foundation.
 
+.. important::
+
+   **OTA is the #1 implementation priority.** It is the force multiplier
+   for the entire project. With OTA + CI/CD in place, every new feature,
+   bug fix, or config change can be pushed to the device by simply tagging
+   a GitHub release. The device pulls and applies it automatically. This
+   enables rapid iteration — ship early, ship often, and let the device
+   update itself. Without OTA, every change requires manual SD card flashing
+   and on-device tinkering, which kills velocity.
+
+   **Implementation order**: (1) Validate NixOS on Pi Zero W → (2) Write the
+   NixOS flake → (3) Set up GitHub Actions CI/CD → (4) Implement the OTA
+   Updater service → (5) Close the loop: tag → build → deploy → update.
+
 Technology Choice
 -----------------
 

@@ -27,17 +27,28 @@ The software platform has 8 containers:
 - **Docs**: Sphinx + C4-PlantUML + sphinx-needs
 - **Issue tracking**: bd (beads)
 
+### Implementation Priority: OTA First
+
+**OTA is the force multiplier.** With OTA + CI/CD in place, every change ships by tagging a release — the device pulls and applies it automatically. This must be working before any other feature implementation.
+
+**Implementation order:**
+1. Validate NixOS on Pi Zero W (ARMv6) — `KDS-d5m`
+2. Write the NixOS flake for the entire system — `KDS-eeu`
+3. Set up GitHub Actions CI/CD (build + release on tag) — `KDS-4vc`
+4. Implement the OTA Updater service — `KDS-3zt`
+5. Close the loop: tag → CI builds → device pulls → atomic update
+
 ### Open Investigation Items
 
 These require research or prototyping before implementation decisions can be made:
 
-1. **Per-source ALSA channels** — Should each audio source get its own loopback channel? Depends on CamillaDSP mixer API capabilities.
-2. **AirPlay receiver** — rairplay (Rust, early) vs shairport-sync (C, proven).
-3. **Internet radio / podcast backend** — MPD (proven by Volumio) vs custom Rust vs GStreamer.
-4. **NixOS on Pi Zero W** — ARMv6 validation. Community project from 2022 needs re-testing.
-5. **Release signing** — GPG, minisign, or Nix built-in trust model.
-6. **piper-tts-rs maturity** — FFI wrapper early-stage; fallback to CLI subprocess.
-7. **A2DP decision** — Recommend AVRCP-only for v1; evaluate A2DP later.
+1. **NixOS on Pi Zero W** [P0] — ARMv6 validation. Blocks all OTA work. `KDS-d5m`
+2. **Per-source ALSA channels** [P1] — Should each source get its own loopback channel? Depends on CamillaDSP mixer API. `KDS-vdp`
+3. **AirPlay receiver** [P1] — rairplay (Rust, early) vs shairport-sync (C, proven). `KDS-oab`
+4. **Internet radio / podcast backend** [P1] — MPD (proven by Volumio) vs custom Rust vs GStreamer. `KDS-u47`
+5. **Release signing** [P2] — GPG, minisign, or Nix built-in trust model. `KDS-8oi`
+6. **piper-tts-rs maturity** [P2] — FFI wrapper early-stage; fallback to CLI subprocess. `KDS-m6q`
+7. **A2DP decision** [P3] — Recommend AVRCP-only for v1; evaluate A2DP later. `KDS-1hn`
 
 ## Documentation
 
