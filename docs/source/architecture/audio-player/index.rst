@@ -137,12 +137,13 @@ All audio flows through a dual-channel ALSA loopback pipeline:
        component [TTS Engine\n"Announcements"] as tts
    }
 
-   package "ALSA Loopback" as loopback {
-       component ["Loopback ch0\n"Main audio"] as ch0
-       component ["Loopback ch1\n"TTS audio"] as ch1
+   package "ALSA Loopback\nhw:Loopback,0 (6ch)" as loopback {
+       component ["ch0-1: Main audio\nSpotify/AirPlay/Radio"] as ch0
+       component ["ch2-3: TTS Engine"] as ch1
+       component ["ch4-5: Bluetooth A2DP"] as ch2
    }
 
-   component [CamillaDSP\n"Mixer, DSP, EQ, Volume"] as dsp
+   component [CamillaDSP\n"Volume filters, Mixer, DSP, EQ"] as dsp
    component ["HAT Audio Driver\n"hw:0,0"] as hat
 
    spotify --> ch0 : ALSA PCM
@@ -150,22 +151,26 @@ All audio flows through a dual-channel ALSA loopback pipeline:
    mpd --> ch0 : ALSA PCM
    tts --> ch1 : ALSA PCM
 
-   ch0 --> dsp : loopback capture
-   ch1 --> dsp : loopback capture
+   ch0 --> dsp : 6ch loopback capture
+   ch1 --> dsp
+   ch2 --> dsp
 
    dsp --> hat : ALSA PCM
 
    @enduml
 
-All main audio sources share **channel 0** of the ALSA loopback device. The
-Audio Player ensures only one source is active at a time — it pauses/stops
-the previous source before starting the new one. CamillaDSP always reads from
-the same capture device; no config changes needed for source switches.
+All audio sources write to **different channel pairs** of a single
+``hw:Loopback,0`` device with 6 channels (3 stereo pairs):
 
-A **second loopback channel (ch1)** is reserved for TTS announcements.
-CamillaDSP's pipeline mixes both channels with independent volume control,
-enabling TTS ducking without any DSP config reload. See
-:doc:`/architecture/camilladsp/index` for the full pipeline design.
+- **ch0–1**: Main audio (Spotify/AirPlay/Radio/Podcasts) — only one source
+  active at a time, managed by the Audio Player
+- **ch2–3**: TTS Engine — independent, always available
+- **ch4–5**: Bluetooth A2DP (if enabled) — independent, always available
+
+CamillaDSP captures all 6 channels simultaneously. Each channel pair passes
+through its own Volume filter + fader, then the mixer combines them. TTS
+ducking is done by lowering the Main fader — no config reload, no source
+stopping. See :doc:`/architecture/camilladsp/index` for the full pipeline.
 
 Source Switching & Priority
 -----------------------------

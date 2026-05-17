@@ -95,20 +95,24 @@ changes. The mixer and Volume filters are always loaded.
 Multi-Channel Capture
 ~~~~~~~~~~~~~~~~~~~~~
 
-CamillaDSP captures from a **single ALSA device** with multiple channels.
-All loopback subdevices (ch0, ch1, ch2, …) are captured as channels of
-``hw:Loopback,0``. The ``snd-aloop`` kernel module supports up to 8
-subdevices per loopback device.
+CamillaDSP captures from a **single ALSA device** with 6 channels
+(3 stereo pairs). All sources write to different channel pairs of
+``hw:Loopback,0``:
 
-.. todo::
+- Channels 0–1: Main audio (Spotify/AirPlay/Radio/Podcasts)
+- Channels 2–3: TTS Engine
+- Channels 4–5: Bluetooth A2DP (if enabled)
 
-   **Test needed**: Verify CamillaDSP can capture 6+ channels from
-   ``hw:Loopback,0`` with different sources writing to different subdevices
-   simultaneously. If this works, the architecture is confirmed. If not,
-   we need an ALSA plugin (``.asoundrc`` ``multi``/``route`` plugin) to
-   combine subdevices, or the `alsa_cdsp`_ plugin.
+The ``snd-aloop`` kernel module supports up to 8 subdevices per loopback
+device. All subdevices are captured simultaneously when CamillaDSP opens
+the device with ``channels: 6``.
 
-   .. _alsa_cdsp: https://github.com/scripple/alsa_cdsp
+.. note::
+
+   All subdevices must use the same sample rate and format. The first
+   source to open a subdevice sets the rate/format for the entire loopback
+   device. Use ``plughw`` instead of ``hw`` for automatic format conversion
+   if sources use different formats.
 
 Audio Output Method
 ~~~~~~~~~~~~~~~~~~~

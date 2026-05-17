@@ -50,32 +50,27 @@ in the NixOS flake rather than via manual ``/boot/config.txt`` edits:
        (``amixer`` commands). CamillaDSP takes over volume control after
        startup.
    * - ALSA loopback
-     - ``snd-aloop`` kernel module loaded for loopback devices. Number of
-       loopback channels configured in the NixOS flake.
+     - ``snd-aloop`` kernel module loaded with 6 channels (3 stereo pairs)
+       for the audio pipeline.
 
-All driver configuration is version-controlled in the NixOS flake and deployed
-atomically with ``nixos-rebuild switch``. See :doc:`/architecture/ota-updater/index`
-for the full update mechanism.
+All driver configuration is version-controlled in the system flake/config and
+deployed atomically. See :doc:`/architecture/ota-updater/index` for the full
+update mechanism.
 
 ALSA Loopback Channels
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``snd-aloop`` kernel module provides ALSA loopback devices used for the
-audio pipeline. The number of substreams (channels) is configured in the
-NixOS flake.
+The ``snd-aloop`` kernel module provides a single ALSA loopback device with
+6 channels (3 stereo pairs), used for the audio pipeline:
 
-.. todo::
+- **Channels 0–1**: Main audio (Spotify/AirPlay/Radio/Podcasts)
+- **Channels 2–3**: TTS Engine
+- **Channels 4–5**: Bluetooth A2DP (if enabled)
 
-   Determine the number of ALSA loopback channels needed. This depends on
-   the per-source channel architecture decision (see
-   :doc:`/architecture/tts-engine/index`):
-
-   - **Minimum (2 channels)**: ch0 = main audio, ch1 = TTS
-   - **Per-source (4–6 channels)**: ch0 = Spotify, ch1 = AirPlay, ch2 = MPD,
-     ch3 = TTS, ch4+ = future sources
-
-   The ``snd-aloop`` module supports up to 8 substreams per loopback device.
-   Multiple loopback devices can be loaded if more channels are needed.
+All 6 channels are captured simultaneously by CamillaDSP. The ``snd-aloop``
+module supports up to 8 substreams per loopback device, so 6 channels is
+well within limits. All subdevices must use the same sample rate and format;
+use ``plughh`` for automatic format conversion if needed.
 
 Interfaces
 ----------
