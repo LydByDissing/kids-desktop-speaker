@@ -1,0 +1,4 @@
+docs/_plantuml/
+docs/build/
+docs/_build/
+.venv/
