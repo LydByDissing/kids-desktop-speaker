@@ -19,44 +19,65 @@ CamillaDSP is an existing, mature Rust project. We integrate it rather than
 build our own DSP engine. It provides:
 
 - Flexible audio pipeline (filter chains, mixers, conditionals)
-- Real-time volume control via TCP socket
+- **5 independent volume faders** (Main + Aux1–Aux4) for per-source volume
+- **Mixer with per-input gain** — route and combine multiple sources
+- Real-time volume and fader control via websocket API
 - Config hot-reload without restart
-- ALSA, PipeWire, and file I/O support
+- ALSA, PipeWire, Bluetooth (BlueZ), and file I/O support
 - Low-latency processing suitable for the Pi Zero W
+- SIMD acceleration (NEON on ARM, AVX on x86)
+- **Bluetooth capture support** (v2.0+) — can capture directly from BlueZ
 
-Master Volume
--------------
+Volume Control — Faders
+------------------------
 
-CamillaDSP owns the **master volume** for the entire speaker. All volume
-changes — from the Web Interface, Bluetooth AVRCP, API, or TTS ducking — go
-through CamillaDSP's volume control via its internal TCP socket API.
-
-The API Server is the sole internal client of the CamillaDSP TCP socket. No
-other container talks to CamillaDSP directly. The API Server translates
-external requests (REST, WebSocket, BT) into CamillaDSP volume commands.
-
-**Volume range**: 0–100 % (mapped to CamillaDSP's internal dB range).
-
-**Volume operations via TCP socket**:
+CamillaDSP provides **5 independent volume faders** that can be controlled
+in real-time via the websocket API:
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 15 30 55
 
-   * - Operation
-     - Description
-   * - Get volume
-     - Read current master volume level
-   * - Set volume
-     - Set master volume (with fade ramp)
-   * - Mute / unmute
-     - Toggle mute state
-   * - Get signal levels
-     - Read signal levels for UI level meters (input, output)
+   * - Fader
+     - Assigned To
+     - Purpose
+   * - Main
+     - Primary audio source
+     - Master volume for Spotify/AirPlay/Radio/Podcasts
+   * - Aux1
+     - TTS Engine
+     - TTS announcement volume (independent of main source)
+   * - Aux2
+     - Bluetooth A2DP (if enabled)
+     - Bluetooth audio input volume
+   * - Aux3
+     - (reserved)
+     - Future use (e.g., line-in, alarm tones)
+   * - Aux4
+     - (reserved)
+     - Future use
+
+Each fader supports:
+
+- ``SetFaderVolume`` / ``GetFaderVolume`` — set/read in dB (-150 to +50)
+- ``SetFaderMute`` / ``GetFaderMute`` / ``ToggleFaderMute`` — per-fader mute
+- ``AdjustFaderVolume`` — relative change with optional min/max limits
+- ``GetFaders`` — read all fader states in one call
+
+All volume changes include a **smooth ramp** (configurable ``volume_ramp_time``,
+default 400 ms) — no audible clicks or pops.
+
+**TTS ducking** uses faders directly:
+
+1. API Server lowers the Main fader (ducking the primary source)
+2. TTS plays at Aux1 normal level
+3. API Server restores the Main fader when TTS completes
+
+No mixer reconfiguration needed. No config reload. Purely runtime.
 
 .. important::
 
-   The CamillaDSP TCP socket is **internal only**. It binds to
+   The CamillaDSP websocket is **internal only**. It binds to
    ``127.0.0.1`` (localhost) and is **never exposed** on the local network.
    The API Server is the only consumer.
 
@@ -152,44 +173,99 @@ errors). Instead, **source routing is handled at the ALSA level**:
 This keeps CamillaDSP's config stable and moves source management to where
 it belongs: the Audio Player controlling ALSA loopback access.
 
-TTS Ducking Pipeline
-~~~~~~~~~~~~~~~~~~~~~
+Per-Source Volume — Faders + Volume Filters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-TTS announcements need to play over the current music source. The approach:
-
-1. **Two ALSA loopback channels**: one for the main audio source, one for TTS
-2. **CamillaDSP pipeline** mixes both inputs with independent volume control
-3. When a TTS message arrives:
-   - API Server ducks the main source volume via CamillaDSP
-   - TTS audio plays on the TTS loopback channel at normal volume
-   - After TTS completes, API Server restores the main source volume
-4. No CamillaDSP config reload is needed — the mixer is always in the pipeline
+CamillaDSP's faders combined with Volume filters enable **per-source
+independent volume control** without any config reload:
 
 .. plantuml::
-   :caption: TTS Ducking — Volume Timeline
+   :caption: Per-Source Volume Architecture
+   :name: fig-cdsp-per-source
+
+   @startuml
+   skinparam componentStyle rectangle
+   skinparam backgroundColor white
+
+   title Per-Source Volume — Faders + Volume Filters
+
+   package "ALSA Loopback" as loopback {
+       component ["ch0: Main audio\n(Spotify/AirPlay/Radio)"] as ch0
+       component ["ch1: TTS Engine"] as ch1
+       component ["ch2: Bluetooth A2DP\n(if enabled)"] as ch2
+   }
+
+   package "CamillaDSP Pipeline" as cdsp {
+       component ["Volume(Main)\nMaster level"] as vol_main
+       component ["Volume(Aux1)\nTTS level"] as vol_tts
+       component ["Volume(Aux2)\nBT level"] as vol_bt
+       component ["Mixer\ncombine ch0+ch1+ch2"] as mixer
+       component ["DSP / EQ"] as dsp
+   }
+
+   component ["HAT Audio Driver\nhw:0,0"] as hat
+
+   ch0 --> vol_main
+   ch1 --> vol_tts
+   ch2 --> vol_bt
+
+   vol_main --> mixer
+   vol_tts --> mixer
+   vol_bt --> mixer
+
+   mixer --> dsp
+   dsp --> hat
+
+   @enduml
+
+Each source passes through a Volume filter assigned to a dedicated fader.
+The mixer combines all sources. The API Server controls each fader independently
+via the websocket API.
+
+**Source switching** (e.g., from Spotify to AirPlay) does NOT require
+CamillaDSP changes. The Audio Player simply:
+
+1. Stops the old source writing to ch0
+2. Starts the new source writing to ch0
+3. CamillaDSP keeps reading from ch0 — no config change needed
+
+**TTS ducking** lowers the Main fader while TTS plays on Aux1.
+
+**Bluetooth A2DP** (if enabled) gets its own channel and Aux2 fader.
+
+This architecture scales: adding a new source means adding another loopback
+channel and optionally another Volume filter + Aux fader.
+
+TTS Ducking — Fader Timeline
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. plantuml::
+   :caption: TTS Ducking — Fader Timeline
    :name: fig-cdsp-tts-ducking
 
    @startuml
-   title TTS Ducking — Volume Timeline
+   title TTS Ducking — Fader Timeline
 
    participant "API Server" as api
-   participant "CamillaDSP\n(mixer ch0 vol)" as cdsp
+   participant "CamillaDSP\n(Main fader)" as main
+   participant "CamillaDSP\n(Aux1 fader)" as aux1
    participant "TTS Engine\n(loopback ch1)" as tts
 
    note over api: TTS message received
-   api -> cdsp: Set ch0 volume to duck level (fade ramp)
-   cdsp -> cdsp: Fade main audio down
-   api -> tts: Start TTS playback
-   tts -> tts: Write TTS audio to loopback ch1
-   note over cdsp: Main audio ducked\nTTS playing on ch1 at normal vol
-   tts -> tts: TTS playback complete
-   api -> tts: Stop TTS
-   api -> cdsp: Set ch0 volume to restore level (fade ramp)
-   cdsp -> cdsp: Fade main audio back up
-   note over api: Announcement complete
+   api -> main : SetFaderVolume(0, -20dB)
+   main -> main : Ramp main source down (400ms)
+   api -> tts : Start TTS playback
+   tts -> tts : Write TTS audio to loopback ch1
+   note over aux1 : TTS at normal level\n(Aux1 fader unchanged)
+   tts -> tts : TTS playback complete
+   api -> tts : Stop TTS
+   api -> main : SetFaderVolume(0, previous_level)
+   main -> main : Ramp main source back up (400ms)
+   note over api : Announcement complete
    @enduml
 
-TTS Priority & Source Switching (updated from Audio Player spec):
+Source Priority
+~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -198,7 +274,7 @@ TTS Priority & Source Switching (updated from Audio Player spec):
    * - Priority
      - Source
    * - 1 (highest)
-     - TTS announcement (ducks main source via CamillaDSP volume, plays on ch1)
+     - TTS announcement (ducks Main fader, plays on Aux1)
    * - 2
      - AirPlay (Audio Player stops previous source on ch0, starts AirPlay on ch0)
    * - 3
@@ -206,12 +282,51 @@ TTS Priority & Source Switching (updated from Audio Player spec):
    * - 4 (lowest)
      - Internet radio / Podcasts (same — switch on ch0)
 
-CamillaDSP TCP Socket API
---------------------------
+Multi-Channel Capture
+~~~~~~~~~~~~~~~~~~~~~
 
-Reference: `CamillaDSP WebSocket/REST API`_
+**Open question**: CamillaDSP captures from a **single ALSA device**. To
+capture from multiple loopback channels (subdevices), we need one of:
 
-The TCP socket provides these operations used by the API Server:
+.. list-table::
+   :header-rows: 1
+   :widths: 15 85
+
+   * - Approach
+     - How
+   * - **Multi-channel loopback**
+     - ``snd-aloop`` supports up to 8 subdevices. Configure capture as
+       ``hw:Loopback,0`` with ``channels: 6`` (or more). Each subdevice writes
+       2 channels (stereo). CamillaDSP captures all channels and the mixer
+       routes them. **This is the simplest approach if it works.**
+     - Needs testing: can all subdevices be active simultaneously with different
+       sources?
+   * - **ALSA plugin (.asoundrc)**
+     - Create a combined virtual device using the ``multi`` or ``route`` ALSA
+       plugin that merges several loopback subdevices into one multi-channel
+       device. CamillaDSP captures from the combined device.
+   * - **ALSA CamillaDSP plugin**
+     - `scripple/alsa_cdsp`_ — an ALSA I/O plugin that starts CamillaDSP when
+       an application opens the device. Simplifies routing but adds complexity.
+
+   .. _scripple/alsa_cdsp: https://github.com/scripple/alsa_cdsp
+
+.. todo::
+
+   **Test needed**: Can CamillaDSP capture from ``hw:Loopback,0`` with 6+
+   channels, where each pair of channels is written by a different source
+   (librespot, TTS, etc.)? This determines whether the multi-channel
+   loopback approach works or if we need ALSA plugins.
+
+CamillaDSP WebSocket API
+-------------------------
+
+Reference: `CamillaDSP WebSocket API`_
+
+.. _CamillaDSP WebSocket API: https://github.com/HEnquist/camilladsp/blob/master/websocket.md
+
+The websocket (not raw TCP — it's a JSON-based websocket protocol on port
+1234 by default) provides these operations used by the API Server:
 
 .. list-table::
    :header-rows: 1
@@ -219,24 +334,36 @@ The TCP socket provides these operations used by the API Server:
 
    * - Command
      - Purpose
-   * - ``/setvolume``
-     - Set master volume (with ramp for smooth fade)
-   * - ``/getvolume``
-     - Read current volume
-   * - ``/setmute``
-     - Mute/unmute output
-   * - ``/getmute``
-     - Read mute state
-   * - ``/configreload``
-     - Reload config from file (switch DSP profile)
-   * - ``/getconfigname``
-     - Get name of currently loaded config
-   * - ``/getsiglev``
-     - Signal levels for UI meters
-   * - ``/getstate``
+   * - ``GetVolume`` / ``SetVolume``
+     - Read/set master volume in dB
+   * - ``AdjustVolume``
+     - Relative volume change with optional limits
+   * - ``GetMute`` / ``SetMute`` / ``ToggleMute``
+     - Master mute control
+   * - ``GetFaderVolume`` / ``SetFaderVolume``
+     - Per-fader volume (0=Main, 1–4=Aux1–4)
+   * - ``AdjustFaderVolume``
+     - Per-fader relative change with optional limits
+   * - ``GetFaderMute`` / ``SetFaderMute``
+     - Per-fader mute
+   * - ``GetFaders``
+     - Read all 5 fader states in one call
+   * - ``GetState``
      - Running state (RUNNING, WAITING, ERROR, etc.)
-
-.. _CamillaDSP WebSocket/REST API: https://github.com/HEnquist/camilladsp/blob/master/doc/restapi.md
+   * - ``GetCaptureRate``
+     - Measured capture sample rate
+   * - ``GetSignalRange``
+     - Signal level range in last chunk
+   * - ``GetCaptureSignalPeak`` / ``Rms``
+     - Per-channel peak/RMS for UI meters
+   * - ``GetProcessingLoad``
+     - Pipeline CPU utilization
+   * - ``Reload``
+     - Reload config from file (switch DSP profile)
+   * - ``GetConfigFilePath``
+     - Current config file path
+   * - ``PatchConfig``
+     - Apply partial config update at runtime
 
 Interfaces
 ----------
@@ -249,11 +376,11 @@ Interfaces
      - Protocol
      - Purpose
    * - API Server
-     - TCP socket (127.0.0.1)
-     - Volume, mute, config reload, signal levels, state queries
+     - WebSocket (127.0.0.1:1234)
+     - Volume, faders, mute, config reload, signal levels, state queries
    * - ALSA loopback
      - ALSA capture
-     - Read audio from loopback (main ch0 + TTS ch1)
+     - Read audio from loopback (multi-channel)
    * - HAT Audio Driver
      - ALSA playback (hw:0,0)
      - Write processed audio to hardware

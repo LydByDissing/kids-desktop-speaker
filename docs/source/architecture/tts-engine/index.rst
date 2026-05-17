@@ -65,64 +65,50 @@ Voice selection is configured via the API Server (stored in platform config).
 The Web Interface can expose a voice picker in the Config section in a future
 release. For v1, a single default English voice is used.
 
-Audio Output & ALSA Channel Architecture
+Audio Output & CamillaDSP Integration
 -----------------------------------------
 
-**Open architectural question**: How many ALSA loopback channels does the
-platform need, and how does CamillaDSP mix them?
+The TTS Engine writes synthesized audio to a **dedicated ALSA loopback
+channel** (ch1). CamillaDSP captures this alongside the main audio (ch0)
+and mixes them using its **fader + Volume filter** architecture.
 
-Current design has two channels:
+**CamillaDSP faders provide per-source volume control natively:**
 
-- **ch0**: Main audio (Spotify, AirPlay, radio, podcasts)
-- **ch1**: TTS announcements
+- **Main fader** → Volume filter on ch0 (Spotify/AirPlay/Radio/Podcasts)
+- **Aux1 fader** → Volume filter on ch1 (TTS Engine)
+- **Aux2 fader** → Volume filter on ch2 (Bluetooth A2DP, if enabled)
+- **Aux3, Aux4 faders** → reserved for future sources
 
-However, this raises a broader question:
+Each fader is controlled independently via CamillaDSP's websocket API
+(``SetFaderVolume``, ``SetFaderMute``, etc.) with smooth ramping
+(configurable ``volume_ramp_time``, default 400 ms).
+
+**TTS ducking uses faders directly — no config reload needed:**
+
+1. API Server calls ``SetFaderVolume(Main, -20dB)`` — ramps main audio down
+2. TTS Engine writes to ch1 at normal level (Aux1 fader unchanged)
+3. API Server calls ``SetFaderVolume(Main, previous_level)`` — ramps back up
+
+This is a **runtime-only operation**. CamillaDSP's pipeline config never
+changes. The mixer and Volume filters are always loaded.
+
+Multi-Channel Capture
+~~~~~~~~~~~~~~~~~~~~~
+
+CamillaDSP captures from a **single ALSA device** with multiple channels.
+All loopback subdevices (ch0, ch1, ch2, …) are captured as channels of
+``hw:Loopback,0``. The ``snd-aloop`` kernel module supports up to 8
+subdevices per loopback device.
 
 .. todo::
 
-   **Investigation needed — ALSA channel architecture**:
+   **Test needed**: Verify CamillaDSP can capture 6+ channels from
+   ``hw:Loopback,0`` with different sources writing to different subdevices
+   simultaneously. If this works, the architecture is confirmed. If not,
+   we need an ALSA plugin (``.asoundrc`` ``multi``/``route`` plugin) to
+   combine subdevices, or the `alsa_cdsp`_ plugin.
 
-   Should **each audio source get its own ALSA loopback channel**, with
-   CamillaDSP mixing them? For example:
-
-   - ch0: Spotify Connect (librespot)
-   - ch1: AirPlay receiver
-   - ch2: MPD (radio / podcasts)
-   - ch3: TTS Engine
-   - ch4: (future: Bluetooth A2DP, line-in, etc.)
-
-   **Benefits of per-source channels**:
-
-   - CamillaDSP mixer can control per-source volume independently
-   - No need for the Audio Player to stop/pause sources on switch — just
-     mute the old channel and unmute the new one in CamillaDSP
-   - TTS ducking becomes natural: duck all channels except TTS
-   - Source switching via CamillaDSP mixer API rather than ALSA-level stop/start
-   - Cleaner separation; easier to add sources later
-
-   **Concerns**:
-
-   - How many loopback channels can CamillaDSP's mixer handle?
-   - Does the CamillaDSP API support per-channel volume control at runtime?
-   - Do we need to extend CamillaDSP's mixer capabilities?
-   - ALSA loopback device has a limited number of channels (typically 8 substreams
-     per device; may need multiple loopback devices)
-   - Pi Zero W CPU impact of a more complex CamillaDSP pipeline
-
-   **Action items**:
-
-   - Investigate CamillaDSP mixer capabilities and API for per-input volume
-   - Investigate ALSA loopback channel limits on Pi Zero W
-   - Determine if CamillaDSP needs patching/extending for our use case
-   - Prototype a multi-channel CamillaDSP config
-
-   If per-source channels work, this simplifies the Audio Player significantly
-   and makes source switching, ducking, and future expansion much cleaner.
-
-Regardless of the final channel count, the TTS Engine writes its audio to a
-dedicated ALSA loopback channel. CamillaDSP mixes it with the main audio and
-applies ducking via per-input volume control. No CamillaDSP config reload is
-needed for TTS — the mixer is always in the pipeline.
+   .. _alsa_cdsp: https://github.com/scripple/alsa_cdsp
 
 Audio Output Method
 ~~~~~~~~~~~~~~~~~~~
@@ -160,16 +146,20 @@ arrive while an announcement is playing, they wait in a FIFO queue.
    note over queue: [Dinner is ready!, Time for bed!]
 
    queue -> tts : dequeue("Dinner is ready!")
-   api -> cdsp : duck ch0 (main audio)
-   tts -> tts : synthesize → write to ALSA loopback ch3
+   api -> cdsp : SetFaderVolume(Main, -20dB)
+   cdsp -> cdsp : Ramp main audio down (400ms)
+   tts -> tts : synthesize → write to ALSA loopback ch1
    tts -> queue : playback complete
-   api -> cdsp : restore ch0 volume
+   api -> cdsp : SetFaderVolume(Main, previous_level)
+   cdsp -> cdsp : Ramp main audio back up (400ms)
 
    queue -> tts : dequeue("Time for bed!")
-   api -> cdsp : duck ch0
-   tts -> tts : synthesize → write to ALSA loopback ch3
+   api -> cdsp : SetFaderVolume(Main, -20dB)
+   cdsp -> cdsp : Ramp main audio down (400ms)
+   tts -> tts : synthesize → write to ALSA loopback ch1
    tts -> queue : playback complete
-   api -> cdsp : restore ch0 volume
+   api -> cdsp : SetFaderVolume(Main, previous_level)
+   cdsp -> cdsp : Ramp main audio back up (400ms)
 
    note over queue: empty
 

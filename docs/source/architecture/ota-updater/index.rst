@@ -22,6 +22,11 @@ with atomic updates and automatic rollback.
 Operating System — Decision Pending
 -------------------------------------
 
+.. important::
+
+   The OS choice determines the OTA mechanism. The architecture below
+describes both options. The NixOS-specific sections are marked.
+
 NixOS was initially chosen for its declarative config and atomic updates,
 but **ARMv6 (Pi Zero W) support is uncertain**. The community
 `nixos-rpi-zero-w`_ project (38 stars) was last updated in 2022, and
@@ -32,7 +37,7 @@ committing.
 
 .. todo::
 
-   **OS + OTA strategy decision needed.** Evaluate these options:
+   **OS + OTA strategy decision needed (KDS-d5m).** Evaluate these options:
 
 .. list-table::
    :header-rows: 1

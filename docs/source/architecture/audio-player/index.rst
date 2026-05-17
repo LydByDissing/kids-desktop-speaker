@@ -238,8 +238,8 @@ Interfaces
      - Internal (Rust IPC)
      - Receives playback commands, reports state changes
    * - CamillaDSP
-     - TCP (CamillaDSP API)
-     - Volume control, fade transitions, source routing
+     - WebSocket (CamillaDSP API)
+     - Fader volume, mute, fade transitions via SetFaderVolume/SetFaderMute
    * - ALSA loopback
      - ALSA PCM
      - Sources write audio here; CamillaDSP reads from it
