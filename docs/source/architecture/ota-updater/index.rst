@@ -19,218 +19,148 @@ with atomic updates and automatic rollback.
    Pi Zero W hardware → (3) Build CI/CD pipeline → (4) Implement OTA
    service → (5) Close the loop: tag → build → deploy → update.
 
-Operating System — Decision Pending
--------------------------------------
+Operating System & OTA Mechanism
+---------------------------------
 
-.. important::
+.. note::
 
-   The OS choice determines the OTA mechanism. The architecture below
-   describes both options. The NixOS-specific sections are marked.
+   **Decision**: Raspberry Pi OS Lite (Bookworm) + RAUC_ with A/B partitions
+   (:ref:`DEC-001 <dec-001>`). NixOS was evaluated but ARMv6 support could not be confirmed.
 
-NixOS was initially chosen for its declarative config and atomic updates,
-but **ARMv6 (Pi Zero W) support is uncertain**. The community
-`nixos-rpi-zero-w`_ project (38 stars) was last updated in 2022, and
-NixOS's official ARMv6 support is minimal. This needs validation before
-committing.
+The OTA system uses **RAUC** (Robust Auto-Update Controller) with an A/B
+partition scheme. Two root filesystem slots (A and B) hold alternate system
+images. Updates are written to the inactive slot, verified, and activated by
+switching the bootloader. If the new image fails to boot, the bootloader
+automatically falls back to the previous slot.
 
-.. _nixos-rpi-zero-w: https://github.com/cyber-murmel/nixos-rpi-zero-w
+.. _RAUC: https://github.com/rauc/rauc
 
-.. todo::
-
-   **OS + OTA strategy decision needed (KDS-d5m).** Evaluate these options:
+OS + OTA Options Considered
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 15 20 30 35
+   :widths: 10 20 30 40
 
    * - Option
      - OS
      - OTA Mechanism
      - Trade-offs
-   * - **A**
+   * - A
      - NixOS
      - ``nixos-rebuild switch``
      - Declarative, atomic, rollback built in. **Risk: ARMv6 support
-       uncertain.** Needs validation. If it works, this is the best option.
-   * - **B**
+       uncertain.** Community project (nixos-rpi-zero-w) last updated 2022.
+   * - B
      - Raspberry Pi OS
-     - RAUC_ (A/B partitions)
-     - ARMv6 proven. A/B partition scheme: write new image to inactive
-       partition, switch bootloader, reboot. Rollback = switch back.
-       RAUC has a `Pi bootloader backend`_. Not declarative — services
-       managed by systemd + custom scripts.
-   * - **C**
+     - RAUC (A/B partitions)
+     - **CHOSEN.** ARMv6 proven. A/B partition scheme with atomic switch.
+       Rollback = switch back. Pi bootloader backend available.
+   * - C
      - Raspberry Pi OS
-     - Mender_ (A/B partitions)
-     - ARMv6 proven. Similar A/B approach to RAUC. Has a managed cloud
-       option or self-hosted. More complex than RAUC. Commercial backing.
-   * - **D**
+     - Mender (A/B partitions)
+     - ARMv6 proven. Similar A/B approach. Managed cloud option available.
+       More complex than RAUC.
+   * - D
      - Yocto + RAUC
      - RAUC (A/B partitions)
      - Full control over image. Reproducible builds. Steep learning curve.
-       Heavy build system. Best for production at scale, overkill for v1.
-   * - **E**
+       Overkill for v1.
+   * - E
      - Raspberry Pi OS
      - Custom script (no atomic)
-     - Simplest. ``apt update`` + ``systemctl restart``. No atomic updates,
-       no rollback. Risk of broken state. Only acceptable as last resort.
+     - Simplest. No atomic updates, no rollback. Risk of broken state.
 
 .. _RAUC: https://github.com/rauc/rauc
 .. _Pi bootloader backend: https://github.com/Rtone/raspberrypi-firmware-rauc-bootloader-backend
 .. _Mender: https://github.com/mendersoftware/mender
 
-**Recommendation**: Try **Option A (NixOS)** first — if ARMv6 boots and
-runs, it's the best fit. If validation fails, fall back to **Option B
-(Raspberry Pi OS + RAUC)**, which gives us atomic A/B updates on a
-proven ARMv6 platform at the cost of losing NixOS's declarative config.
 
-Technology Choice (Pending OS Decision)
-----------------------------------------
-
-The OTA service technology depends on the OS choice:
+Partition Layout
+~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 30 50
+   :widths: 20 15 25 40
 
-   * - OS Decision
-     - OTA Mechanism
-     - Rust OTA Service Role
-   * - NixOS
-     - ``nixos-rebuild switch --upgrade``
-     - Check GitHub Releases, download closure, trigger rebuild, manage
-       reboot scheduling
-   * - Pi OS + RAUC
-     - RAUC A/B partition install
-     - Check GitHub Releases, download image bundle, call ``rauc install``,
-       manage reboot scheduling, report slot status
-   * - Pi OS + Mender
-     - Mender client A/B install
-     - Check GitHub Releases, trigger Mender deployment, manage reboot
-       scheduling
+   * - Partition
+     - Size
+     - Purpose
+     - Notes
+   * - boot (FAT32)
+     - 256 MB
+     - Bootloader, kernel, device trees
+     - Shared between slots
+   * - rootfs-a (ext4)
+     - 1.5 GB
+     - Root filesystem slot A
+     - Active slot
+   * - rootfs-b (ext4)
+     - 1.5 GB
+     - Root filesystem slot B
+     - Inactive slot (update target)
+   * - data (ext4)
+     - Remainder
+     - User data, configs, voice models
+     - Persistent across updates
 
-Regardless of OS choice, the Rust OTA service always:
-
-- Checks GitHub Releases for new versions
-- Downloads updates in the background
-- Schedules reboots during low-activity windows
-- Reports status via API Server (REST + WebSocket)
-- Triggers rollback if the update fails
-
-Previous NixOS Analysis
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-The analysis below assumed NixOS. It remains valid if NixOS is confirmed.
-If a different OS is chosen, the same principles apply but the
-implementation differs.
-
-If NixOS is confirmed, these benefits apply:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
-
-   * - NixOS Feature
-     - Benefit for this project
-   * - Declarative config
-     - Entire system (kernel, services, packages, configs) defined in a single
-       flake. Reproducible builds. No "works on my machine" drift.
-   * - Atomic upgrades
-     - ``nixos-rebuild switch`` creates a new system generation atomically.
-       If anything goes wrong, the previous generation is intact.
-   * - Automatic rollback
-     - On boot failure, NixOS automatically rolls back to the last working
-       generation. No manual intervention needed.
-   * - Rollback on demand
-     - ``nixos-rebuild --rollback`` or selecting a previous generation at
-       boot. Every generation is preserved until explicitly cleaned up.
-   * - Package pinning
-     - Every dependency is pinned to an exact hash in the nixpkgs lock file.
-       No surprise breakage from upstream changes.
-   * - Cross-compilation
-     - Build the Pi Zero W image on a faster machine, transfer the closure.
-
-NixOS on Pi Zero W
-~~~~~~~~~~~~~~~~~~~
-
-The Pi Zero W uses an **ARMv6** (armhf) CPU. NixOS supports this via the
-``sd-image-raspberrypi`` target, which uses the ``linux_rpi1`` kernel and
-includes explicit Pi Zero support (``enable_uart=1`` in the boot config).
-
-A community project (`nixos-rpi-zero-w`_) demonstrates NixOS running on the
-Pi Zero W (38 stars, though last updated 2022 — needs validation with current
-NixOS).
-
-.. _nixos-rpi-zero-w: https://github.com/cyber-murmel/nixos-rpi-zero-w
-
-.. todo::
-
-   **Validation needed**: Test current NixOS (25.05+) on Pi Zero W. The
-   community project is from 2022. Verify that the ``sd-image-raspberrypi``
-   target still builds for ARMv6 and boots on Pi Zero W hardware.
+See :ref:`DEC-003 <dec-003>` for the full partition layout decision.
 
 System Architecture
 ---------------------
 
-The entire system is defined by a NixOS flake:
+The OTA Updater is a Rust service that orchestrates the RAUC update process:
 
 .. plantuml::
-   :caption: NixOS Declarative System Architecture
-   :name: fig-nixos-arch
+   :caption: OTA System Architecture — RAUC A/B Slots
+   :name: fig-ota-arch
 
    @startuml
    skinparam componentStyle rectangle
    skinparam backgroundColor white
 
-   title NixOS Declarative System Architecture
+   title OTA System Architecture — RAUC A/B Slots
 
-   package "NixOS Flake" as flake {
-       component ["API Server (Axum)"] as api
-       component ["Audio Player (librespot)"] as player
-       component ["Bluetooth Service (bluer)"] as bt
-       component ["CamillaDSP + profiles"] as dsp
-       component ["TTS Engine (Piper)"] as tts
-       component ["OTA Updater"] as ota
-       component ["HAT Audio Driver"] as hat
-       component ["Web Interface (Leptos)"] as webui
+   package "SD Card" as sd {
+       rectangle "boot (FAT32)" as boot
+       rectangle "rootfs-a (ext4)" as roota
+       rectangle "rootfs-b (ext4)" as rootb
+       rectangle "data (ext4)" as data
    }
 
-   package "OS Layer (NixOS)" as os {
-       component ["Linux kernel (rpi1)"] as kernel
-       component ["BlueZ"] as bluez
-       component ["ALSA + loopback"] as alsa
-       component ["systemd"] as systemd
-       component ["NetworkManager"] as net
+   package "Software Platform" as platform {
+       component ["OTA Updater\n(Rust)"] as ota
+       component ["API Server\n(Axum)"] as api
+       component ["All other services\n(systemd units)"] as services
    }
 
-   package "Configuration" as config {
-       component ["CamillaDSP YAML profiles"] as profiles
-       component ["Piper voice models"] as voices
-       component ["Speaker platform config"] as platcfg
-   }
+   component ["GitHub Releases\n(.raucb artifact)"] as gh
+   component ["RAUC\n(systemd service)"] as rauc
 
-   flake --> os : depends on
-   flake --> config : includes
+   ota --> gh : download .raucb
+   ota --> rauc : rauc install
+   rauc --> roota : write to inactive slot
+   rauc --> rootb : write to inactive slot
+   rauc --> boot : update bootloader flag
+   ota --> api : status via IPC
+   services --> data : read/write user data
 
    @enduml
-
-Everything below the "NixOS Flake" boundary is built and deployed as a single
-atomic unit. A new release = a new flake commit = a new system generation.
 
 Update Lifecycle
 -----------------
 
 .. plantuml::
-   :caption: OTA Update Lifecycle
+   :caption: OTA Update Lifecycle — RAUC
    :name: fig-ota-lifecycle
 
    @startuml
-   title OTA Update Lifecycle
+   title OTA Update Lifecycle — RAUC
 
    participant "GitHub Releases" as gh
    participant "OTA Updater" as ota
    participant "API Server" as api
-   participant "NixOS" as nixos
+   participant "RAUC" as rauc
    participant "Web Interface" as ui
 
    == Background Check ==
@@ -243,30 +173,28 @@ Update Lifecycle
    ui -> api : POST /api/ota/apply
    api -> ota : Start update
 
-   == Download & Build ==
-   ota -> gh : Download release assets (nix closure)
-   ota -> nixos : nixos-rebuild switch --upgrade
-   note over nixos : Downloads closures, builds new generation
+   == Download & Install ==
+   ota -> gh : Download .raucb bundle
+   ota -> rauc : rauc install image.raucb
+   rauc -> rauc : Write to inactive slot (rootfs-b)
+   rauc -> rauc : Verify bundle signature
+   rauc -> rauc : Update bootloader flag (tryboot)
 
    == Apply ==
-   nixos -> nixos : Create new system generation
-   note over nixos : Atomic switch
    ota -> api : WebSocket event: ota_status (applied, reboot needed)
 
    == Scheduled Reboot ==
    note over ota : Wait for low-activity window
    note over ota : (or user-configured timeslot)
-   ota -> nixos : Schedule reboot
-   nixos -> nixos : Reboot into new generation
+   ota -> rauc : Schedule reboot
+   rauc -> rauc : Reboot into new slot
 
    == Verification ==
    alt Boot succeeds
-       nixos -> ota : System healthy
+       rauc -> rauc : Mark new slot as good
        ota -> api : WebSocket event: ota_status (update complete)
-       note over nixos : New generation is now default
    else Boot fails
-       nixos -> nixos : Auto-rollback to previous generation
-       nixos -> ota : Rolled back
+       rauc -> rauc : Auto-rollback to previous slot
        ota -> api : WebSocket event: ota_status (rollback)
    end
 
@@ -278,35 +206,37 @@ Controlled Update Process
 Updates follow a strict, controlled process:
 
 1. **Release**: A new version is published to GitHub Releases. The release
-   includes the Nix closure and a version manifest.
+   includes a RAUC bundle (``.raucb``) and a version manifest.
 2. **Discovery**: The OTA Updater periodically checks GitHub Releases for
    new versions (or is triggered via API).
-3. **Download**: Release assets are downloaded in the background. No
+3. **Download**: The RAUC bundle is downloaded in the background. No
    interruption to playback.
-4. **Build**: ``nixos-rebuild switch --upgrade`` creates a new system
-   generation. This downloads pre-built closures (no on-device compilation).
-5. **Apply**: The new generation is atomically activated. Services are
-   restarted as needed by systemd.
-6. **Schedule reboot**: If a reboot is required (kernel update, etc.), the
-   OTA Updater schedules it during a **low-activity window** or a
-   **user-configured timeslot** (e.g., 3:00–5:00 AM).
-7. **Verify**: After reboot, the OTA Updater confirms the system is healthy.
-8. **Rollback**: If the system fails to boot, NixOS automatically rolls back
-   to the previous generation. The OTA Updater reports the rollback via
-   the API Server.
+4. **Install**: ``rauc install <bundle>`` writes the new image to the
+   inactive rootfs slot. RAUC verifies the bundle signature before writing.
+5. **Schedule reboot**: If a reboot is required, the OTA Updater schedules it
+   during a **low-activity window** or a **user-configured timeslot**
+   (e.g., 3:00–5:00 AM).
+6. **Reboot**: The system reboots into the new slot. The bootloader checks
+   the boot attempt counter.
+7. **Verify**: After successful boot, ``rauc-mark-good.service`` marks the
+   new slot as good via ``rauc status mark-good``.
+8. **Rollback**: If the system fails to boot (boot attempt counter exceeded),
+   the bootloader automatically switches back to the previous slot.
 
 Rollback
 --------
 
-NixOS provides **built-in rollback** at two levels:
+RAUC provides **built-in rollback** at the bootloader level:
 
-1. **Automatic**: If a new generation fails to boot, the bootloader
-   automatically falls back to the previous generation. No user action needed.
+1. **Automatic**: If a new slot fails to boot (attempt counter exceeded),
+   the bootloader automatically falls back to the previous slot. No user
+   action needed.
 2. **Manual**: The user can roll back from the Web Interface (API call to
-   ``POST /api/ota/rollback``). This triggers ``nixos-rebuild --rollback``.
+   ``POST /api/ota/rollback``). This triggers ``rauc status mark-bad`` on
+   the current slot and schedules a reboot.
 
-Previous system generations are preserved until disk space is reclaimed.
-The OTA Updater keeps the last N generations (configurable, default 3).
+The **data partition** is never touched by RAUC. User data survives all
+updates and rollbacks.
 
 Low-Activity Reboot Scheduling
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -329,17 +259,14 @@ GitHub Releases Integration
 The OTA Updater monitors a GitHub repository's releases:
 
 - **Version check**: ``GET /repos/{owner}/{repo}/releases/latest``
-- **Asset download**: Release assets contain the Nix closure and a SHA256
-  manifest for verification
-- **Signing**: Releases should be signed. The OTA Updater verifies signatures
-  before applying. (Signing scheme TBD — GPG, minisign, or Nix's built-in
-  trust model.)
+- **Asset download**: Release assets contain the RAUC bundle (``.raucb``)
+- **Signing**: RAUC bundles are signed. RAUC verifies signatures before
+  installing. (Signing scheme TBD — GPG or minisign.)
 
 .. todo::
 
-   Define release signing strategy. Nix's content-addressable store provides
-   integrity guarantees, but we also need **authenticity** (verification that
-   the release came from the project maintainers, not a MITM attacker).
+   Define release signing strategy. RAUC supports both GPG and CMS signing.
+   Need to decide on key management and CI signing workflow.
 
 What Gets Updated
 -----------------
@@ -351,20 +278,19 @@ What Gets Updated
    * - Component
      - Updated via
    * - OS kernel, drivers
-     - NixOS generation (requires reboot)
+     - RAUC bundle (requires reboot)
    * - All platform services (API Server, Audio Player, etc.)
-     - NixOS generation (service restart by systemd)
+     - RAUC bundle (service restart by systemd)
    * - CamillaDSP YAML profiles
-     - NixOS generation (included in flake) or API Server config reload
+     - RAUC bundle (included in rootfs) or API Server config reload
    * - Piper voice models
-     - NixOS generation (included in flake)
+     - RAUC bundle (included in rootfs) or data partition download
    * - User config (radio stations, alarms, tokens)
-     - NOT updated by OTA — persisted across generations in /data partition
+     - NOT updated by OTA — persisted on /data partition
 
 User data (radio stations, podcast feeds, alarms, API tokens, BT pairing)
-is stored on a **persistent data partition** that survives system generations.
-NixOS's ``impermanence`` pattern or a separate mount point ensures user data
-is not lost on update.
+is stored on a **persistent data partition** that is never touched by RAUC.
+This ensures user data survives all updates and rollbacks.
 
 Interfaces
 ----------
@@ -381,10 +307,10 @@ Interfaces
      - Report update status, receive apply/rollback commands
    * - GitHub Releases
      - HTTPS (GitHub API)
-     - Check for new versions, download release assets
-   * - NixOS
-     - nixos-rebuild CLI
-     - Apply new system generation, rollback
+     - Check for new versions, download RAUC bundles
+   * - RAUC
+     - D-Bus / CLI
+     - Install bundles, query slot status, mark slots good/bad
    * - systemd
      - D-Bus
      - Schedule reboot, service status

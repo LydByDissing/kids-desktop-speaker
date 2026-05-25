@@ -154,7 +154,7 @@ Containers
        Container(bt, "Bluetooth Service", "Rust + bluer + BlueZ", "AVRCP remote control from paired keypad/knob; optional A2DP audio input (TBD)")
        Container(dsp, "CamillaDSP", "Rust (external) + systemd", "Master volume, EQ profiles, DSP pipeline; 2ch loopback mixer for TTS ducking")
        Container(tts, "TTS Engine", "Piper + piper-tts-rs", "Offline TTS: text → speech on dedicated ALSA ch; queued, multi-voice")
-       Container(ota, "OTA Updater", "Rust + NixOS", "Atomic system updates via nixos-rebuild; GitHub Releases; auto-rollback")
+       Container(ota, "OTA Updater", "Rust + RAUC", "Atomic system updates via RAUC A/B partitions; GitHub Releases; auto-rollback")
        Container(hatdrv, "HAT Audio Driver", "ALSA / Linux kernel", "Kernel driver for IQaudIO Pi-Codec Zero (WM8731 codec)")
 
    }
@@ -226,15 +226,16 @@ Zero W:
        a dedicated ALSA loopback channel. FIFO message queue, multi-language
        voice support (English primary). Fully offline — no cloud services.
    * - OTA Updater
-     - Rust + NixOS
-     - Atomic full-system updates using NixOS generations. Downloads from GitHub
-       Releases, applies via ``nixos-rebuild switch``, auto-rollback on boot
-       failure. Scheduled reboots in user-configured low-activity windows.
-       User data persisted across generations on separate partition.
+     - Rust + RAUC
+     - Atomic full-system updates using RAUC A/B partitions. Downloads RAUC
+       bundles from GitHub Releases, applies via ``rauc install``, auto-rollback
+       on boot failure. Scheduled reboots in user-configured low-activity
+       windows. User data persisted on separate data partition.
    * - HAT Audio Driver
-     - ALSA / Linux kernel
+     - ALSA / Linux kernel / systemd
      - Kernel driver for the IQaudIO Pi-Codec Zero HAT (Cirrus Logic WM8731
-       codec). Provides ALSA PCM device and mixer controls.
+       codec). Configured via Raspberry Pi OS device tree overlay and systemd.
+       Provides ALSA PCM device, mixer controls, and loopback channels.
 
 .. toctree::
    :maxdepth: 2

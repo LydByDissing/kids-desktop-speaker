@@ -14,6 +14,7 @@ streaming speaker for children, built on Raspberry Pi Zero W.
    development/configuration
    development/api_reference
    development/ci-pipeline
+   development/decisions
 
 Indices and Tables
 ==================

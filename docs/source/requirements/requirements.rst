@@ -195,7 +195,57 @@ Software — Networking
    :status: open
    :tags: software, networking
 
-   The system shall support over-the-air (OTA) updates for firmware.
+   The system shall support over-the-air (OTA) updates for the entire system
+   (OS, software, configs) using RAUC with A/B partitions.
+
+.. req:: OTA_REQ_001
+   :id: OTA_REQ_001
+   :status: open
+   :tags: software, ota
+
+   The system shall provide atomic OTA updates: updates are written to an
+   inactive partition and activated only after successful installation.
+
+.. req:: OTA_REQ_002
+   :id: OTA_REQ_002
+   :status: open
+   :tags: software, ota
+
+   The system shall automatically roll back to the previous system version
+   if a new update fails to boot.
+
+.. req:: OTA_REQ_003
+   :id: OTA_REQ_003
+   :status: open
+   :tags: software, ota, data
+
+   User data (radio stations, podcast feeds, alarms, API tokens, Bluetooth
+   pairings, voice models) shall persist across OTA updates and rollbacks.
+
+.. req:: CI_REQ_001
+   :id: CI_REQ_001
+   :status: open
+   :tags: infrastructure, ci
+
+   The project shall provide a CI pipeline that builds the system image on
+   x86_64 hardware using QEMU user-mode emulation for ARM cross-architecture
+   support.
+
+.. req:: CI_REQ_002
+   :id: CI_REQ_002
+   :status: open
+   :tags: infrastructure, ci
+
+   The CI pipeline shall produce a RAUC bundle (``.raucb``) as a build
+   artifact for each release.
+
+.. req:: CI_REQ_003
+   :id: CI_REQ_003
+   :status: open
+   :tags: infrastructure, ci
+
+   The CI pipeline shall run smoke tests on the built image to verify
+   services start correctly and RAUC can query slot status.
 
 .. req:: NET_REQ_003
    :id: NET_REQ_003

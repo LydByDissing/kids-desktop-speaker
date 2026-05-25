@@ -26,36 +26,36 @@ driver provided by the Linux kernel for the Cirrus Logic WM8731 codec chip
 on the Pi-Codec Zero. No custom kernel driver is needed — the standard
 ``snd-soc-iqaudio-codec`` module is used.
 
-NixOS Configuration
-~~~~~~~~~~~~~~~~~~~
+Raspberry Pi OS Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-With NixOS as the operating system, the HAT driver is configured declaratively
-in the NixOS flake rather than via manual ``/boot/config.txt`` edits:
+On Raspberry Pi OS, the HAT driver is configured via standard Linux mechanisms
+rather than NixOS declarative configuration:
 
 .. list-table::
    :header-rows: 1
    :widths: 30 70
 
    * - Aspect
-     - NixOS Configuration
+     - Configuration Method
    * - Device tree overlay
-     - ``hardware.raspberry-pi.config-overlays`` or
-       ``boot.kernelParams`` in the NixOS flake. The ``iqaudio-codec`` overlay
-       is enabled declaratively.
+     - ``/boot/config.txt``: ``dtoverlay=iqaudio-codec``. Standard Raspberry
+       Pi OS mechanism for enabling HAT device tree overlays.
    * - Kernel module
-     - ``boot.kernelModules`` includes ``snd-soc-iqaudio-codec``. Loaded
-       automatically at boot.
+     - ``snd-soc-iqaudio-codec`` is loaded automatically when the device tree
+       overlay is present. ``snd-aloop`` is loaded via
+       ``/etc/modules-load.d/snd-aloop.conf`` for the audio pipeline.
    * - ALSA mixer
-     - Initial mixer state set via ``systemd.services`` startup script
-       (``amixer`` commands). CamillaDSP takes over volume control after
-       startup.
+     - Initial mixer state set via a systemd oneshot service that runs
+       ``amixer`` commands at boot. CamillaDSP takes over volume control
+       after startup.
    * - ALSA loopback
      - ``snd-aloop`` kernel module loaded with 6 channels (3 stereo pairs)
-       for the audio pipeline.
+       via ``/etc/modprobe.d/snd-aloop.conf``:
+       ``options snd-aloop enable=1,1,1,1,1,1,1,1 index=0 pcm_substreams=8``
 
-All driver configuration is version-controlled in the system flake/config and
-deployed atomically. See :doc:`/architecture/ota-updater/index` for the full
-update mechanism.
+All driver configuration is deployed as files in the rootfs and managed by
+RAUC as part of the system image.
 
 ALSA Loopback Channels
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -70,7 +70,7 @@ The ``snd-aloop`` kernel module provides a single ALSA loopback device with
 All 6 channels are captured simultaneously by CamillaDSP. The ``snd-aloop``
 module supports up to 8 substreams per loopback device, so 6 channels is
 well within limits. All subdevices must use the same sample rate and format;
-use ``plughh`` for automatic format conversion if needed.
+use ``plughw`` for automatic format conversion if needed.
 
 Interfaces
 ----------
@@ -85,7 +85,7 @@ Interfaces
    * - CamillaDSP
      - ALSA PCM (hw:0,0)
      - Receives processed audio for playback
-   * - NixOS / Linux Kernel
+   * - Linux Kernel
      - Device tree / ALSA / systemd
      - Driver initialisation, mixer control, loopback config
 

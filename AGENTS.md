@@ -16,13 +16,14 @@ The software platform has 8 containers:
 | Bluetooth Service | Rust + bluer + BlueZ | AVRCP control from paired keypad/knob; A2DP under evaluation |
 | CamillaDSP | Rust (external) + systemd | Master volume, EQ profiles, DSP pipeline, 2-ch loopback mixer for TTS |
 | TTS Engine | Piper + piper-tts-rs | Offline neural TTS, FIFO queue, dedicated ALSA loopback channel |
-| OTA Updater | Rust + NixOS | Atomic system updates via nixos-rebuild, GitHub Releases, auto-rollback |
-| HAT Audio Driver | ALSA / Linux kernel / NixOS | IQaudIO Pi-Codec Zero (WM8731 codec), declaratively configured in NixOS flake |
+| OTA Updater | Rust + RAUC | Atomic system updates via RAUC A/B partitions, GitHub Releases, auto-rollback |
+| HAT Audio Driver | ALSA / Linux kernel / systemd | IQaudIO Pi-Codec Zero (WM8731 codec), configured via device tree overlay |
 
 ### Tech Stack
 
-- **Language**: Rust (primary), Nix (OS config)
-- **OS**: NixOS on Raspberry Pi Zero W (ARMv6)
+- **Language**: Rust (primary), Python (build scripts)
+- **OS**: Raspberry Pi OS Lite (Bookworm) on Raspberry Pi Zero W (ARMv6)
+- **OTA**: RAUC with A/B partitions
 - **Audio pipeline**: Sources → ALSA loopback → CamillaDSP → HAT driver
 - **Docs**: Sphinx + C4-PlantUML + sphinx-needs
 - **Issue tracking**: bd (beads)
@@ -39,14 +40,14 @@ The software platform has 8 containers:
 5. Implement the OTA Updater service — `KDS-3zt`
 6. Close the loop: tag → CI builds → device pulls → atomic update
 
-**OS decision**: Try NixOS first (declarative, atomic, rollback built in). If ARMv6 support fails, fall back to Raspberry Pi OS + RAUC (A/B partitions, proven on ARMv6). Validation happens in CI (cross-compile) + real hardware (boot test). See KDS-d5m for the 3-step validation plan.
+**OS decision**: Raspberry Pi OS Lite (Bookworm) + RAUC (`DEC-001`_). NixOS was evaluated but ARMv6 support could not be confirmed. RAUC provides atomic A/B updates with rollback on a proven ARMv6 platform.
 
 ### Open Investigation Items
 
-1. **NixOS on Pi Zero W** [P0] — ARMv6 validation. Blocks all OTA work. `KDS-d5m`
+1. ~~NixOS on Pi Zero W~~ [P0] — **RESOLVED**: NixOS abandoned due to uncertain ARMv6 support. Using Pi OS + RAUC. `KDS-d5m` ✅ (`DEC-001`)
 2. **AirPlay receiver** [P1] — rairplay (Rust, early) vs shairport-sync (C, proven). `KDS-oab`
 3. **Internet radio / podcast backend** [P1] — MPD (proven by Volumio) vs custom Rust vs GStreamer. `KDS-u47`
-4. **Release signing** [P2] — GPG, minisign, or Nix built-in trust model. `KDS-8oi`
+4. **Release signing** [P2] — GPG or minisign for RAUC bundle signing. `KDS-8oi`
 5. **piper-tts-rs maturity** [P2] — FFI wrapper early-stage; fallback to CLI subprocess. `KDS-m6q`
 6. **A2DP decision** [P3] — Recommend AVRCP-only for v1; evaluate A2DP later. `KDS-1hn`
 
