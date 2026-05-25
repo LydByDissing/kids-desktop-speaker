@@ -117,7 +117,8 @@ DEC-002 — CI Pipeline Architecture
 
 **Decision**: Use **Docker + QEMU user-mode emulation** (Solution 1) for
 the CI pipeline, and **pi-gen** (Solution 3) for producing flashable SD card
-images.
+images. Use **plain Docker + shell scripts** (not Dagger) to drive the pipeline
+in v1 — see :doc:`ci-tooling` for the evaluation.
 
 **Context**
 

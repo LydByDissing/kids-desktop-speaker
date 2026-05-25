@@ -283,3 +283,6 @@ Implementation Order
 3. **RAUC bundle** production as a CI artifact
 4. **Full VM boot test** for release validation (Solution 2)
 5. **pi-gen integration** for SD card images (Solution 3)
+
+See :doc:`ci-tooling` for the evaluation of Dagger vs plain Docker for
+driving the pipeline.
