@@ -25,7 +25,7 @@ Operating System — Decision Pending
 .. important::
 
    The OS choice determines the OTA mechanism. The architecture below
-describes both options. The NixOS-specific sections are marked.
+   describes both options. The NixOS-specific sections are marked.
 
 NixOS was initially chosen for its declarative config and atomic updates,
 but **ARMv6 (Pi Zero W) support is uncertain**. The community
@@ -54,14 +54,14 @@ committing.
        uncertain.** Needs validation. If it works, this is the best option.
    * - **B**
      - Raspberry Pi OS
-     - `RAUC`_ (A/B partitions)
+     - RAUC_ (A/B partitions)
      - ARMv6 proven. A/B partition scheme: write new image to inactive
        partition, switch bootloader, reboot. Rollback = switch back.
        RAUC has a `Pi bootloader backend`_. Not declarative — services
        managed by systemd + custom scripts.
    * - **C**
      - Raspberry Pi OS
-     - `Mender`_ (A/B partitions)
+     - Mender_ (A/B partitions)
      - ARMv6 proven. Similar A/B approach to RAUC. Has a managed cloud
        option or self-hosted. More complex than RAUC. Commercial backing.
    * - **D**
@@ -75,9 +75,9 @@ committing.
      - Simplest. ``apt update`` + ``systemctl restart``. No atomic updates,
        no rollback. Risk of broken state. Only acceptable as last resort.
 
-   .. _RAUC: https://github.com/rauc/rauc
-   .. _Pi bootloader backend: https://github.com/Rtone/raspberrypi-firmware-rauc-bootloader-backend
-   .. _Mender: https://github.com/mendersoftware/mender
+.. _RAUC: https://github.com/rauc/rauc
+.. _Pi bootloader backend: https://github.com/Rtone/raspberrypi-firmware-rauc-bootloader-backend
+.. _Mender: https://github.com/mendersoftware/mender
 
 **Recommendation**: Try **Option A (NixOS)** first — if ARMv6 boots and
 runs, it's the best fit. If validation fails, fall back to **Option B
