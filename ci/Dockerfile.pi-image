@@ -51,10 +51,10 @@ RUN mkdir -p /etc/rauc
 # RAUC system.conf — defines the A/B slot layout
 # In production, this references real partitions. In CI, we use loopback
 # devices to simulate the partition layout for bundle creation.
-COPY rauc/system.conf /etc/rauc/system.conf
+COPY ci/rauc/system.conf /etc/rauc/system.conf
 
 # RAUC mark-good service — marks the current slot as good after successful boot
-COPY rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
+COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 
 # ---------------------------------------------------------------------------
 # Platform services
@@ -67,10 +67,10 @@ COPY rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 RUN mkdir -p /usr/local/bin/kids-desktop-speaker
 
 # Stub service scripts (replaced by real Rust binaries during CI build)
-COPY deploy/api-server.sh /usr/local/bin/api-server
-COPY deploy/audio-player.sh /usr/local/bin/audio-player
-COPY deploy/ota-updater.sh /usr/local/bin/ota-updater
-COPY deploy/bluetooth-service.sh /usr/local/bin/bluetooth-service
+COPY ci/deploy/api-server.sh /usr/local/bin/api-server
+COPY ci/deploy/audio-player.sh /usr/local/bin/audio-player
+COPY ci/deploy/ota-updater.sh /usr/local/bin/ota-updater
+COPY ci/deploy/bluetooth-service.sh /usr/local/bin/bluetooth-service
 RUN chmod +x /usr/local/bin/api-server \
              /usr/local/bin/audio-player \
              /usr/local/bin/ota-updater \
@@ -80,7 +80,7 @@ RUN chmod +x /usr/local/bin/api-server \
 # systemd unit files
 # ---------------------------------------------------------------------------
 
-COPY systemd/ /etc/systemd/system/
+COPY ci/systemd/ /etc/systemd/system/
 
 # ---------------------------------------------------------------------------
 # Smoke test script

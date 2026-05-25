@@ -47,13 +47,13 @@ jobs:
 
       - name: Export image for downstream jobs
         run: |
-          docker save ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} | gzip > image.tar.gz
+          docker save ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} | gzip > ci/image.tar.gz
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: pi-image
-          path: image.tar.gz
+          path: ci/image.tar.gz
           retention-days: 1
 
   # -----------------------------------------------------------------------
@@ -129,5 +129,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rauc-bundle
-          path: output/image.raucb
+          path: ci/output/image.raucb
           retention-days: 30

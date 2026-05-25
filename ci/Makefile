@@ -23,8 +23,8 @@
 IMAGE_NAME    := kids-desktop-speaker
 IMAGE_TAG     := latest
 PLATFORM      := linux/arm/v7
-DOCKERFILE    := ../Dockerfile.pi-image
-OUTPUT_DIR    := ../output
+DOCKERFILE    := Dockerfile.pi-image
+OUTPUT_DIR    := output
 BUNDLE_NAME   := image.raucb
 
 # ---------------------------------------------------------------------------
