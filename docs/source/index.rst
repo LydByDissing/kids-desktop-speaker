@@ -9,6 +9,8 @@ Welcome to the documentation for the Kids Desktop Speaker project!
 
    requirements
    agents
+   architecture/system_context
+   development/ci-pipeline
 
 Indices and Tables
 ==================

@@ -35,9 +35,38 @@ External Systems
 Diagram
 -------
 
-.. image:: ../images/system_context.png
-   :alt: System Context Diagram
-   :align: center
+.. plantuml::
+   :caption: System Context Diagram
+   :name: fig-system-context
+
+   @startuml
+   !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+   SHOW_LEGEND()
+
+   title Kids Desktop Speaker — System Context
+
+   Person(user, "User", "Interacts with speaker via web UI or Bluetooth")
+   Person(maintainer, "Maintainer", "Publishes releases to GitHub")
+
+   System(kds, "Kids Desktop Speaker", "Streaming speaker platform for kids and young adults")
+
+   System_Ext(spotify, "Spotify", "Music streaming")
+   System_Ext(radio, "Internet Radio", "Radio station streaming")
+   System_Ext(podcasts, "Podcast Services", "Podcast streaming")
+   System_Ext(ha, "Home Assistant", "Smart home integration")
+   System_Ext(github, "GitHub", "Firmware updates and releases")
+   System_Ext(wifi, "Wi-Fi Network", "Connectivity")
+
+   Rel(user, kds, "Controls via web UI, Bluetooth")
+   Rel(maintainer, github, "Publishes releases")
+   Rel(kds, spotify, "Streams music")
+   Rel(kds, radio, "Streams radio")
+   Rel(kds, podcasts, "Streams podcasts")
+   Rel(kds, ha, "Integrates via API")
+   Rel(kds, github, "Checks for updates")
+   Rel(kds, wifi, "Connects via")
+
+   @enduml
 
 Description
 -----------
