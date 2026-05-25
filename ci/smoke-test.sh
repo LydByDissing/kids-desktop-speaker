@@ -1,8 +1,12 @@
 #!/bin/bash
 # Smoke test script — Kids Desktop Speaker CI
 # ===========================================
-# Verifies the built image has all required components installed and
-# operational. Runs inside the Docker container via QEMU user-mode emulation.
+# Verifies the built image has all required components installed.
+# Runs inside the Docker container via QEMU user-mode emulation.
+#
+# Note: We check for file presence and command availability, not service
+# runtime state. systemd cannot run as PID 1 under QEMU user-mode emulation.
+# Service start-up testing requires real hardware or QEMU system emulation.
 #
 # Exit codes:
 #   0 — All tests passed
@@ -43,11 +47,11 @@ require_file() {
     fi
 }
 
-require_service() {
-    if systemctl is-active --quiet "$1" 2>/dev/null; then
-        ok "service active: $1"
+require_executable() {
+    if [ -x "$1" ]; then
+        ok "executable: $1"
     else
-        fail "service not active: $1"
+        fail "not executable or missing: $1"
     fi
 }
 
@@ -70,15 +74,10 @@ echo ""
 echo "--- RAUC ---"
 require_cmd rauc
 require_file /etc/rauc/system.conf
-if rauc status &>/dev/null; then
-    ok "rauc status"
-else
-    # rauc status may fail without real partitions — that's expected in CI
-    ok "rauc status (no partitions — expected in CI)"
-fi
+ok "RAUC system.conf installed"
 
 echo ""
-echo "--- Audio ---"
+echo "--- Audio (ALSA) ---"
 require_cmd aplay
 require_cmd amixer
 ok "ALSA utilities installed"
@@ -89,17 +88,21 @@ require_cmd bluetoothctl
 ok "BlueZ installed"
 
 echo ""
-echo "--- Platform Services ---"
-require_file /usr/local/bin/api-server
-require_file /usr/local/bin/audio-player
-require_file /usr/local/bin/ota-updater
-require_file /usr/local/bin/bluetooth-service
-ok "all service binaries present"
+echo "--- Platform Service Binaries ---"
+require_executable /usr/local/bin/api-server
+require_executable /usr/local/bin/audio-player
+require_executable /usr/local/bin/ota-updater
+require_executable /usr/local/bin/bluetooth-service
+ok "all service binaries present and executable"
 
 echo ""
-echo "--- systemd Units ---"
+echo "--- systemd Unit Files ---"
+require_file /etc/systemd/system/api-server.service
+require_file /etc/systemd/system/audio-player.service
+require_file /etc/systemd/system/ota-updater.service
+require_file /etc/systemd/system/bluetooth-service.service
 require_file /etc/systemd/system/rauc-mark-good.service
-ok "RAUC mark-good service installed"
+ok "all systemd units installed"
 
 echo ""
 echo "========================================"
