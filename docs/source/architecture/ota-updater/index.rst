@@ -316,3 +316,9 @@ Interfaces
      - Schedule reboot, service status
 
 Component pages will be created during the component interview phase.
+
+.. toctree::
+   :maxdepth: 2
+
+   solution-design
+

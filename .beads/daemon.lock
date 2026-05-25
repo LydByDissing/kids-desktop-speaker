@@ -1,7 +1,7 @@
 {
-  "pid": 20086,
-  "parent_pid": 20061,
+  "pid": 15746,
+  "parent_pid": 15689,
   "database": "/home/tue/code/kids-desktop-speaker/.beads/beads.db",
   "version": "0.47.0",
-  "started_at": "2026-05-25T06:52:14.542205756Z"
+  "started_at": "2026-05-25T17:01:54.021291265Z"
 }

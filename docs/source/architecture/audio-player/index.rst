@@ -5,7 +5,12 @@ Core audio playback engine. Manages audio sources, handles source switching
 with fade transitions, and coordinates the audio pipeline from source to
 hardware output. Runs as a **separate Rust process** from the API Server.
 
-.. toctree::\n   :maxdepth: 2\n\n   solution-design\n
+
+.. toctree::
+   :maxdepth: 2
+
+   solution-design
+
 Technology Choice
 -----------------
 

@@ -246,16 +246,23 @@ Device Summary
    :widths: 30 20 50
 
    * - ALSA Device
+     - Purpose
+     - Notes
    * - ``hw:0,0`` / ``hat``
-     - IQaudIO Pi-Codec Zero hardware output (stereo)
+     - IQaudIO Pi-Codec Zero hardware output
+     - Stereo playback to speakers
    * - ``hw:Loopback,0`` / ``loopback_capture``
-     - Loopback capture — 6 channels, read by CamillaDSP
+     - Loopback capture
+     - 6 channels, read by CamillaDSP
    * - ``hw:Loopback,0,0`` / ``loopback_main``
-     - Loopback playback subdevice 0 — main audio (stereo)
+     - Loopback playback subdevice 0
+     - Main audio (Spotify/AirPlay/Radio)
    * - ``hw:Loopback,0,1`` / ``loopback_tts``
-     - Loopback playback subdevice 1 — TTS engine (stereo)
+     - Loopback playback subdevice 1
+     - TTS engine output
    * - ``hw:Loopback,0,2`` / ``loopback_bt``
-     - Loopback playback subdevice 2 — Bluetooth A2DP (stereo)
+     - Loopback playback subdevice 2
+     - Bluetooth A2DP (reserved for v2)
 
 Open Questions
 --------------

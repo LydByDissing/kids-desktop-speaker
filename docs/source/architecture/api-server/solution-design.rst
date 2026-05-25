@@ -182,7 +182,7 @@ Token-based auth with two mechanisms:
 
 **Web UI**: Token stored in ``localStorage`` after login. Sent as
 ``Authorization: Bearer <token>`` header on REST requests and as
-``?token=<token>` query parameter on WebSocket connections.
+``?token=<token>`` query parameter on WebSocket connections.
 
 **API clients** (Home Assistant, scripts): Token sent as
 ``Authorization: Bearer <token>`` header.

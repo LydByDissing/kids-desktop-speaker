@@ -234,7 +234,7 @@ Length-prefixed JSON (same as other services).
      - ``{"seconds_remaining": 300}`` (grace period warning)
    * - ``update_complete``
      - ``{"version": "v0.2.0", "previous_version": "v0.1.0"}``
-   - ``rollback_initiated``
+   * - ``rollback_initiated``
      - ``{"from_version": "v0.2.0", "to_version": "v0.1.0"}``
    * - ``error``
      - ``{"code": "...", "message": "..."}``

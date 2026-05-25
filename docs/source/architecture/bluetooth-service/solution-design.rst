@@ -101,28 +101,28 @@ AVRCP Command Mapping
      - API Server Action
      - Notes
    * - Play
-     | ``resume`` on current source
+     - ``resume`` on current source
      - Forwarded to Audio Player
    * - Pause
-     | ``pause`` on current source
+     - ``pause`` on current source
      - Forwarded to Audio Player
    * - Stop
-     | ``stop`` on current source
+     - ``stop`` on current source
      - Forwarded to Audio Player
    * - Next
-     | ``next`` on current source
+     - ``next`` on current source
      - Forwarded to Audio Player
    * - Previous
-     | ``prev`` on current source
+     - ``prev`` on current source
      - Forwarded to Audio Player
    * - Volume Up
-     | ``AdjustFaderVolume(0, +3dB)``
+     - ``AdjustFaderVolume(0, +3dB)``
      - Forwarded to CamillaDSP
    * - Volume Down
-     | ``AdjustFaderVolume(0, -3dB)``
+     - ``AdjustFaderVolume(0, -3dB)``
      - Forwarded to CamillaDSP
    * - Fast Forward / Rewind
-     | (not supported in v1)
+     - (not supported in v1)
      - Ignored
 
 Pairing Flow

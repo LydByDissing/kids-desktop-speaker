@@ -5,7 +5,12 @@ Text-to-speech engine for the Kids Desktop Speaker. Converts text messages
 into audio announcements that play over the current music with automatic
 ducking. Runs **fully offline** — no cloud services involved.
 
-.. toctree::\n   :maxdepth: 2\n\n   solution-design\n
+
+.. toctree::
+   :maxdepth: 2
+
+   solution-design
+
 Technology Choice
 -----------------
 
