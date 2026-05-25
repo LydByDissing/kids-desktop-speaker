@@ -108,12 +108,17 @@ For full workflow details: `bd prime`
 **MANDATORY WORKFLOW:**
 
 1. **File issues for remaining work** - Create bd issues for anything needing follow-up
-2. **Build and verify** - `cd docs && make html` (zero warnings)
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Commit everything** - Code, docs, and beads state:
+2. **Capture decisions in docs** - For every significant decision, change, or new feature:
+   - **ADRs**: Create or update entries in `docs/source/development/decisions.rst` (DEC-XXX)
+   - **Requirements**: Update `docs/source/requirements/requirements.rst` — add/modify requirements linked to decisions
+   - **Implementation notes**: Update relevant container pages in `docs/source/architecture/` and developer guides in `docs/source/development/`
+   - **Container diagrams**: Update C4 diagrams if architecture changed
+3. **Build and verify** - `cd docs && make html` (zero warnings — `-W --keep-going` is set)
+4. **Update issue status** - Close finished work via `bd close`, update in-progress items
+5. **Commit everything** - Code, docs, and beads state:
    ```bash
    git add -A
    bd sync
    git commit -m "descriptive message"
    ```
-5. **Hand off** - Provide context summary for next session
+6. **Hand off** - Provide context summary for next session
