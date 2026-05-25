@@ -1,0 +1,13 @@
+[Unit]
+Description=Kids Desktop Speaker — OTA Updater
+After=api-server.service
+Wants=api-server.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ota-updater
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

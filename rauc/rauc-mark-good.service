@@ -1,0 +1,17 @@
+# RAUC mark-good service — Kids Desktop Speaker
+# ==============================================
+# Marks the current slot as good after a successful boot.
+# This is called by the OTA Updater after verifying the system is healthy.
+
+[Unit]
+Description=Mark current RAUC slot as good
+After=multi-user.target
+ConditionPathExists=/run/rauc/successful
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rauc mark-good
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

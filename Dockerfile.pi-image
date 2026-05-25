@@ -1,0 +1,97 @@
+# Dockerfile.pi-image — Raspberry Pi OS Lite (Bookworm) for Kids Desktop Speaker
+# ==============================================================================
+# Targets ARMv6 (Pi Zero W) via linux/arm/v7 platform.
+# Uses plain Docker + QEMU user-mode emulation — no Dagger required.
+#
+# Build:   docker buildx build --platform linux/arm/v7 -f Dockerfile.pi-image -t kids-desktop-speaker:latest --load .
+# Test:    docker run --rm --platform linux/arm/v7 --privileged kids-desktop-speaker:latest /smoke-test.sh
+# Bundle:  docker run --rm --platform linux/arm/v7 -v ./output:/output kids-desktop-speaker:latest rauc bundle ...
+
+FROM --platform=linux/arm/v7 arm32v7/debian:bookworm-slim
+
+LABEL maintainer="Kids Desktop Speaker project"
+LABEL description="Raspberry Pi OS Lite with Kids Desktop Speaker platform services and RAUC OTA"
+
+# ---------------------------------------------------------------------------
+# Base system
+# ---------------------------------------------------------------------------
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core
+    systemd \
+    systemd-sysv \
+    dbus \
+    udev \
+    # Audio
+    alsa-utils \
+    libasound2 \
+    # Bluetooth
+    bluez \
+    # RAUC
+    rauc \
+    # Networking
+    iproute2 \
+    iputils-ping \
+    curl \
+    # Utilities
+    ca-certificates \
+    kmod \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# RAUC configuration
+# ---------------------------------------------------------------------------
+
+# Create RAUC system configuration directory
+RUN mkdir -p /etc/rauc
+
+# RAUC system.conf — defines the A/B slot layout
+# In production, this references real partitions. In CI, we use loopback
+# devices to simulate the partition layout for bundle creation.
+COPY rauc/system.conf /etc/rauc/system.conf
+
+# RAUC mark-good service — marks the current slot as good after successful boot
+COPY rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
+
+# ---------------------------------------------------------------------------
+# Platform services
+# ---------------------------------------------------------------------------
+
+# Placeholder: these will be populated by CI/CD when cross-compiled Rust
+# binaries are available. For now, we install stub scripts so smoke tests
+# can verify the service framework.
+
+RUN mkdir -p /usr/local/bin/kids-desktop-speaker
+
+# Stub service scripts (replaced by real Rust binaries during CI build)
+COPY deploy/api-server.sh /usr/local/bin/api-server
+COPY deploy/audio-player.sh /usr/local/bin/audio-player
+COPY deploy/ota-updater.sh /usr/local/bin/ota-updater
+COPY deploy/bluetooth-service.sh /usr/local/bin/bluetooth-service
+RUN chmod +x /usr/local/bin/api-server \
+             /usr/local/bin/audio-player \
+             /usr/local/bin/ota-updater \
+             /usr/local/bin/bluetooth-service
+
+# ---------------------------------------------------------------------------
+# systemd unit files
+# ---------------------------------------------------------------------------
+
+COPY systemd/ /etc/systemd/system/
+
+# ---------------------------------------------------------------------------
+# Smoke test script
+# ---------------------------------------------------------------------------
+
+COPY ci/smoke-test.sh /usr/local/bin/smoke-test.sh
+RUN chmod +x /usr/local/bin/smoke-test.sh
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
+# Use systemd as PID 1 for realistic service testing
+ENTRYPOINT ["/sbin/init"]

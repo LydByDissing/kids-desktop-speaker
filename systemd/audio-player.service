@@ -1,0 +1,13 @@
+[Unit]
+Description=Kids Desktop Speaker — Audio Player
+After=api-server.service
+Wants=api-server.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/audio-player
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

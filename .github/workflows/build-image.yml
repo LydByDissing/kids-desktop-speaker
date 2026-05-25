@@ -1,0 +1,133 @@
+# GitHub Actions — Build Pi Image & RAUC Bundle
+# ==============================================
+# Builds the Kids Desktop Speaker Pi OS image using Docker + QEMU user-mode
+# emulation, runs smoke tests, and produces a RAUC bundle.
+#
+# Triggered on: push to main, pull requests
+# RAUC bundle: produced only on push to main (not on PRs)
+
+name: Build Pi Image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  IMAGE_NAME: kids-desktop-speaker
+  IMAGE_TAG: latest
+  PLATFORM: linux/arm/v7
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Build the Docker image
+  # -----------------------------------------------------------------------
+  build:
+    name: Build Image
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        run: |
+          make build
+        working-directory: ci
+
+      - name: Export image for downstream jobs
+        run: |
+          docker save ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} | gzip > image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-image
+          path: image.tar.gz
+          retention-days: 1
+
+  # -----------------------------------------------------------------------
+  # Job 2: Smoke tests
+  # -----------------------------------------------------------------------
+  test:
+    name: Smoke Tests
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pi-image
+
+      - name: Load image
+        run: |
+          docker load < image.tar.gz
+
+      - name: Run smoke tests
+        run: |
+          make test
+        working-directory: ci
+
+  # -----------------------------------------------------------------------
+  # Job 3: RAUC bundle (main only)
+  # -----------------------------------------------------------------------
+  bundle:
+    name: Build RAUC Bundle
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pi-image
+
+      - name: Load image
+        run: |
+          docker load < image.tar.gz
+
+      - name: Build RAUC bundle
+        run: |
+          make bundle
+        working-directory: ci
+
+      - name: Upload RAUC bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rauc-bundle
+          path: output/image.raucb
+          retention-days: 30

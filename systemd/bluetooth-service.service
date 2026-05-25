@@ -1,0 +1,13 @@
+[Unit]
+Description=Kids Desktop Speaker — Bluetooth Service
+After=bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bluetooth-service
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
