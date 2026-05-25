@@ -5,6 +5,7 @@ Bluetooth interface for the Kids Desktop Speaker. Provides **AVRCP remote
 control** (play/pause, volume from a paired keypad or push knob) and
 optionally **A2DP audio input** (receive audio from a phone over Bluetooth).
 
+.. toctree::\n   :maxdepth: 2\n\n   solution-design\n
 Technology Choice
 -----------------
 

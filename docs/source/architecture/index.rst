@@ -249,3 +249,9 @@ Zero W:
    tts-engine/index
    ota-updater/index
    hat-audio-driver/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Cross-Cutting
+
+   data-model/index

@@ -5,6 +5,7 @@ Browser-based control panel for the Kids Desktop Speaker software platform.
 Built as a Rust WebAssembly application using Leptos, served by the Axum-based
 API Server. Provides two main sections: **Player** and **Config**.
 
+.. toctree::\n   :maxdepth: 2\n\n   solution-design\n
 Technology Choice
 -----------------
 

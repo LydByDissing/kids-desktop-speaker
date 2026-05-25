@@ -286,3 +286,170 @@ written to the inactive slot, and the bootloader switches to it on reboot.
   after successful boot
 - The initial SD card image must be created with the A/B partition layout
   (handled by pi-gen)
+
+Audio
+-----
+
+.. _dec-004:
+
+DEC-004 — AirPlay Receiver
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_004
+   :status: resolved
+   :date: 2026-05-25
+   :tags: audio, airplay
+
+**Decision**: Use **shairport-sync** (C) as a subprocess for v1.
+
+**Context**
+
+The Audio Player needs an AirPlay receiver. Two Rust libraries exist
+(rairplay, shairplay) but both are early-stage. The de facto standard is
+shairport-sync (C).
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 25 30 30
+
+   * - Option
+     - Approach
+     - Pros
+     - Cons
+   * - A
+     - rairplay (Rust)
+     - All-Rust stack, AP2 support
+     - Early-stage (22 downloads), unproven
+   * - B
+     - shairplay (Rust)
+     - Pure Rust
+     - Very new (0 downloads), WIP fork
+   * - C
+     - shairport-sync (C)
+     - **CHOSEN.** Battle-tested, 8 650 stars, actively maintained
+     - C dependency, AP1 only
+
+**Rationale**
+
+shairport-sync is the only mature option. It outputs to ALSA directly,
+advertises via mDNS/Bonjour automatically, and is proven on Raspberry Pi.
+The Audio Player manages it as a child process.
+
+**Consequences**
+
+- shairport-sync is installed as a system package (not a Rust crate)
+- The Audio Player starts/stops it as a child process
+- shairport-sync.conf configures ALSA output to the loopback device
+- Can be replaced with a Rust library later without architecture changes
+
+.. _dec-005:
+
+DEC-005 — Internet Radio & Podcast Backend
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_005
+   :status: resolved
+   :date: 2026-05-25
+   :tags: audio, radio, podcast
+
+**Decision**: Use **MPD** (Music Player Daemon) as a backend, controlled
+from the Audio Player via the MPD protocol.
+
+**Context**
+
+The Audio Player needs to play internet radio streams and podcast episodes.
+Volumio, moOde, and RuneAudio all use MPD successfully for this purpose.
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 25 30 30
+
+   * - Option
+     - Approach
+     - Pros
+     - Cons
+   * - A
+     - MPD (C daemon)
+     - **CHOSEN.** Proven, handles all stream formats, playlist management
+     - C dependency, separate daemon
+   * - B
+     - Custom Rust (rodio + stream-download)
+     - Full Rust control
+     - More engineering effort, format support risk on Pi Zero W
+   * - C
+     - GStreamer (Rust bindings)
+     - Handles all formats, proven pipeline
+     - Heavy dependency, complex cross-compilation
+
+**Rationale**
+
+MPD is proven, handles HTTP streams natively, and has a mature Rust client
+crate (``mpd_client`` v1.4.1). The Audio Player controls it via the MPD
+protocol on localhost:6600.
+
+**Consequences**
+
+- MPD runs as a separate systemd service
+- MPD's data (database, playlists) lives on the data partition
+- The Audio Player uses ``mpd_client`` to control playback and playlists
+- Radio stations and podcast feeds are managed as MPD playlist entries
+
+Bluetooth
+---------
+
+.. _dec-006:
+
+DEC-006 — A2DP Audio Input
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_006
+   :status: resolved
+   :date: 2026-05-25
+   :tags: bluetooth, a2dp
+
+**Decision**: **AVRCP only for v1.** A2DP audio input is deferred.
+
+**Context**
+
+The Bluetooth Service can support both AVRCP (remote control) and A2DP
+(audio input from a phone). The Pi Zero W's BCM43430 chip supports both
+profiles simultaneously.
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 25 35 25
+
+   * - Option
+     - Approach
+     - Pros
+     - Cons
+   * - A
+     - AVRCP only
+     - **CHOSEN.** Simpler, lower CPU/memory overhead
+     - No BT audio from phones
+   * - B
+     - AVRCP + A2DP
+     - Full BT speaker capability
+     - PulseAudio/PipeWire dependency, CPU overhead, source switching complexity
+
+**Rationale**
+
+AirPlay and Spotify Connect cover the primary streaming use cases. A2DP
+adds significant complexity and CPU load on the already-constrained Pi Zero
+W. The loopback channel (ch4-5) is reserved for future A2DP support.
+
+**Consequences**
+
+- No A2DP sink profile is registered in v1
+- The ``loopback_bt`` ALSA channel is unused in v1
+- A2DP can be added later as a feature toggle without architecture changes
+- No PulseAudio/PipeWire dependency in v1

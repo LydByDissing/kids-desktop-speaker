@@ -5,6 +5,7 @@ Software DSP engine for the Kids Desktop Speaker. Handles EQ, crossover, bass
 enhancement, and **master volume control**. All audio passes through CamillaDSP
 before reaching the hardware. Runs as a **systemd service**.
 
+.. toctree::\n   :maxdepth: 2\n\n   solution-design\n
 Technology Choice
 -----------------
 

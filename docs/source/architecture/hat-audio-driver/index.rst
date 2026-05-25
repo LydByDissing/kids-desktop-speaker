@@ -18,6 +18,7 @@ Raspberry Pi Zero that provides:
 
 .. _IQaudIO Pi-Codec Zero: https://www.iqaudio.com/accessories/75-pi-codec-zero.html
 
+.. toctree::\n   :maxdepth: 2\n\n   solution-design\n
 Technology Choice
 -----------------
 

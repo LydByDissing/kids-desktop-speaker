@@ -5,6 +5,11 @@ Local-network REST API and WebSocket server. Serves as the central control hub
 for the entire software platform. Runs as a single Axum binary that also hosts
 the Leptos WASM frontend.
 
+.. toctree::
+   :maxdepth: 2
+
+   solution-design
+
 Technology Choice
 -----------------
 
