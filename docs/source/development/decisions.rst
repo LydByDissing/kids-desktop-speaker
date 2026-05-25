@@ -117,8 +117,8 @@ DEC-002 — CI Pipeline Architecture
 
 **Decision**: Use **Docker + QEMU user-mode emulation** (Solution 1) for
 the CI pipeline, and **pi-gen** (Solution 3) for producing flashable SD card
-images. Use **plain Docker + shell scripts** (not Dagger) to drive the pipeline
-in v1 — see :doc:`ci-tooling` for the evaluation.
+images. Drive the pipeline with **plain Docker + shell scripts** (not Dagger)
+for v1.
 
 **Context**
 
@@ -127,7 +127,7 @@ hardware (developer machines and GitHub Actions). No ARM hardware is
 available in CI. The pipeline needs to build images, run smoke tests, and
 produce RAUC bundles.
 
-**Options Considered**
+**Pipeline Architecture Options**
 
 .. list-table::
    :header-rows: 1
@@ -150,6 +150,29 @@ produce RAUC bundles.
      - Produces flashable SD card images, well-documented, staged builds
      - Long build times (30-60 min), steep learning curve, opinionated
 
+**Pipeline Driver: Dagger vs Plain Docker**
+
+The pipeline driver orchestrates the build → test → bundle steps. Two
+options were evaluated (see :doc:`ci-tooling` for full analysis):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Tool
+     - Pros
+     - Cons
+   * - Dagger (Python SDK)
+     - Programmatic pipelines, content-addressable caching, secret
+       management, step-by-step observability
+     - New dependency (Dagger engine + Python SDK), overkill for 3 linear
+       steps, harder to debug locally, version churn history
+   * - Plain Docker + shell
+     - Zero new dependencies, transparent (every step is a visible docker
+       command), works out of the box on GitHub Actions and developer laptops
+     - No built-in caching beyond Docker layers, no structured secret
+       management, shell scripts can grow messy
+
 **Rationale**
 
 Solution 1 (Docker + QEMU user-mode) is the primary CI mechanism because:
@@ -162,6 +185,18 @@ Solution 1 (Docker + QEMU user-mode) is the primary CI mechanism because:
 - GitHub Actions compatible via ``docker/setup-qemu-action``
 - Smoke tests (service status, RAUC status) run inside the container
 
+Plain Docker + shell scripts is chosen over Dagger for v1 because:
+
+- The pipeline is only 3 linear steps (build, test, bundle) — Dagger's DAG
+  scheduling and caching shine for complex multi-stage pipelines, not simple
+  linear ones
+- Every CI step is a visible ``docker`` command — when a build fails, reproduce
+  it by pasting the command. No Dagger engine needed locally.
+- Zero new dependencies — Docker is already required. No Dagger CLI, no Python
+  SDK, no engine lifecycle to manage.
+- Dagger can be layered on later without changing the Dockerfile or fundamental
+  approach if the pipeline grows complex enough to justify it.
+
 Solution 3 (pi-gen) is used for producing the final flashable SD card image
 for initial device setup. This is a one-time-per-release task, not a
 per-PR requirement.
@@ -173,11 +208,15 @@ RAUC A/B partition layout and bootloader integration on release tags.
 
 - A ``Dockerfile.pi-image`` will define the Pi OS image with all platform
   services
-- A GitHub Actions workflow will build the image, run smoke tests, and
-  produce a RAUC bundle (``.raucb``) as a build artifact
+- A ``ci/Makefile`` with ``build``, ``test``, ``bundle`` targets drives the
+  pipeline using plain ``docker buildx build`` and ``docker run`` commands
+- A GitHub Actions workflow calls the Makefile targets; RAUC bundle is only
+  produced on pushes to ``main``, not on every PR
 - pi-gen integration will be added as a separate workflow for release tags
 - Hardware validation (audio output, Bluetooth, Wi-Fi) still requires real
   Pi Zero W hardware
+- Dagger can be introduced later if the pipeline grows beyond ~10
+  interdependent steps or caching becomes a bottleneck
 
 RAUC Partition Layout
 ---------------------
