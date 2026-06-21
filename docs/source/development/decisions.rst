@@ -1542,3 +1542,313 @@ W. The loopback channel (ch4-5) is reserved for future A2DP support.
 - The ``loopback_bt`` ALSA channel is unused in v1
 - A2DP can be added later as a feature toggle without architecture changes
 - No PulseAudio/PipeWire dependency in v1
+
+Audio Playback
+--------------
+
+.. _dec-016:
+
+DEC-016 — Audio Source Arbitration & librespot Autostart
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_016
+   :status: resolved
+   :date: 2026-06-21
+   :tags: audio, spotify, airplay, arbitration
+
+**Decision**: **Last-started source wins.** When a new audio source
+becomes active, the Audio Player pauses all other sources. librespot
+(Spotify Connect) starts automatically when the network is up and
+advertises via Zeroconf — no stored Spotify credentials are required on
+the device.
+
+**Context**
+
+Three audio sources can become active simultaneously: AirPlay
+(shairport-sync), Spotify Connect (librespot), and Internet Radio /
+Podcasts (MPD). A policy is needed for what happens when two are active
+at the same time. Additionally, librespot must be discoverable on the
+network as soon as Wi-Fi is available.
+
+**Source Arbitration Policy**
+
+Last-started wins. The Audio Player monitors all source subprocess
+states. When a new source signals playback start, the Audio Player sends
+pause/stop to all other active sources before unmuting the new one.
+
+.. code-block:: text
+
+   User plays Spotify Connect → librespot signals play
+     Audio Player pauses shairport-sync (if active)
+     Audio Player pauses MPD (if active)
+     Audio Player unmutes librespot output channel
+
+   User casts AirPlay → shairport-sync signals play
+     Audio Player pauses librespot (if active)
+     Audio Player pauses MPD (if active)
+     Audio Player unmutes shairport-sync output channel
+
+This is the simplest policy with the most intuitive UX: whatever the
+user most recently chose to play is what plays.
+
+**librespot Autostart & Discovery**
+
+librespot runs in **Zeroconf discovery mode** (``--zeroconf-port``). No
+Spotify credentials are stored on the device. Authentication is handled
+entirely by the Spotify client app — the user opens Spotify on their
+phone, sees "KidsSpeaker" as a Connect target, and taps it. The
+Spotify app negotiates the session directly.
+
+librespot is started by the Audio Player as soon as a working network
+interface is detected (not just at boot), so the device is immediately
+visible in Spotify after Wi-Fi onboarding completes.
+
+The device name displayed in Spotify ("KidsSpeaker" by default) is
+configurable via the web UI and stored on the data partition.
+
+**Consequences**
+
+- The Audio Player subscribes to network-up events (via
+  ``systemd-networkd`` D-Bus signals or polling ``/sys/class/net``)
+  and starts librespot only after a routable interface is available
+- librespot restart-on-crash is handled by the Audio Player subprocess
+  manager (same as shairport-sync)
+- Each audio source subprocess exposes a play/pause signal that the
+  Audio Player listens to (via stdout, D-Bus, or a Unix socket — TBD
+  per service)
+- The ALSA loopback mixer has one channel per source; the Audio Player
+  controls per-channel mute to implement arbitration without stopping
+  source processes unnecessarily
+- Source state is exposed on ``/api/audio/source`` (current active
+  source + status of each) for the web UI
+
+.. _dec-020:
+
+DEC-020 — Volume Limits
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_020
+   :status: resolved
+   :date: 2026-06-21
+   :tags: audio, volume, safety, parental-controls
+
+**Decision**: Enforce a **configurable maximum volume cap** applied at
+the CamillaDSP / ALSA mixer level. Default maximum is **75% of hardware
+output range**. Parents can raise or lower the cap via the web UI.
+
+**Context**
+
+This is a kids speaker. Prolonged exposure to audio above 85 dB can
+cause hearing damage in children. A software volume cap provides a
+reasonable safeguard, acknowledging that the physical output level also
+depends on the amplifier gain and speaker sensitivity.
+
+**Implementation**
+
+The volume cap is enforced in two places:
+
+1. **CamillaDSP pipeline**: a gain stage limits the output level to the
+   configured maximum. CamillaDSP applies this before the ALSA output
+   stage so it catches all sources routed through the loopback mixer.
+2. **ALSA master volume**: the ALSA master is additionally capped at the
+   same percentage as a belt-and-suspenders measure.
+
+The cap is stored in ``/var/lib/kids-desktop-speaker/config.json`` on
+the data partition and applied at Audio Player startup and on any
+config change.
+
+**Consequences**
+
+- Default cap: 75% — audible and clear without being dangerously loud
+- Cap is adjustable 0–100% via ``/api/audio/volume-limit`` (web UI)
+- AVRCP volume-up commands from the BT controller respect the cap and
+  cannot exceed it
+- The web UI displays the current cap and current volume with a clear
+  visual indicator when the cap is active
+
+.. _dec-021:
+
+DEC-021 — Alarm & Sleep Timer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_021
+   :status: resolved
+   :date: 2026-06-21
+   :tags: audio, alarm, timer, ux
+
+**Decision**: Include **alarm** (play audio at a scheduled time) and
+**sleep timer** (stop playback after N minutes) as v1 features, managed
+by the API Server and triggered via the web UI.
+
+**Context**
+
+Alarms and sleep timers are table-stakes features for a bedside children's
+speaker. A sleep timer helps parents ensure the device stops playing at
+bedtime. An alarm wakes children in the morning with a sound or a radio
+station rather than a harsh buzzer.
+
+**Design**
+
+*Sleep timer*: The user sets a countdown (e.g. 30 min) via the web UI.
+The API Server schedules a stop command to the Audio Player at expiry.
+The BT controller can also trigger a pre-configured timer duration via a
+button combination.
+
+*Alarm*: The user configures one or more alarms (time + days of week +
+audio source: clip, MPD station, or TTS phrase) via the web UI. The API
+Server manages a scheduler (in-process, no external daemon needed) that
+fires the alarm by commanding the Audio Player to play the configured
+source. Alarms require NTP (DEC-019) to ensure correct device time.
+
+**Consequences**
+
+- Alarms and timers are stored on the data partition and survive OTA
+  updates and reboots
+- The API Server includes a lightweight in-process scheduler (e.g.
+  ``tokio`` task with a sleep loop or a cron-style library)
+- NTP (DEC-019) is a hard dependency for alarms — the web UI warns if
+  time is not synced
+- The web UI exposes alarm management: create / edit / delete alarms,
+  set sleep timer, cancel active timer
+- ``/api/timer`` and ``/api/alarms`` endpoints on the API Server
+
+System
+------
+
+.. _dec-017:
+
+DEC-017 — zRAM Memory Expansion
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_017
+   :status: resolved
+   :date: 2026-06-21
+   :tags: system, memory, performance, zram
+
+**Decision**: Enable **zRAM** with a compressed swap device sized at
+**50% of physical RAM (256 MB)** to extend effective memory headroom
+on the Pi Zero W.
+
+**Context**
+
+The Pi Zero W has 512 MB physical RAM. Running shairport-sync,
+librespot, MPD, CamillaDSP, four Rust services, systemd, and avahi
+simultaneously leaves limited headroom, particularly for Piper TTS
+(DEC-015). zRAM creates a compressed in-memory swap device — no SD
+card I/O, no wear, and a typical 2:1–3:1 compression ratio effectively
+adds 128–192 MB of usable memory at the cost of CPU for compression.
+Librespot is confirmed working on Pi Zero W (tested); zRAM further
+reduces pressure during peak usage.
+
+**Configuration**
+
+.. code-block:: bash
+
+   # /etc/systemd/system/zram.service (or via zram-tools package)
+   zramctl /dev/zram0 --algorithm lz4 --size 256M
+   mkswap /dev/zram0
+   swapon /dev/zram0 --priority 100
+
+``lz4`` is chosen over ``zstd`` for lower CPU overhead on the
+single-core ARM1176. Priority 100 ensures zRAM is used before any
+SD card swap (which is not configured).
+
+**Consequences**
+
+- zRAM is configured as a systemd service that runs at boot, before
+  any platform services start
+- No SD card swap is configured — zRAM is the only swap device
+- The Dockerfile and firmware image include ``zram-tools`` or an
+  equivalent systemd unit
+- At peak load, up to ~50% of physical RAM can be swapped compressed
+  into zRAM, effectively extending the memory envelope for Piper TTS
+  evaluation (DEC-015)
+- CPU overhead is low with lz4 on typical audio service memory patterns
+  (mostly heap allocations, compresses well)
+
+.. _dec-018:
+
+DEC-018 — mDNS via avahi-daemon
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_018
+   :status: resolved
+   :date: 2026-06-21
+   :tags: system, networking, mdns, discovery
+
+**Decision**: Run **avahi-daemon** as a system service to handle mDNS
+(``_tcp.local``) advertisement for the web UI and device hostname.
+shairport-sync and librespot handle their own mDNS/Zeroconf internally.
+
+**Context**
+
+Several platform features require mDNS for discoverability:
+
+- **Web UI**: the device must be reachable at ``kidsspeaker-XXXX.local``
+  without knowing its IP address
+- **AirPlay**: shairport-sync advertises ``_raop._tcp`` itself via its
+  own mDNS stack — avahi is not required but can be used
+- **Spotify Connect**: librespot handles Zeroconf internally
+- **Device hostname**: avahi resolves ``kidsspeaker-XXXX.local`` on the
+  LAN so users can type it in a browser
+
+**Consequences**
+
+- ``avahi-daemon`` is added to the Dockerfile and enabled as a systemd
+  service
+- The device hostname is set to ``kidsspeaker-XXXX`` (last 4 hex digits
+  of Wi-Fi MAC) at first boot by the onboarding module
+- ``/etc/avahi/services/http.service`` advertises the web UI on port 80
+- avahi's D-Bus interface is available for other services if needed
+- ``avahi-daemon`` RAM footprint is ~2–3 MB — negligible
+
+.. _dec-019:
+
+DEC-019 — NTP Time Synchronisation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_019
+   :status: resolved
+   :date: 2026-06-21
+   :tags: system, networking, ntp, time
+
+**Decision**: Use **systemd-timesyncd** for NTP time synchronisation.
+No additional NTP daemon is needed — timesyncd ships with systemd and is
+already present in the firmware image.
+
+**Context**
+
+Correct system time is required for: alarms (DEC-021), OTA update
+scheduling, log timestamps, and TLS certificate validation (used by
+librespot for Spotify's HTTPS API). The Pi Zero W has no hardware RTC,
+so time must be acquired from the network on every boot.
+
+**Configuration**
+
+.. code-block:: ini
+
+   # /etc/systemd/timesyncd.conf
+   [Time]
+   NTP=pool.ntp.org
+   FallbackNTP=time.cloudflare.com
+
+systemd-timesyncd saves the last-known time to
+``/var/lib/systemd/timesync/clock`` (on the data partition) and applies
+it immediately on next boot as a monotonic best-guess before NTP sync
+completes. This prevents large time jumps during the NTP sync window.
+
+**Consequences**
+
+- No additional packages needed — timesyncd is part of systemd
+- The data partition mount must be available before timesyncd starts
+  (``RequiresMountsFor=/var/lib/systemd/timesync`` in the unit)
+- The API Server exposes ``/api/system/time`` showing current time and
+  NTP sync status; the web UI displays a warning if time is not synced
+- Alarm scheduling (DEC-021) blocks on NTP sync for the first alarm
+  after boot; subsequent alarms use the saved clock as fallback
