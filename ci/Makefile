@@ -66,4 +66,5 @@ bundle:
 clean:
 	@echo "==> Cleaning build artifacts..."
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) 2>/dev/null || true
+	rm -rf $(OUTPUT_DIR)
 	@echo "==> Clean complete"

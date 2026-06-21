@@ -50,6 +50,7 @@ MANIFEST
 dd if=/dev/zero of="$STAGING/rootfs.img" bs=1024 count=1 2>/dev/null
 
 echo "==> Running rauc bundle..."
+rm -f "$OUTPUT"
 rauc bundle \
     --cert="$CERT_DIR/signing.cert.pem" \
     --key="$CERT_DIR/signing.key.pem" \
