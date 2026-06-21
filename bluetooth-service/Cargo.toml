@@ -6,3 +6,10 @@ edition = "2021"
 [[bin]]
 name = "bluetooth-service"
 path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
