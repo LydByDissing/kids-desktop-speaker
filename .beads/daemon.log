@@ -231,3 +231,27 @@ time=2026-05-25T19:18:02.276+02:00 level=INFO msg="Git ref change detected: %s" 
 time=2026-05-25T19:18:03.277+02:00 level=INFO msg="Import triggered by file change"
 time=2026-05-25T19:18:03.280+02:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
 time=2026-05-25T19:18:03.282+02:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-05-25T19:33:54.256+02:00 level=INFO msg="JSONL file created: %s" !BADKEY=/home/tue/code/kids-desktop-speaker/.beads/issues.jsonl
+time=2026-05-25T19:33:54.256+02:00 level=INFO msg="File change detected: %s" !BADKEY=/home/tue/code/kids-desktop-speaker/.beads/issues.jsonl
+time=2026-05-25T19:33:54.267+02:00 level=INFO msg="Git ref change detected: %s" !BADKEY=/home/tue/code/kids-desktop-speaker/.git/refs/heads/main.lock
+time=2026-05-25T19:33:55.268+02:00 level=INFO msg="Import triggered by file change"
+time=2026-05-25T19:33:55.269+02:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-05-25T19:33:55.271+02:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-06-08T20:13:46.923+02:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-06-08T20:13:46.928+02:00 level=INFO msg="using database" path=/home/tue/code/kids-desktop-speaker/.beads/beads.db
+time=2026-06-08T20:13:46.947+02:00 level=INFO msg="database opened" path=/home/tue/code/kids-desktop-speaker/.beads/beads.db freshness_checking=true
+time=2026-06-08T20:13:46.950+02:00 level=INFO msg="upgrading .beads/.gitignore"
+time=2026-06-08T20:13:46.954+02:00 level=WARN msg="failed to upgrade .gitignore" error="open .beads/.gitignore: no such file or directory"
+time=2026-06-08T20:13:46.959+02:00 level=INFO msg="Repository fingerprint validated: %s" !BADKEY=1bed37a1
+time=2026-06-08T20:13:46.962+02:00 level=INFO msg="starting RPC server" socket=/home/tue/code/kids-desktop-speaker/.beads/bd.sock
+time=2026-06-08T20:13:46.968+02:00 level=INFO msg="RPC server ready (socket listening)"
+time=2026-06-08T20:13:46.972+02:00 level=INFO msg="registered in global registry"
+time=2026-06-08T20:13:46.972+02:00 level=INFO msg="Starting %s..." !BADKEY="sync cycle"
+time=2026-06-08T20:13:46.989+02:00 level=INFO msg="Exported to JSONL"
+time=2026-06-08T20:13:49.758+02:00 level=INFO msg="Pulled from remote"
+time=2026-06-08T20:13:49.838+02:00 level=INFO msg="Imported from JSONL"
+time=2026-06-08T20:13:49.852+02:00 level=INFO msg="Sync cycle complete"
+time=2026-06-08T20:13:49.852+02:00 level=INFO msg="monitoring parent process" pid=0
+time=2026-06-08T20:13:49.852+02:00 level=INFO msg="using event-driven mode"
+time=2026-06-08T20:13:49.864+02:00 level=INFO msg="Auto-pull disabled: use 'git pull' manually to sync remote changes"
+time=2026-06-08T20:16:52.809+02:00 level=INFO msg="Received signal %v, shutting down..." !BADKEY=terminated

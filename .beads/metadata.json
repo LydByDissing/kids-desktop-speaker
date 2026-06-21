@@ -1,4 +1,7 @@
 {
-  "database": "beads.db",
-  "jsonl_export": "issues.jsonl"
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "kids_desktop_speaker",
+  "project_id": "214b4da8-d78e-40e9-9b21-4f5921b2a588"
 }
