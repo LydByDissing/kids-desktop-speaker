@@ -37,6 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     iputils-ping \
     curl \
+    avahi-daemon \
+    avahi-utils \
+    libnss-mdns \
+    hostapd \
+    dnsmasq \
+    # System
+    zram-tools \
     # Utilities
     ca-certificates \
     kmod \
@@ -78,10 +85,27 @@ RUN chmod +x /usr/local/bin/api-server \
              /usr/local/bin/bluetooth-service
 
 # ---------------------------------------------------------------------------
-# systemd unit files
+# systemd unit files and services
 # ---------------------------------------------------------------------------
 
 COPY ci/systemd/ /etc/systemd/system/
+
+# ---------------------------------------------------------------------------
+# System configuration
+# ---------------------------------------------------------------------------
+
+# Create config directory for system configurations
+RUN mkdir -p /etc/systemd
+
+# Copy hostname setup script
+COPY ci/scripts/kds-set-hostname.sh /usr/local/bin/kds-set-hostname.sh
+RUN chmod +x /usr/local/bin/kds-set-hostname.sh
+
+# Copy NTP configuration
+COPY ci/config/timesyncd.conf /etc/systemd/timesyncd.conf
+
+# Enable system services
+RUN systemctl enable zram.service avahi-daemon.service kds-hostname.service
 
 # ---------------------------------------------------------------------------
 # Smoke test script

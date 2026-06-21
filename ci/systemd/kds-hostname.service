@@ -1,0 +1,12 @@
+[Unit]
+Description=KDS hostname setup
+After=network.target
+Before=avahi-daemon.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kds-set-hostname.sh
+
+[Install]
+WantedBy=multi-user.target

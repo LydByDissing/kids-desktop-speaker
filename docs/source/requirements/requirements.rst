@@ -41,6 +41,14 @@ Hardware
 
    The system shall support Bluetooth connectivity for control interfaces.
 
+.. req:: HW_REQ_004
+   :id: HW_REQ_004
+   :status: open
+   :tags: hardware
+
+   An external Bluetooth AVRCP controller shall be the primary physical control
+   surface; the device has no onboard buttons (ref DEC-014).
+
 Software — Audio Streaming
 --------------------------
 
@@ -106,29 +114,35 @@ Software — User Interface
 
 .. req:: UI_REQ_003
    :id: UI_REQ_003
-   :status: open
+   :status: deferred
    :tags: software, ui
 
    The system shall provide native mobile apps for phones and iPads.
+
+   Note: native mobile apps — explicitly ruled out, DEC-012 builds no app.
 
 Software — Features
 -------------------
 
 .. req:: FEAT_REQ_001
    :id: FEAT_REQ_001
-   :status: open
+   :status: deferred
    :tags: software, feature
 
    The system shall support sending custom text messages that are read aloud
    using a text-to-speech engine.
 
+   Note: deferred per DEC-015.
+
 .. req:: FEAT_REQ_002
    :id: FEAT_REQ_002
-   :status: open
+   :status: deferred
    :tags: software, feature
 
    The system shall support multi-room audio — synchronizing playback across
    multiple speakers on the same network.
+
+   Note: too complex for Pi Zero W v1, no ADR.
 
 .. req:: FEAT_REQ_003
    :id: FEAT_REQ_003
@@ -140,11 +154,13 @@ Software — Features
 
 .. req:: FEAT_REQ_004
    :id: FEAT_REQ_004
-   :status: open
+   :status: deferred
    :tags: software, feature
 
    The system shall support integration with voice assistants (e.g., Alexa,
    Google Assistant) for voice control.
+
+   Note: out of scope v1, no ADR.
 
 .. req:: FEAT_REQ_005
    :id: FEAT_REQ_005
@@ -161,6 +177,30 @@ Software — Features
 
    The system shall provide parental controls including volume limiting, content
    filtering, and usage time limits.
+
+.. req:: FEAT_REQ_007
+   :id: FEAT_REQ_007
+   :status: open
+   :tags: software, feature
+
+   The system shall enforce a configurable maximum volume limit, defaulting to
+   75% of hardware output range (ref DEC-020).
+
+.. req:: FEAT_REQ_008
+   :id: FEAT_REQ_008
+   :status: open
+   :tags: software, feature
+
+   The system shall support scheduled alarms that play audio at a configured
+   time and day of week (ref DEC-021).
+
+.. req:: FEAT_REQ_009
+   :id: FEAT_REQ_009
+   :status: open
+   :tags: software, feature
+
+   The system shall support a sleep timer that stops playback after a configured
+   duration (ref DEC-021).
 
 Software — Reliability & Performance
 -------------------------------------
@@ -254,6 +294,22 @@ Software — Networking
 
    The system shall provide basic functionality (e.g., Bluetooth playback) when
    not connected to the internet.
+
+.. req:: NET_ONB_001
+   :id: NET_ONB_001
+   :status: open
+   :tags: software, networking, onboarding
+
+   The system shall provide a Wi-Fi onboarding flow via AP mode and captive
+   portal for first-time setup (ref DEC-012).
+
+.. req:: NET_ONB_002
+   :id: NET_ONB_002
+   :status: open
+   :tags: software, networking, onboarding
+
+   The system shall automatically re-enter AP mode onboarding after 5 consecutive
+   Wi-Fi connection failures (ref DEC-012).
 
 Software — Security
 -------------------
@@ -465,10 +521,12 @@ User Stories
 Future Enhancements
 -------------------
 
-- Sleep timer functionality
 - Sleep sounds / white noise modes
 - Bedtime scheduling (auto-off at bedtime)
 - Visual feedback via LED indicators
+
+Note: Scheduled alarms (FEAT_REQ_008) and sleep timer (FEAT_REQ_009) are now v1
+requirements (ref DEC-021).
 
 System-Level Requirements
 -------------------------
@@ -516,6 +574,30 @@ These requirements describe system-wide behaviors that span multiple containers.
    :tags: system, discovery
 
    The system shall support auto-discovery where possible (mDNS, SSDP, etc.).
+
+.. req:: mDNS Service Advertisement
+   :id: SYS_REQ_007
+   :status: open
+   :tags: system, networking
+
+   The system shall advertise its presence on the local network via mDNS using
+   avahi-daemon, resolvable at kidsspeaker-XXXX.local (ref DEC-018).
+
+.. req:: NTP Time Synchronization
+   :id: SYS_REQ_008
+   :status: open
+   :tags: system, networking
+
+   The system shall synchronise system time via NTP using systemd-timesyncd
+   (ref DEC-019).
+
+.. req:: zRAM Swap Configuration
+   :id: SYS_REQ_009
+   :status: open
+   :tags: system, performance
+
+   The system shall use zRAM (256 MB, lz4) as the sole swap device to extend
+   effective memory on the Pi Zero W (ref DEC-017).
 
 Project Progress
 ----------------
