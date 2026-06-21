@@ -75,3 +75,50 @@ _Add a brief overview of your project architecture_
 ## Conventions & Patterns
 
 _Add your project-specific conventions here_
+
+---
+
+## Project Ground Rules
+
+These rules are **mandatory** for all agents and contributors. They override general defaults.
+
+### Skills to Use
+
+| Task | Skill |
+|------|-------|
+| Documentation, architecture, C4 diagrams, requirements | `/docs-skill` |
+| All other implementation and research work | `/llm-dsl` |
+
+Never use ad-hoc markdown files or TodoWrite for task tracking or documentation. Always invoke the correct skill.
+
+### Pre-Code Gate (hard stop)
+
+No code may be written for a component unless **all three** of these exist first:
+
+1. **Requirements** — documented via `/docs-skill` (as a spec, ADR, or requirements section in the Sphinx docs)
+2. **C4 Component** — the component is mapped and documented in the C4 model via `/docs-skill`
+3. **Beads issue** — a `bd` issue exists, is claimed, and references the requirements and C4 component
+
+If any of these is missing, stop and create it before writing implementation code.
+
+### Test Mandate
+
+Every code change **must** include tests. No exceptions.
+
+- Write the test file alongside the implementation file, in the same PR/commit
+- Tests must pass before closing any beads issue or handing off
+- Run the test suite as part of the session close protocol
+- "Code without tests" is treated as incomplete work — do not close the issue
+
+### Enforcement Checklist (session close)
+
+Before marking any implementation issue done:
+
+```
+[ ] Requirements exist in docs (docs-skill)
+[ ] C4 component is documented (docs-skill)
+[ ] Beads issue references requirements + C4 component
+[ ] Tests written and passing
+[ ] bd close <id> run
+[ ] git status clean (or staged changes reported)
+```

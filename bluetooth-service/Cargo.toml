@@ -1,0 +1,8 @@
+[package]
+name = "bluetooth-service"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bluetooth-service"
+path = "src/main.rs"

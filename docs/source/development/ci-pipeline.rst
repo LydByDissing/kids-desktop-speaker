@@ -278,11 +278,29 @@ images for initial device setup. This is a one-time-per-release task.
 Implementation Order
 --------------------
 
-1. **Dockerfile** for the Pi OS image (Solution 1)
-2. **GitHub Actions workflow** with QEMU + smoke tests
-3. **RAUC bundle** production as a CI artifact
-4. **Full VM boot test** for release validation (Solution 2)
-5. **pi-gen integration** for SD card images (Solution 3)
+The pipeline is built in two layers: per-component binary CI pipelines
+feed into the image pipeline. See :ref:`DEC-007 <dec-007>` for the
+repository layout and pipeline dependency decisions.
+
+**Layer 1 — Per-component binary pipelines** (one per service):
+
+1. **Cargo workspace** — mono-repo root with four member crates
+2. **Per-component CI workflow** — cross-compile to
+   ``arm-unknown-linux-gnueabihf`` using ``cross``, upload binary artifact
+   (one workflow per service: api-server, audio-player, ota-updater,
+   bluetooth-service)
+
+**Layer 2 — Image pipeline** (depends on all Layer 1 pipelines):
+
+3. **Dockerfile** — download binary artifacts, COPY into
+   ``arm32v7/debian:bookworm-slim`` image (Solution 1)
+4. **GitHub Actions workflow** — QEMU user-mode emulation + smoke tests
+5. **RAUC bundle** — signed ``.raucb`` artifact produced on push to ``main``
+6. **Full VM boot test** — release-tag validation using
+   ``qemu-system-arm`` (Solution 2, deferred)
+7. **pi-gen integration** — flashable SD card images (Solution 3, deferred)
 
 See :doc:`ci-tooling` for the evaluation of Dagger vs plain Docker for
-driving the pipeline.
+driving the pipeline. See :ref:`DEC-007 <dec-007>` and
+:ref:`DEC-008 <dec-008>` for the mono-repo layout and cross-compilation
+toolchain decisions.

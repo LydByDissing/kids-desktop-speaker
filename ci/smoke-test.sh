@@ -105,6 +105,14 @@ require_file /etc/systemd/system/rauc-mark-good.service
 ok "all systemd units installed"
 
 echo ""
+echo "--- Bundle Output (if OUTPUT_DIR is set) ---"
+if [ -n "${OUTPUT_DIR:-}" ]; then
+    require_file "${OUTPUT_DIR}/image.raucb"
+else
+    ok "OUTPUT_DIR not set; skipping bundle output test"
+fi
+
+echo ""
 echo "========================================"
 echo "Results: ${PASS} passed, ${FAIL} failed"
 echo "========================================"

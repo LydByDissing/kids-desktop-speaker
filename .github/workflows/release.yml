@@ -1,0 +1,183 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+
+  # ── Component builds (parallel) ──────────────────────────
+  build-api-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-arm-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - run: cross build --target arm-unknown-linux-gnueabihf --release -p api-server
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-server-arm
+          path: target/arm-unknown-linux-gnueabihf/release/api-server
+          retention-days: 7
+
+  build-audio-player:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-arm-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - run: cross build --target arm-unknown-linux-gnueabihf --release -p audio-player
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audio-player-arm
+          path: target/arm-unknown-linux-gnueabihf/release/audio-player
+          retention-days: 7
+
+  build-ota-updater:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-arm-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - run: cross build --target arm-unknown-linux-gnueabihf --release -p ota-updater
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ota-updater-arm
+          path: target/arm-unknown-linux-gnueabihf/release/ota-updater
+          retention-days: 7
+
+  build-bluetooth-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-arm-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - run: cross build --target arm-unknown-linux-gnueabihf --release -p bluetooth-service
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bluetooth-service-arm
+          path: target/arm-unknown-linux-gnueabihf/release/bluetooth-service
+          retention-days: 7
+
+  # ── Image pipeline (sequential, depends on all above) ─────
+  build-image:
+    needs:
+      - build-api-server
+      - build-audio-player
+      - build-ota-updater
+      - build-bluetooth-service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-arm'
+          path: ci/binaries/
+          merge-multiple: true
+
+      - name: Make binaries executable
+        run: chmod +x ci/binaries/*
+
+      - name: Build image
+        run: make -C ci build
+
+      - name: Run smoke tests
+        run: make -C ci test
+
+      - name: Build RAUC bundle
+        run: make -C ci bundle
+
+      - name: Upload RAUC bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rauc-bundle-staging
+          path: ci/output/image.raucb
+          retention-days: 7
+
+  # ── VM boot test (placeholder) ───────────────────────────
+  vm-boot-test:
+    needs: build-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: VM boot test (placeholder)
+        run: |
+          # TODO: implement full VM boot test (DEC-010)
+          # requires: qemu-system-arm, RPi kernel, rootfs export
+          echo "VM boot test not yet implemented — placeholder"
+
+  # ── Bundle upload (only after VM test passes) ─────────────
+  upload-bundle:
+    needs: vm-boot-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download staging bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: rauc-bundle-staging
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rauc-bundle-${{ github.ref_name }}
+          path: image.raucb
+          retention-days: 90

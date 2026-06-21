@@ -1,0 +1,8 @@
+[package]
+name = "audio-player"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "audio-player"
+path = "src/main.rs"
