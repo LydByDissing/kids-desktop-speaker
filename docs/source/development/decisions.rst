@@ -1058,6 +1058,437 @@ is a subsequent enhancement, tracked separately.
   (integration baseline and OTA path validation) have different triggers
   and failure modes
 
+Onboarding & Controls
+---------------------
+
+.. _dec-012:
+
+DEC-012 — Wi-Fi Onboarding & First-Boot Flow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_012
+   :status: resolved
+   :date: 2026-06-21
+   :tags: onboarding, wifi, networking, ux
+
+**Decision**: Use **AP mode + captive portal** as the primary Wi-Fi
+provisioning mechanism. A **USB config file** serves as a dev/recovery
+fallback. The device re-enters AP mode automatically after **5 consecutive
+connection failures**. User feedback during onboarding uses **pre-recorded
+audio cues** (replaced by Piper TTS when available per DEC-015). The AP
+hotspot is **open** — no password required.
+
+**Context**
+
+A new device has no Wi-Fi credentials. Every platform feature (AirPlay,
+Spotify Connect, OTA updates, web UI) requires network access. Since the
+device has no physical buttons (DEC-014), onboarding cannot rely on a
+hardware reset button. Since no companion app is being built, BLE
+provisioning is ruled out. The solution must work with a phone browser only.
+
+**Provisioning Mechanism**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 10 30 35 25
+
+   * - Option
+     - Approach
+     - Pros
+     - Cons
+   * - **A — AP mode + captive portal** *(primary, chosen)*
+     - Device creates a Wi-Fi hotspot. User connects their phone and is
+       redirected to a setup page to enter home Wi-Fi credentials.
+     - No app required. Works on any phone with a browser. Standard
+       pattern users recognise from other IoT devices.
+     - User must switch their phone's Wi-Fi network during setup. Setup
+       page loses internet access on the phone while connected to the
+       device hotspot.
+   * - B — BLE provisioning
+     - Companion app pushes credentials over BLE.
+     - Seamless UX; phone stays on home Wi-Fi.
+     - Requires building and maintaining a mobile app. Out of scope.
+   * - **C — USB config file** *(dev/recovery tool)*
+     - User writes ``wifi.txt`` (SSID + password) to a USB stick and
+       plugs it in on boot.
+     - No network needed at all. Useful for headless dev setup and
+       factory reset recovery.
+     - Requires USB stick and physical access. Not a consumer UX.
+
+**First-Boot Flow**
+
+.. code-block:: text
+
+   Power on
+     │
+     ▼
+   Check saved Wi-Fi credentials
+     ├── None found ──────────────────────────────────────────┐
+     └── Found → attempt connection                            │
+             │                                                 │
+             ├── Success → play "Ready" audio cue             │
+             │             start all services                  │
+             └── Failure (×5) ──────────────────────────────► │
+                                                               ▼
+                                                    Enter AP mode
+                                                    Broadcast: KidsSpeaker-XXXX
+                                                    Play audio cue:
+                                                    "Connect to KidsSpeaker-XXXX
+                                                     Wi-Fi to set up your speaker"
+                                                               │
+                                                    User connects phone to hotspot
+                                                    Captive portal → setup page
+                                                    User enters SSID + password
+                                                               │
+                                                    Device saves credentials
+                                                    Play audio cue: "Connecting..."
+                                                    Exit AP mode
+                                                               │
+                                                    Attempt connection
+                                                    ├── Success → play "Ready"
+                                                    └── Failure ×5 → back to AP mode
+
+**Re-provisioning Trigger**
+
+Since there are no physical buttons, re-provisioning is triggered
+automatically: **5 consecutive connection timeouts** cause the device to
+clear its saved credentials and re-enter AP mode. The user does not need
+to do anything beyond moving the device to a new location — the device
+self-heals into setup mode if it cannot reach its last-known network.
+
+An explicit factory reset command is also available via the web UI
+(accessible while on the current network) for deliberate re-provisioning.
+
+**USB Config File Format** (dev/recovery)
+
+.. code-block:: text
+
+   # /boot/wifi.txt (on USB stick)
+   SSID=MyHomeNetwork
+   PASSWORD=mysecretpassword
+
+The API Server checks for a USB-mounted ``wifi.txt`` on boot before
+entering AP mode. If found, credentials are applied and the file is
+deleted from the USB stick.
+
+**Security**
+
+The AP hotspot is open (no WPA2 password). The captive portal setup page
+has no PIN or authentication. Physical proximity to the device is treated
+as sufficient trust for onboarding. The window of exposure is short
+(device is in AP mode only until credentials are entered or a timeout
+occurs).
+
+**Audio Cues**
+
+Audio feedback during onboarding relies on pre-recorded audio clips
+packaged with the firmware:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Trigger
+     - Audio cue
+   * - Entering AP mode
+     - "Connect to KidsSpeaker-[ID] Wi-Fi to set up your speaker"
+   * - Credentials received, connecting
+     - "Got it, connecting now..."
+   * - Connected successfully
+     - "Ready"
+   * - Connection failed, retrying
+     - "Having trouble connecting, trying again..."
+   * - Back to AP mode after failures
+     - "Could not connect. Connect to KidsSpeaker-[ID] to try again"
+
+When Piper TTS is available (DEC-015), these clips are generated
+dynamically at runtime instead of being pre-recorded.
+
+**Consequences**
+
+- A new ``onboarding`` module lives in the API Server (or a dedicated
+  ``onboarding-service``) and owns: AP mode management (``hostapd`` +
+  ``dnsmasq``), the captive portal web page, credential persistence,
+  and the connection-failure counter
+- The device hostname is ``kidsspeaker-XXXX`` (last 4 hex digits of MAC
+  address) so multiple devices on the same network are distinguishable
+- Pre-recorded audio clips (WAV/OGG) are shipped in the firmware image
+  under ``/usr/share/kids-desktop-speaker/audio/onboarding/``
+- The BT controller (DEC-014) must be paired *after* Wi-Fi onboarding
+  completes — the web UI guides the user through BT pairing as step 2
+  of the setup flow
+- ``wpa_supplicant`` manages Wi-Fi credentials persistently in
+  ``/var/lib/kids-desktop-speaker/wifi.conf`` on the data partition
+  (survives OTA updates)
+- The API Server exposes ``/api/network/reset`` (authenticated) to
+  trigger deliberate re-provisioning from the web UI
+
+.. _dec-013:
+
+DEC-013 — Spotify Connect via librespot
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_013
+   :status: resolved
+   :date: 2026-06-21
+   :tags: audio, spotify, librespot
+
+**Decision**: Use **librespot** (Rust) as the Spotify Connect receiver,
+managed as a subprocess of the Audio Player service — the same pattern
+used for shairport-sync (AirPlay, DEC-004).
+
+**Context**
+
+Spotify Connect is a hard requirement. The platform must appear as a
+Spotify Connect target device on the local network, accepting playback
+from the Spotify app on any phone, tablet, or computer on the same Wi-Fi
+network.
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Option
+     - Pros
+     - Cons
+   * - **librespot** *(chosen)*
+     - Open-source Rust implementation. Active project (10k+ stars).
+       Pure Rust — no C dependencies. Outputs to ALSA, PipeWire, or
+       stdout (pipe). Well-documented. Used in production by Spotifyd
+       and other projects.
+     - Reverse-engineered (no official Spotify support). Spotify may
+       break compatibility in future protocol updates. Requires Spotify
+       Premium on the user's account.
+   * - spotifyd
+     - Thin daemon wrapper around librespot. Slightly easier to run
+       as a standalone service.
+     - Adds a layer with its own config format and lifecycle management.
+       The Audio Player already manages subprocess lifetimes — wrapping
+       librespot directly is simpler.
+   * - Official Spotify Connect SDK
+     - First-party support, guaranteed compatibility.
+     - Closed-source, C library, requires a commercial licence and
+       hardware certification programme. Not viable for this project.
+
+**Rationale**
+
+librespot is the de facto standard for open-source Spotify Connect
+receivers. It is actively maintained, written in Rust (consistent with
+the rest of the stack), and has a well-understood integration path via
+ALSA. The Audio Player already manages shairport-sync as a child
+process; adding librespot follows the same pattern with no new
+architectural concepts.
+
+**Integration**
+
+The Audio Player starts and stops librespot as a child process, routing
+its ALSA output through the loopback mixer (same channel as
+shairport-sync). Only one audio source plays at a time; the Audio Player
+arbitrates source priority.
+
+.. code-block:: bash
+
+   librespot \
+     --name "KidsSpeaker" \
+     --bitrate 320 \
+     --backend alsa \
+     --device kids-speaker-loopback \
+     --disable-audio-cache
+
+**Consequences**
+
+- ``librespot`` is added as a system package (or compiled from source
+  for ARMv6) and installed in the firmware image
+- Spotify Premium is required on the user's account for Spotify Connect
+- The Audio Player's subprocess manager handles librespot start/stop
+  and restart-on-crash
+- Device name ("KidsSpeaker") is configurable via the web UI and
+  persisted on the data partition
+- librespot protocol compatibility is a dependency risk; the project
+  tracks the librespot changelog and pins to a tested version
+- No offline Spotify playback — Spotify Connect requires an active
+  internet connection and a Spotify client (phone/tablet) on the network
+
+.. _dec-014:
+
+DEC-014 — Physical Controls: External Bluetooth Controller
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_014
+   :status: resolved
+   :date: 2026-06-21
+   :tags: bluetooth, controls, ux, hardware
+
+**Decision**: The device has **no physical buttons or knobs**. All
+playback control (volume up/down, skip, pause/play, source switching) is
+handled by an **external Bluetooth AVRCP controller** paired to the
+device.
+
+**Context**
+
+A speaker needs a way for the user to control playback without picking
+up a phone. The alternatives are physical controls (buttons, rotary
+encoder) mounted on the enclosure, or an external wireless controller.
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Option
+     - Pros
+     - Cons
+   * - Physical buttons on enclosure
+     - No pairing required. Always available even if BT fails.
+     - GPIO wiring complexity. Buttons must be waterproofed and
+       mounted. Adds mechanical design scope to the enclosure.
+       Button debounce and interrupt handling in firmware.
+   * - **External BT AVRCP controller** *(chosen)*
+     - Zero GPIO wiring. Enclosure is simpler (no cutouts for buttons).
+       Leverages the BT stack already required for the platform.
+       Controller is replaceable/upgradeable without hardware changes.
+       Works from a distance.
+     - Controller must be paired during setup. Controller can run out
+       of battery or be lost. No fallback if controller is unavailable.
+
+**Rationale**
+
+The Bluetooth Service is already a core component. AVRCP playback
+control is already planned (DEC-006). Delegating all physical control to
+an external BT device removes GPIO complexity from both the firmware and
+the enclosure design. The target user (children) is familiar with
+game-style controllers and remotes.
+
+**Bluetooth Service Requirements** (added by this decision)
+
+- Maintain a **persistent AVRCP connection** to the paired controller
+- **Auto-reconnect** when the controller wakes from sleep or comes back
+  into range (without user intervention)
+- Handle the following AVRCP commands: play, pause, stop, next track,
+  previous track, volume up, volume down
+- Source switching (AirPlay → Spotify → Radio) via a long-press or
+  button combination defined during setup
+- Pair up to **two controllers** (primary + backup)
+
+**Pairing Flow**
+
+Controller pairing is step 2 of the onboarding flow (after Wi-Fi is
+configured). The web UI presents a pairing screen; the user puts their
+controller into pairing mode and the Bluetooth Service completes the
+bond. Pairing data is stored on the data partition and survives OTA
+updates.
+
+**Consequences**
+
+- No GPIO pins are used for user controls in v1
+- The enclosure has no button cutouts — simpler mechanical design
+- The web UI / API Server must expose a "pair controller" endpoint
+  used during onboarding
+- If the controller is lost or discharged, the web UI (phone browser)
+  is the fallback control surface
+- The Bluetooth Service reconnection logic must be robust —
+  controllers sleep aggressively to save battery
+- Controller button mapping (e.g. which button triggers source switch)
+  is configurable and stored on the data partition
+
+.. _dec-015:
+
+DEC-015 — Piper TTS: Deferred, Resource-Conditional
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_015
+   :status: resolved
+   :date: 2026-06-21
+   :tags: audio, tts, piper, resource-management
+
+**Decision**: **Defer Piper TTS** to a later phase. Implementation
+proceeds only after all other platform services are stable and a
+profiling run confirms sufficient CPU and RAM headroom on the Pi Zero W.
+If the headroom is insufficient, a lighter fallback is chosen or TTS is
+dropped entirely.
+
+**Context**
+
+Voice feedback enhances UX (status announcements, error messages,
+onboarding prompts). Piper TTS is a high-quality, offline neural TTS
+engine with a Rust-friendly interface. However, the Pi Zero W is severely
+resource-constrained: 512 MB RAM, single-core ARM1176 at 1 GHz. Running
+Piper inference concurrently with shairport-sync, librespot, MPD,
+CamillaDSP, and four Rust services risks exhausting available memory or
+causing audio dropouts.
+
+In the short term, pre-recorded audio clips cover onboarding prompts
+(DEC-012). TTS adds value for dynamic messages (track announcements,
+error details) but is not on the critical path for v1.
+
+**Gate Condition**
+
+Piper TTS implementation is gated on a profiling milestone:
+
+.. code-block:: text
+
+   All 6 platform services stable + profiling run shows:
+     - Idle RAM available ≥ 80 MB  (Piper model ~50–70 MB)
+     - CPU headroom ≥ 30% at idle  (Piper inference spike ~60% for ~1s)
+
+If either threshold is not met, proceed to fallback evaluation.
+
+**Fallback Options**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 20 30 30
+
+   * - Option
+     - Quality
+     - RAM footprint
+     - Notes
+   * - **Piper TTS** *(target)*
+     - Natural, neural
+     - ~50–70 MB (model)
+     - Requires profiling gate to pass
+   * - espeak-ng
+     - Robotic but intelligible
+     - < 5 MB
+     - C library, available in Debian, very fast on ARM
+   * - festival
+     - Better than espeak-ng
+     - ~20 MB
+     - C daemon, Debian package available
+   * - No TTS (pre-recorded clips only)
+     - N/A
+     - 0 MB runtime
+     - Acceptable if messages are limited and predictable
+
+**Rationale**
+
+Shipping a working speaker with pre-recorded audio clips is better than
+delaying the project while tuning Piper on constrained hardware. The
+decision is explicitly revisited after profiling — it is not permanently
+deferred.
+
+**Consequences**
+
+- Onboarding audio (DEC-012) ships with pre-recorded WAV/OGG clips
+  packaged in the firmware; the API to play them is the same one that
+  will later invoke Piper
+- The Audio Player exposes a ``/tts`` internal endpoint that initially
+  plays a pre-recorded clip by name, later routes through Piper (or
+  fallback engine) — callers are decoupled from the TTS implementation
+- A profiling milestone is added to the project backlog: measure idle
+  and loaded RAM/CPU after all services are integrated
+- ``piper-tts-rs`` (KDS-m6q) and ``piper-tts`` performance research
+  (KDS-s3s) remain open until the profiling gate is evaluated
+- The KDS-s3s beads issue ("Research: Piper TTS performance on Pi Zero
+  W") is the blocker for this decision's gate condition
+
 Bluetooth
 ---------
 
