@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test bundle clean
+.PHONY: all build test bundle clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -68,3 +68,25 @@ clean:
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) 2>/dev/null || true
 	rm -rf $(OUTPUT_DIR)
 	@echo "==> Clean complete"
+
+## cross-build — Cross-compile all workspace binaries for ARMv7
+cross-build:
+	@echo "==> Cross-compiling for armv7-unknown-linux-gnueabihf..."
+	cd .. && cross build --target armv7-unknown-linux-gnueabihf
+	@echo "==> Cross-build complete"
+
+## vm-image — Build QEMU ARM rootfs image (depends on cross-build)
+vm-image: cross-build
+	@bash vm/build-image.sh
+
+## vm — Boot QEMU ARM VM with port-forwarded API on :8080
+vm: vm-image
+	@bash vm/run-vm.sh
+
+## smoke — Run API smoke tests against VM on localhost:8080
+smoke:
+	@bash vm/dev-smoke.sh
+
+## ci-test — Boot QEMU VM headlessly, run smoke tests, and exit with test exit code
+ci-test:
+	@bash vm/ci-run.sh

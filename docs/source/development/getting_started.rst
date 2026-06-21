@@ -12,6 +12,21 @@ Prerequisites
 - Git
 - A Raspberry Pi Zero W (for deployment)
 
+Local VM Testing (optional)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To build and run the QEMU ARM VM locally (``make vm-image && make vm``):
+
+.. code-block:: bash
+
+   sudo apt-get install -y \
+       qemu-system-arm \
+       genext2fs
+
+- ``qemu-system-arm`` — ARM system emulator used to boot the VM
+- ``genext2fs`` — creates ext2 rootfs images from a directory without root privileges;
+  required by ``ci/vm/build-image.sh`` to populate the disk image without loop mounts
+
 Clone the Repository
 --------------------
 

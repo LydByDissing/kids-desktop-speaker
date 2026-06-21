@@ -1715,6 +1715,77 @@ source. Alarms require NTP (DEC-019) to ensure correct device time.
   set sleep timer, cancel active timer
 - ``/api/timer`` and ``/api/alarms`` endpoints on the API Server
 
+Build Pipeline
+--------------
+
+.. _dec-022:
+
+DEC-022 — Cross-Compilation Pipeline for ARM Services
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_022
+   :status: resolved
+   :date: 2026-06-21
+   :tags: build, cross-compilation, arm, rust, ci
+
+**Decision**: Use the **``cross`` tool** to cross-compile all four Rust
+services (``api-server``, ``audio-player``, ``ota-updater``,
+``bluetooth-service``) for the Raspberry Pi Zero W target
+(``armv7-unknown-linux-gnueabihf``). All crates must use **rustls** instead
+of OpenSSL for TLS — OpenSSL cannot be reliably cross-compiled.
+
+**Context**
+
+The Pi Zero W runs ARMv6 with hard-float ABI. Rust's
+``armv7-unknown-linux-gnueabihf`` target produces compatible binaries —
+Raspberry Pi OS carries a compatibility layer that runs ARMv7 code on
+ARMv6 hardware. Binaries must be built on x86_64 developer and CI machines
+and injected into the Docker image used to populate the QEMU VM rootfs.
+
+**Options Considered**
+
+1. **``cross`` (chosen)** — Docker-based cross-compilation driver.
+   Provides a correct ARM sysroot inside a container with no local
+   toolchain required. Single command:
+   ``cross build --release --target armv7-unknown-linux-gnueabihf``.
+
+2. **``cargo`` + local ARM toolchain** (``arm-linux-gnueabihf-gcc``) —
+   requires installing and maintaining a cross-compiler on every developer
+   machine and CI runner. Fragile across distro versions.
+
+3. **Build inside ARM Docker container**
+   (``docker run --platform linux/arm/v7 rust:...``) — architecturally
+   correct but ~10× slower than native cross-compile via QEMU user-mode
+   emulation of the Rust compiler itself.
+
+4. **GitHub Actions native ARM runners** — not available on standard
+   hosted runners; requires a physical Pi or a paid cloud ARM instance.
+
+**TLS constraint**
+
+``reqwest`` (used by ``ota-updater`` for bundle downloads) defaults to
+``native-tls`` (OpenSSL), which requires a C cross-toolchain and OpenSSL
+headers for the target. To avoid this, ``ota-updater`` disables default
+features and opts into ``rustls-tls``:
+
+.. code-block:: toml
+
+   reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+
+All future crates that need TLS must follow the same pattern.
+
+**Consequences**
+
+- ``cross`` and Docker must be present on developer machines and CI runners
+- The Dockerfile ``COPY`` path
+  ``target/armv7-unknown-linux-gnueabihf/release/<binary>`` must be
+  populated before ``docker buildx build`` runs; the Makefile
+  ``vm-image`` target depends on a ``cross-build`` prerequisite
+- OpenSSL is banned as a transitive dependency in any crate — use rustls
+- The ``armv7-unknown-linux-gnueabihf`` target must be installed:
+  ``rustup target add armv7-unknown-linux-gnueabihf``
+
 System
 ------
 

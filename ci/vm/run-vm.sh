@@ -13,7 +13,7 @@ echo "    API available at http://localhost:8080 once boot completes (~30s)"
 AUDIO_ARGS=()
 if [ "${KDS_AUDIO:-1}" = "1" ]; then
     AUDIO_ARGS=(
-        -audiodev pa,id=audio0
+        -audiodev pipewire,id=audio0
         -device virtio-sound-pci,audiodev=audio0
     )
 fi

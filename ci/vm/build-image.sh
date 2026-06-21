@@ -5,6 +5,11 @@ OUTPUT="$SCRIPT_DIR/rootfs.img"
 KERNEL_OUT="$SCRIPT_DIR/vmlinuz"
 INITRD_OUT="$SCRIPT_DIR/initrd.img"
 
+if ! command -v genext2fs &>/dev/null; then
+    echo "ERROR: genext2fs not found. Install with: sudo apt-get install genext2fs" >&2
+    exit 1
+fi
+
 # Step 1: Get kernel + initrd from a temporary ARM container
 # We install linux-image-armmp-lpae inside arm32v7/debian:bookworm-slim
 # and copy the kernel/initrd out to the host.
@@ -14,13 +19,15 @@ if [ ! -f "$KERNEL_OUT" ]; then
         -v "$SCRIPT_DIR:/out" \
         arm32v7/debian:bookworm-slim \
         bash -c '
-            apt-get update -qq && apt-get install -y -q --no-install-recommends linux-image-armmp-lpae
+            apt-get update -qq && apt-get install -y -q --no-install-recommends zstd linux-image-armmp-lpae
             cp /boot/vmlinuz-*-armmp-lpae /out/vmlinuz
             cp /boot/initrd.img-*-armmp-lpae /out/initrd.img
         '
 fi
 
-# Step 2: Export our Docker image rootfs to a raw ext4 disk image
+# Step 2: Export our Docker image rootfs to a raw ext2 disk image.
+# genext2fs creates the image from a directory without needing root or loop mounts.
+# Device nodes under ./dev are excluded — the kernel populates /dev via devtmpfs on boot.
 if [ ! -f "$OUTPUT" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
     echo "==> Building Docker image..."
     docker buildx build --platform linux/arm/v7 \
@@ -34,27 +41,14 @@ if [ ! -f "$OUTPUT" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
     docker export "$CONTAINER" > "$TMPTAR"
     docker rm "$CONTAINER"
 
-    # Create ext4 image (1.5GB)
-    truncate -s 1536M "$OUTPUT"
-    mkfs.ext4 -q -L rootfs "$OUTPUT"
-
-    # Populate (requires root or unshare)
+    echo "==> Creating rootfs image (genext2fs, no root needed)..."
     MNTDIR=$(mktemp -d)
-    if command -v unshare &>/dev/null && unshare --mount true 2>/dev/null; then
-        unshare --mount bash -c "
-            mount -o loop '$OUTPUT' '$MNTDIR'
-            tar -xf '$TMPTAR' -C '$MNTDIR' --numeric-owner 2>/dev/null || true
-            # Ensure api-server binary is present and executable
-            # (CI installs stub scripts; in dev we build native and overlay)
-            umount '$MNTDIR'
-        "
-    else
-        echo "ERROR: need unshare+mount or run as root to populate ext4" >&2
-        rm -f "$TMPTAR" "$OUTPUT"
-        rmdir "$MNTDIR"
-        exit 1
-    fi
+    tar -xf "$TMPTAR" -C "$MNTDIR" --exclude='./dev/*' 2>/dev/null || true
+    mkdir -p "$MNTDIR/dev"
     rm -f "$TMPTAR"
-    rmdir "$MNTDIR"
+
+    # 1536MB = 1572864 × 1KB blocks; 200000 inodes; 0% reserved
+    genext2fs -d "$MNTDIR" -b 1572864 -N 200000 -m 0 "$OUTPUT"
+    rm -rf "$MNTDIR"
     echo "==> rootfs.img ready"
 fi

@@ -74,11 +74,11 @@ COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 
 RUN mkdir -p /usr/local/bin/kids-desktop-speaker
 
-# Stub service scripts (replaced by real Rust binaries during CI build)
-COPY ci/deploy/api-server.sh /usr/local/bin/api-server
-COPY ci/deploy/audio-player.sh /usr/local/bin/audio-player
-COPY ci/deploy/ota-updater.sh /usr/local/bin/ota-updater
-COPY ci/deploy/bluetooth-service.sh /usr/local/bin/bluetooth-service
+# Cross-compiled ARM binaries from debug profile
+COPY target/armv7-unknown-linux-gnueabihf/debug/api-server /usr/local/bin/api-server
+COPY target/armv7-unknown-linux-gnueabihf/debug/audio-player /usr/local/bin/audio-player
+COPY target/armv7-unknown-linux-gnueabihf/debug/ota-updater /usr/local/bin/ota-updater
+COPY target/armv7-unknown-linux-gnueabihf/debug/bluetooth-service /usr/local/bin/bluetooth-service
 RUN chmod +x /usr/local/bin/api-server \
              /usr/local/bin/audio-player \
              /usr/local/bin/ota-updater \
@@ -104,8 +104,35 @@ RUN chmod +x /usr/local/bin/kds-set-hostname.sh
 # Copy NTP configuration
 COPY ci/config/timesyncd.conf /etc/systemd/timesyncd.conf
 
+# Network: DHCP on any ethernet interface so QEMU hostfwd port-forwarding works.
+# QEMU user-mode NAT assigns 10.0.2.15 via its built-in DHCP server.
+# Without this the guest has no IP and packets cannot be routed in from the host.
+RUN mkdir -p /etc/systemd/network && \
+    printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n' \
+    > /etc/systemd/network/20-dhcp.network
+
 # Enable system services
-RUN systemctl enable zram.service avahi-daemon.service kds-hostname.service
+RUN systemctl enable \
+        systemd-networkd.service \
+        avahi-daemon.service \
+        kds-hostname.service \
+        api-server.service \
+        audio-player.service \
+        ota-updater.service \
+        bluetooth-service.service && \
+    ln -sf /dev/null /etc/systemd/system/zram.service && \
+    ln -sf /dev/null /etc/systemd/system/zramswap.service
+
+# ---------------------------------------------------------------------------
+# Dev VM login — root password + autologin on ttyAMA0 (QEMU serial console)
+# ---------------------------------------------------------------------------
+
+RUN echo 'root:kds' | chpasswd
+
+# Serial console autologin (ttyAMA0 = QEMU -nographic serial port)
+RUN mkdir -p /etc/systemd/system/serial-getty@ttyAMA0.service.d && \
+    printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin root --noclear %%I 115200 linux\n' \
+    > /etc/systemd/system/serial-getty@ttyAMA0.service.d/autologin.conf
 
 # ---------------------------------------------------------------------------
 # Smoke test script
