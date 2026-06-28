@@ -166,18 +166,27 @@ jobs:
           # requires: qemu-system-arm, RPi kernel, rootfs export
           echo "VM boot test not yet implemented — placeholder"
 
-  # ── Bundle upload (only after VM test passes) ─────────────
-  upload-bundle:
+  # ── Publish GitHub Release (only after VM test passes) ────
+  publish-release:
     needs: vm-boot-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write          # required to create a Release
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download staging bundle
         uses: actions/download-artifact@v4
         with:
           name: rauc-bundle-staging
 
-      - uses: actions/upload-artifact@v4
+      - name: Generate manifest
+        run: ci/scripts/gen-manifest.sh image.raucb "${{ github.ref_name }}" > manifest.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: rauc-bundle-${{ github.ref_name }}
-          path: image.raucb
-          retention-days: 90
+          tag_name: ${{ github.ref_name }}
+          files: |
+            image.raucb
+            manifest.json
