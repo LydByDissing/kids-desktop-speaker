@@ -12,6 +12,9 @@ ci/vm/vmlinuz
 ci/vm/initrd.img
 ci/output/
 
+# Release pipeline binary staging (populated by artifact download in CI)
+ci/binaries/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

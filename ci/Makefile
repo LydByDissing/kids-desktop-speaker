@@ -26,6 +26,11 @@ PLATFORM      := linux/arm/v7
 DOCKERFILE    := Dockerfile.pi-image
 OUTPUT_DIR    ?= $(CURDIR)/output
 
+# Source dir for cross-compiled service binaries, relative to the build
+# context (repo root). Default = local/VM debug build (DEC-022). The release
+# pipeline overrides this to ci/binaries (armv6 --release artifacts, DEC-007).
+BIN_DIR       ?= target/armv7-unknown-linux-gnueabihf/debug
+
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
@@ -38,6 +43,7 @@ build:
 	docker buildx build \
 		--platform $(PLATFORM) \
 		-f $(DOCKERFILE) \
+		--build-arg BIN_DIR=$(BIN_DIR) \
 		-t $(IMAGE_NAME):$(IMAGE_TAG) \
 		--load \
 		..

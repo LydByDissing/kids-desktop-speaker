@@ -287,6 +287,17 @@ Software — Networking
    The CI pipeline shall run smoke tests on the built image to verify
    services start correctly and RAUC can query slot status.
 
+.. req:: CI_REQ_004
+   :id: CI_REQ_004
+   :status: open
+   :tags: infrastructure, ci, ota
+
+   On a version tag (``v*.*.*``), the CI pipeline shall publish the RAUC
+   bundle as a GitHub Release asset together with a version manifest that
+   declares the release version and the bundle's SHA-256 checksum, so the
+   OTA Updater can discover, verify, and download the update (ref DEC-001,
+   OTA_REQ_001, and the ota-updater ``GitHub Releases Integration`` design).
+
 .. req:: NET_REQ_003
    :id: NET_REQ_003
    :status: open

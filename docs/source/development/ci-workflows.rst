@@ -254,27 +254,41 @@ jobs, then runs the image pipeline job once all component jobs succeed.
 Dockerfile Integration
 -----------------------
 
-The ``ci/Dockerfile.pi-image`` is updated to COPY real binaries from the
-``ci/binaries/`` staging directory (populated by the ``Download binaries``
-step above) rather than the current stub shell scripts.
+``ci/Dockerfile.pi-image`` COPYs the cross-compiled service binaries from a
+directory selected by the ``BIN_DIR`` build argument (relative to the build
+context = repo root). The same Dockerfile serves both build paths without
+edits:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 35 40
+
+   * - Path
+     - ``BIN_DIR``
+     - Binaries
+   * - Local dev / QEMU VM
+     - ``target/armv7-unknown-linux-gnueabihf/debug`` (default)
+     - ARMv7 debug, built by ``make cross-build`` (DEC-022)
+   * - CI release pipeline
+     - ``ci/binaries``
+     - ARMv6 ``--release``, ``arm-unknown-linux-gnueabihf`` artifacts
+       downloaded from the component jobs (DEC-007)
 
 .. code-block:: dockerfile
 
-   # Stage: final image
    FROM arm32v7/debian:bookworm-slim
 
    # ... apt-get install rauc, bluez, alsa-utils, systemd ...
 
-   # Platform service binaries (cross-compiled on x86_64 by component CI)
-   COPY binaries/api-server       /usr/local/bin/api-server
-   COPY binaries/audio-player     /usr/local/bin/audio-player
-   COPY binaries/ota-updater      /usr/local/bin/ota-updater
-   COPY binaries/bluetooth-service /usr/local/bin/bluetooth-service
+   ARG BIN_DIR=target/armv7-unknown-linux-gnueabihf/debug
+   COPY ${BIN_DIR}/api-server        /usr/local/bin/api-server
+   COPY ${BIN_DIR}/audio-player      /usr/local/bin/audio-player
+   COPY ${BIN_DIR}/ota-updater       /usr/local/bin/ota-updater
+   COPY ${BIN_DIR}/bluetooth-service /usr/local/bin/bluetooth-service
 
-During development (no real binaries yet), the stub shell scripts in
-``ci/deploy/`` remain in place and the ``Dockerfile.pi-image`` continues
-to use them. The switch to real binaries happens when the first component
-pipeline produces an artifact.
+The release pipeline downloads the component artifacts into ``ci/binaries/``
+and invokes ``make -C ci build BIN_DIR=ci/binaries``; the ``ci/Makefile``
+forwards this to ``docker buildx`` as ``--build-arg BIN_DIR=$(BIN_DIR)``.
 
 Layer 3 — Full VM Boot Test
 ----------------------------
@@ -433,6 +447,100 @@ See :ref:`DEC-010 <dec-010>` for the full rationale.
 console to confirm ``rauc status`` completes successfully, then exits.
 The script times out after 10 minutes and exits non-zero if any assertion
 fails.
+
+Layer 4 — Publish GitHub Release
+---------------------------------
+
+On a version tag, after the bundle is built (and the VM boot test passes),
+a ``publish-release`` job creates a GitHub Release for the tag, attaches the
+``.raucb`` bundle, and attaches a version manifest. This is the producer
+side of the OTA loop: the OTA Updater consumes exactly this Release (see the
+ota-updater ``GitHub Releases Integration`` design and ``CI_REQ_004``).
+
+**Trigger**: runs as the final job in ``release.yml``, ``needs: vm-boot-test``.
+
+**Manifest** (``manifest.json``, attached as a Release asset):
+
+.. code-block:: json
+
+   {
+     "version": "v1.2.3",
+     "bundle": "image.raucb",
+     "sha256": "<hex digest of image.raucb>",
+     "size": 123456789,
+     "released_at": "2026-06-28T00:00:00Z"
+   }
+
+The OTA Updater reads ``version`` to decide whether an update is newer than
+the running slot, downloads the ``bundle`` asset, and verifies it against
+``sha256`` before handing it to ``rauc install``. RAUC additionally verifies
+the bundle's own cryptographic signature.
+
+**Workflow file** (``release.yml`` extended):
+
+.. code-block:: yaml
+
+     # ── Publish GitHub Release (final job) ────────────────────────
+     publish-release:
+       needs: vm-boot-test
+       runs-on: ubuntu-latest
+       permissions:
+         contents: write          # required to create a Release
+       steps:
+         - uses: actions/download-artifact@v4
+           with:
+             name: rauc-bundle-staging
+
+         - name: Generate manifest
+           run: |
+             SHA=$(sha256sum image.raucb | awk '{print $1}')
+             SIZE=$(stat -c%s image.raucb)
+             cat > manifest.json <<EOF
+             {
+               "version": "${{ github.ref_name }}",
+               "bundle": "image.raucb",
+               "sha256": "$SHA",
+               "size": $SIZE,
+               "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+             }
+             EOF
+
+         - name: Create GitHub Release
+           uses: softprops/action-gh-release@v2
+           with:
+             tag_name: ${{ github.ref_name }}
+             files: |
+               image.raucb
+               manifest.json
+
+**Acceptance criteria**:
+
+- A GitHub Release exists for the pushed tag
+- The Release has ``image.raucb`` and ``manifest.json`` as downloadable assets
+- ``manifest.json`` contains ``version`` matching the tag and a ``sha256`` that
+  matches ``sha256sum image.raucb``
+- The manifest schema matches what the OTA Updater expects
+
+**Updated release job dependency graph**:
+
+.. plantuml::
+   :caption: Release Pipeline — With GitHub Release Publication
+   :name: fig-release-pipeline-publish
+
+   @startuml
+   title Release Pipeline — Publish GitHub Release
+
+   rectangle "build-image\n(docker build + smoke tests\n+ rauc bundle)" as image
+   rectangle "vm-boot-test\n(qemu-system-arm\nrauc status)" as vmtest
+   rectangle "publish-release\n(sha256 manifest +\ncreate GitHub Release)" as publish
+   cloud "GitHub Release\nv*.*.*\n(image.raucb + manifest.json)" as release
+
+   image --> vmtest : needs
+   vmtest --> publish : needs
+   publish --> release
+   release ..> release : OTA Updater pulls
+
+   @enduml
 
 Caching Strategy
 -----------------
