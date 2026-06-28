@@ -144,7 +144,7 @@ jobs:
         run: make -C ci test
 
       - name: Build RAUC bundle
-        run: make -C ci bundle
+        run: make -C ci bundle VERSION=${{ github.ref_name }}
 
       - name: Upload RAUC bundle
         uses: actions/upload-artifact@v4

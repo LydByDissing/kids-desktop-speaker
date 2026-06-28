@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test bundle clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -30,6 +30,10 @@ OUTPUT_DIR    ?= $(CURDIR)/output
 # context (repo root). Default = local/VM debug build (DEC-022). The release
 # pipeline overrides this to ci/binaries (armv6 --release artifacts, DEC-007).
 BIN_DIR       ?= target/armv7-unknown-linux-gnueabihf/debug
+
+# Bundle version, written into the RAUC manifest. The release pipeline passes
+# the git tag (github.ref_name); locally it derives from git describe.
+VERSION       ?= $(shell git -C .. describe --tags --always --dirty 2>/dev/null || echo 0.1.0-dev)
 
 # ---------------------------------------------------------------------------
 # Targets
@@ -58,12 +62,22 @@ test:
 		/usr/local/bin/smoke-test.sh
 	@echo "==> Smoke tests passed"
 
-## bundle — Build RAUC bundle artifact (.raucb) using throwaway dev certs
-bundle:
+## export-rootfs — Export the built image's root filesystem to a tar for bundling
+export-rootfs:
+	@echo "==> Exporting rootfs from $(IMAGE_NAME):$(IMAGE_TAG)..."
+	mkdir -p $(OUTPUT_DIR)
+	cid=$$(docker create --platform $(PLATFORM) $(IMAGE_NAME):$(IMAGE_TAG)); \
+	docker export "$$cid" > $(OUTPUT_DIR)/rootfs.tar; \
+	docker rm "$$cid" >/dev/null
+	@echo "==> rootfs exported: $(OUTPUT_DIR)/rootfs.tar ($$(du -sh $(OUTPUT_DIR)/rootfs.tar | cut -f1))"
+
+## bundle — Build RAUC bundle (.raucb) of the real rootfs, signed with throwaway dev certs
+bundle: export-rootfs
 	mkdir -p $(OUTPUT_DIR)
 	docker run --rm --platform $(PLATFORM) \
 		-v $(OUTPUT_DIR):/output \
 		-v $(CURDIR)/create-bundle.sh:/usr/local/bin/create-bundle.sh:ro \
+		-e VERSION=$(VERSION) \
 		--entrypoint /bin/bash \
 		$(IMAGE_NAME):$(IMAGE_TAG) \
 		/usr/local/bin/create-bundle.sh

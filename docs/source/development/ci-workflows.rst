@@ -290,6 +290,25 @@ The release pipeline downloads the component artifacts into ``ci/binaries/``
 and invokes ``make -C ci build BIN_DIR=ci/binaries``; the ``ci/Makefile``
 forwards this to ``docker buildx`` as ``--build-arg BIN_DIR=$(BIN_DIR)``.
 
+RAUC Bundle Contents
+--------------------
+
+``make -C ci bundle`` packages the **real** root filesystem, not a placeholder.
+The ``export-rootfs`` target (a prerequisite of ``bundle``) runs
+``docker export`` on the built image to ``ci/output/rootfs.tar``; the rootfs
+slot is ``ext4`` (see ``ci/rauc/system.conf``), so the bundle ships the rootfs
+as a ``tar`` archive image — RAUC formats the slot and extracts the tar on
+install. ``create-bundle.sh`` (run inside the ARM image, which carries
+``rauc`` + ``openssl``) writes the manifest with ``version`` taken from
+``$VERSION`` and signs the bundle with throwaway CI certs. The release pipeline
+passes the tag as ``make -C ci bundle VERSION=${{ github.ref_name }}``; locally
+the version derives from ``git describe``.
+
+``rauc info`` on the produced bundle reports the real rootfs image (``Filename:
+rootfs.tar``, full size + checksum) and the version. If no exported tar is
+present, ``create-bundle.sh`` falls back to a 1 KB placeholder rootfs so it
+still runs standalone for smoke use.
+
 Layer 3 — Full VM Boot Test
 ----------------------------
 
