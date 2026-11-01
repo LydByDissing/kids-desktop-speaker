@@ -17,7 +17,7 @@ pub enum InstallerError {
     RaucFailed(i32),
 }
 
-const DEFAULT_BUNDLE_PATH: &str = "/var/tmp/kds-update.raucb";
+const DEFAULT_BUNDLE_PATH: &str = "/data/ota/staging/bundle.raucb";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -84,6 +84,9 @@ async fn stream_to_file(
         .read_timeout(read_timeout)
         .build()?;
     let mut response = http.get(url).send().await?.error_for_status()?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
     let mut file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)

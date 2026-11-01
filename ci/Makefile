@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test sd-image bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -84,7 +84,7 @@ export-rootfs:
 	mkdir -p $(OUTPUT_DIR)
 	cid=$$(docker create --platform $(PLATFORM) $(IMAGE_NAME):$(IMAGE_TAG)); \
 	docker export "$$cid" > $(OUTPUT_DIR)/rootfs.tar; \
-	docker rm "$$cid" >/dev/null
+	docker rm "$$cid" >/dev/null 2>&1 || { sleep 3; docker rm -f "$$cid" >/dev/null 2>&1 || true; }
 	@echo "==> rootfs exported: $(OUTPUT_DIR)/rootfs.tar ($$(du -sh $(OUTPUT_DIR)/rootfs.tar | cut -f1))"
 
 ## bundle — Build RAUC bundle (.raucb) of the real rootfs, signed with throwaway dev certs
@@ -102,6 +102,11 @@ bundle: export-rootfs
 		--entrypoint /bin/bash \
 		$(IMAGE_NAME):$(IMAGE_TAG) \
 		/usr/local/bin/create-bundle.sh
+
+## sd-image — Build a flashable SD card image from the built image (DEC-025)
+sd-image: export-rootfs
+	@bash scripts/build-sd-image.sh $(OUTPUT_DIR)/rootfs.tar $(OUTPUT_DIR)/kds-sdcard.img.xz
+	@bash scripts/test-sd-image.sh $(OUTPUT_DIR)/kds-sdcard.img.xz
 
 ## clean — Remove build artifacts
 clean:

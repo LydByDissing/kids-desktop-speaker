@@ -2021,3 +2021,40 @@ ARM1176. Emulating ``linux/arm/v7`` and a Cortex-A15 VM could not detect this.
   Pi kernel and bootloader are still outstanding.
 - ``librespot`` and ``camilladsp`` are not packaged by Raspbian and must be built
   for ARMv6.
+
+DEC-025 — Pi Zero W Boot Chain and Device Settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_025
+   :status: resolved
+   :date: 2026-11-01
+   :tags: boot, ota, rauc, hardware, security
+
+**Decision**: Boot with Raspberry Pi firmware, then U-Boot running an A/B script,
+then the kernel stored **inside the root slot**. The SD card has four partitions:
+boot (FAT), root A, root B and data.
+
+**Context**
+
+RAUC needs a bootloader that can switch slots and count failed attempts. Keeping
+the kernel in the root slot means a kernel update is atomic and rolls back with the
+rest of the system.
+
+**Details**
+
+- ``ci/boot/boot.cmd`` gives each slot three boot tries. ``rauc-mark-good`` restores
+  them only after the API answers ``/health``.
+- The hardware watchdog resets a hung boot, so rollback needs no manual power cycle.
+- Firmware, U-Boot and the device tree sit on the boot partition, which RAUC does
+  not update. Changing them requires reflashing.
+- Wi-Fi details and SSH keys are files on the boot partition, added after flashing,
+  so they never enter the image or repository.
+
+**Security**
+
+- The root account is locked, replacing the previous known password.
+- SSH accepts keys only. Without a key on the boot partition, nobody can log in.
+- Host keys are created per device and kept on the data partition.
+- The serial console in the VM still logs in automatically. This must be reviewed
+  before shipping devices.

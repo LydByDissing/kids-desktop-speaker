@@ -25,6 +25,13 @@ LABEL description="Raspbian with Kids Desktop Speaker platform services and RAUC
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Hardware support comes from the Raspberry Pi archive, with its signing key pinned
+# in the repo. See raspberrypi.pref for what it may provide.
+COPY ci/base/raspberrypi.gpg.key /etc/apt/trusted.gpg.d/raspberrypi.asc
+COPY ci/base/raspberrypi.pref /etc/apt/preferences.d/raspberrypi.pref
+RUN echo "deb http://archive.raspberrypi.com/debian bookworm main" \
+    > /etc/apt/sources.list.d/raspberrypi.list
+
 # The base rootfs is cached, so upgrade here to pick up security fixes.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     # Core
@@ -49,12 +56,37 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libnss-mdns \
     hostapd \
     dnsmasq \
+    # Pi Zero W hardware and boot chain (DEC-025)
+    linux-image-rpi-v6 \
+    firmware-brcm80211 \
+    bluez-firmware \
+    u-boot-rpi \
+    libubootenv-tool \
+    e2fsprogs \
+    dosfstools \
+    wpasupplicant \
+    rfkill \
+    openssh-server \
     # System
     zram-tools \
     # Utilities
     ca-certificates \
     kmod \
     && rm -rf /var/lib/apt/lists/*
+
+# Boot firmware goes on the boot partition, not the root slots. Its package won't
+# install without a mounted boot partition, so unpack it instead.
+RUN cd /tmp && apt-get update && apt-get download raspi-firmware \
+    && dpkg-deb -x raspi-firmware_*.deb /tmp/fw \
+    && mkdir -p /usr/lib/kds-boot \
+    && cp /tmp/fw/usr/lib/raspi-firmware/bootcode.bin \
+          /tmp/fw/usr/lib/raspi-firmware/start.elf \
+          /tmp/fw/usr/lib/raspi-firmware/fixup.dat /usr/lib/kds-boot/ \
+    && rm -rf /tmp/fw /tmp/raspi-firmware_*.deb /var/lib/apt/lists/*
+
+# Stable kernel path for the boot script. It's a copy, because U-Boot reads it
+# directly from the root slot.
+RUN cp "$(ls -1 /boot/vmlinuz-*-rpi-v6 | sort -V | tail -1)" /boot/vmlinuz-kds
 
 # ---------------------------------------------------------------------------
 # RAUC configuration
@@ -73,6 +105,16 @@ COPY ci/rauc/keyring.pem /etc/rauc/keyring.pem
 
 # RAUC mark-good service — marks the current slot as good after successful boot
 COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
+
+# U-Boot's environment file, used by RAUC to switch slots
+RUN echo "/boot/firmware/uboot.env 0x0 0x4000" > /etc/fw_env.config
+
+# Partitions outside the root slots. nofail and the short timeout let the VM boot
+# without them.
+RUN mkdir -p /boot/firmware /data && printf '%s\n' \
+    "/dev/mmcblk0p1 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=5s 0 2" \
+    "/dev/mmcblk0p4 /data ext4 defaults,nofail,x-systemd.device-timeout=5s 0 2" \
+    > /etc/fstab
 
 # ---------------------------------------------------------------------------
 # Platform services
@@ -126,11 +168,32 @@ COPY ci/config/timesyncd.conf /etc/systemd/timesyncd.conf
 # Without this the guest has no IP and packets cannot be routed in from the host.
 RUN mkdir -p /etc/systemd/network && \
     printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n' \
-    > /etc/systemd/network/20-dhcp.network
+    > /etc/systemd/network/20-dhcp.network && \
+    printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n' \
+    > /etc/systemd/network/25-wifi.network
+
+# Per-device settings, plus SSH with keys only. Host keys are removed so devices
+# never share them, and are created at boot.
+COPY ci/device/kds-device-config.sh /usr/local/bin/kds-device-config.sh
+COPY ci/device/kds-device-config.service /etc/systemd/system/kds-device-config.service
+RUN chmod +x /usr/local/bin/kds-device-config.sh \
+    && rm -f /etc/ssh/ssh_host_* \
+    && printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' \
+    > /etc/ssh/sshd_config.d/10-kds.conf
+
+# A hung boot resets through the hardware watchdog and uses up one of the slot's
+# boot tries, so rollback doesn't need anyone to power-cycle the device.
+RUN mkdir -p /etc/systemd/system.conf.d \
+    && printf '[Manager]\nRuntimeWatchdogSec=15\nRebootWatchdogSec=60\n' \
+    > /etc/systemd/system.conf.d/10-watchdog.conf
 
 # Enable system services
 RUN systemctl enable \
         systemd-networkd.service \
+        kds-device-config.service \
+        ssh.service \
+        wpa_supplicant@wlan0.service \
+        rauc-mark-good.service \
         avahi-daemon.service \
         kds-hostname.service \
         api-server.service \
@@ -141,10 +204,10 @@ RUN systemctl enable \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 
 # ---------------------------------------------------------------------------
-# Dev VM login — root password + autologin on ttyAMA0 (QEMU serial console)
+# Console login — no root password; VM autologin on ttyAMA0 (QEMU serial console)
 # ---------------------------------------------------------------------------
 
-RUN echo 'root:kds' | chpasswd
+RUN passwd -l root
 
 # Serial console autologin (ttyAMA0 = QEMU -nographic serial port)
 RUN mkdir -p /etc/systemd/system/serial-getty@ttyAMA0.service.d && \

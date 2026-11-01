@@ -1,0 +1,14 @@
+[Unit]
+Description=Kids Desktop Speaker — apply per-device settings
+DefaultDependencies=no
+After=local-fs.target
+Before=ssh.service wpa_supplicant@wlan0.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kds-device-config.sh
+
+[Install]
+WantedBy=multi-user.target
