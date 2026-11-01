@@ -56,18 +56,31 @@ jobs:
         run: make test
         working-directory: ci
 
+      # The VM test is slow, so it runs on pushes to main, not on every PR.
       - name: Install VM test tools
+        if: github.event_name == 'push'
         run: sudo apt-get update && sudo apt-get install -y qemu-system-arm genext2fs
 
+      - name: Cache VM kernel
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ci/vm/vmlinuz
+            ci/vm/initrd.img
+          key: vm-kernel-${{ hashFiles('ci/vm/build-image.sh') }}
+
       - name: Boot VM and run API smoke tests
+        if: github.event_name == 'push'
         run: make ci-test
         working-directory: ci
         env:
           FORCE_REBUILD: "1"
+          KDS_VM_IMAGE: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           KDS_VM_BOOT_ATTEMPTS: "120"
 
       - name: Upload VM boot log
-        if: failure()
+        if: failure() && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: vm-boot-log
