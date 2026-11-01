@@ -74,6 +74,7 @@ echo ""
 echo "--- RAUC ---"
 require_cmd rauc
 require_file /etc/rauc/system.conf
+require_file /etc/rauc/keyring.pem
 ok "RAUC system.conf installed"
 
 echo ""

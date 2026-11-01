@@ -12,7 +12,10 @@
 #
 # Version comes from $VERSION (the git tag in CI); defaults to 0.1.0-dev.
 #
-# The generated certs are CI-only throwaway keys — never stored, never reused.
+# Signing (DEC-023): with RAUC_SIGNING_KEY and RAUC_SIGNING_CERT set, the bundle
+# is signed with the stable identity and verified against /etc/rauc/keyring.pem.
+# Otherwise it gets throwaway certs that no device trusts, unless
+# RAUC_REQUIRE_STABLE_KEY=1, which makes that an error (release builds).
 
 set -euo pipefail
 
@@ -26,24 +29,37 @@ rm -rf "$STAGING"
 mkdir -p "$CERT_DIR" "$STAGING"
 trap 'rm -rf "$STAGING"' EXIT
 
-echo "==> Generating throwaway dev certs..."
-openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout "$CERT_DIR/ca.key.pem" \
-    -out    "$CERT_DIR/ca.cert.pem" \
-    -days 365 -subj "/CN=KDS CI CA" 2>/dev/null
+STABLE_KEY=0
+umask 077
+if [ -n "${RAUC_SIGNING_KEY:-}" ] && [ -n "${RAUC_SIGNING_CERT:-}" ]; then
+    echo "==> Using stable signing identity"
+    printf '%s\n' "$RAUC_SIGNING_KEY" > "$CERT_DIR/signing.key.pem"
+    printf '%s\n' "$RAUC_SIGNING_CERT" > "$CERT_DIR/signing.cert.pem"
+    STABLE_KEY=1
+elif [ "${RAUC_REQUIRE_STABLE_KEY:-0}" = "1" ]; then
+    echo "error: RAUC_SIGNING_KEY and RAUC_SIGNING_CERT are required" >&2
+    exit 1
+else
+    echo "==> Generating throwaway dev certs..."
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$CERT_DIR/ca.key.pem" \
+        -out    "$CERT_DIR/ca.cert.pem" \
+        -days 365 -subj "/CN=KDS CI CA" 2>/dev/null
 
-openssl req -newkey rsa:2048 -nodes \
-    -keyout "$CERT_DIR/signing.key.pem" \
-    -out    "$CERT_DIR/signing.csr" \
-    -subj "/CN=KDS CI Signing" 2>/dev/null
+    openssl req -newkey rsa:2048 -nodes \
+        -keyout "$CERT_DIR/signing.key.pem" \
+        -out    "$CERT_DIR/signing.csr" \
+        -subj "/CN=KDS CI Signing" 2>/dev/null
 
-openssl x509 -req \
-    -in "$CERT_DIR/signing.csr" \
-    -CA "$CERT_DIR/ca.cert.pem" \
-    -CAkey "$CERT_DIR/ca.key.pem" \
-    -CAcreateserial \
-    -out "$CERT_DIR/signing.cert.pem" \
-    -days 365 2>/dev/null
+    openssl x509 -req \
+        -in "$CERT_DIR/signing.csr" \
+        -CA "$CERT_DIR/ca.cert.pem" \
+        -CAkey "$CERT_DIR/ca.key.pem" \
+        -CAcreateserial \
+        -out "$CERT_DIR/signing.cert.pem" \
+        -days 365 2>/dev/null
+fi
+umask 022
 
 echo "==> Creating bundle staging dir (version $VERSION)..."
 if [ -f "$ROOTFS_SRC" ]; then
@@ -71,5 +87,10 @@ rauc bundle \
     --cert="$CERT_DIR/signing.cert.pem" \
     --key="$CERT_DIR/signing.key.pem" \
     "$STAGING" "$OUTPUT"
+
+if [ "$STABLE_KEY" = "1" ]; then
+    echo "==> Verifying bundle against /etc/rauc/keyring.pem..."
+    rauc info --keyring=/etc/rauc/keyring.pem "$OUTPUT" >/dev/null
+fi
 
 echo "==> Bundle created: $OUTPUT ($(du -sh "$OUTPUT" | cut -f1))"

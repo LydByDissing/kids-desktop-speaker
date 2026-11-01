@@ -633,6 +633,11 @@ DEC-009 — RAUC Bundle Signing Strategy
 **Decision**: **Throwaway dev certs** for CI/development builds.
 **Hardware security key (YubiKey/HSM)** for production release signing.
 
+.. note::
+
+   DEC-023 replaces throwaway certs for tagged releases. Throwaway certs remain
+   in use for builds on ``main`` and PRs.
+
 **Context**
 
 RAUC requires every bundle to be signed with a certificate chain. A
@@ -1923,3 +1928,36 @@ completes. This prevents large time jumps during the NTP sync window.
   NTP sync status; the web UI displays a warning if time is not synced
 - Alarm scheduling (DEC-021) blocks on NTP sync for the first alarm
   after boot; subsequent alarms use the saved clock as fallback
+
+DEC-023 — Stable Development CA for Published Bundles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_023
+   :status: resolved
+   :date: 2026-11-01
+   :tags: ci, rauc, security, ota
+
+**Decision**: Tagged releases are signed with a **stable development identity**.
+Its CA certificate is committed as ``ci/rauc/keyring.pem`` and installed in the
+image. The signing key and certificate are held in the GitHub secrets
+``RAUC_SIGNING_KEY`` and ``RAUC_SIGNING_CERT``. Partly supersedes DEC-009.
+
+**Context**
+
+DEC-009 generates a new certificate on every CI run, so no device can verify a
+published bundle and ``rauc install`` cannot succeed. The OTA loop needs a trust
+anchor that stays the same across releases.
+
+**Consequences**
+
+- ``ci/scripts/gen-signing-ca.sh`` creates the identity and destroys the CA
+  private key, so rotation means generating a new CA.
+- Release builds fail rather than fall back to throwaway keys, and verify each
+  bundle against the keyring.
+- Builds on ``main`` and PRs cannot read the secrets and keep throwaway certs.
+  No device trusts those bundles.
+- Anyone able to read the repository secrets could sign an update trusted by
+  devices using this CA. Production signing still moves to a hardware key
+  (DEC-009), and devices shipped with the development CA need a planned
+  rotation first.
