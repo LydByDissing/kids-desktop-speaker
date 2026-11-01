@@ -2043,6 +2043,11 @@ rest of the system.
 
 **Details**
 
+- The image ships no ``uboot.env``. A valid file replaces all of U-Boot's built-in
+  defaults, including ``bootcmd``, leaving it waiting at a prompt. The boot script
+  creates the file on first boot.
+- U-Boot is 2024.01 from Raspbian trixie, pinned by checksum, because that is the
+  version tested on a Pi Zero W.
 - ``ci/boot/boot.cmd`` gives each slot three boot tries. ``rauc-mark-good`` restores
   them only after the API answers ``/health``.
 - The hardware watchdog resets a hung boot, so rollback needs no manual power cycle.

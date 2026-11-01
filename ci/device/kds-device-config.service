@@ -2,6 +2,10 @@
 Description=Kids Desktop Speaker — apply per-device settings
 DefaultDependencies=no
 After=local-fs.target
+# nofail mounts don't hold up local-fs.target, so wait for them explicitly. Wants
+# rather than Requires, so the VM, which has neither, still starts this service.
+Wants=boot-firmware.mount data.mount
+After=boot-firmware.mount data.mount
 Before=ssh.service wpa_supplicant@wlan0.service network-pre.target
 Wants=network-pre.target
 

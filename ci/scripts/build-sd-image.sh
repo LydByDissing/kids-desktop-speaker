@@ -29,13 +29,13 @@ docker run --rm \
 
         tar -xf /rootfs.tar -C $W/root --numeric-owner --exclude="./dev/*" --exclude="./proc/*" --exclude="./sys/*"
         F=$W/root/usr/lib/kds-boot
-        cp $F/bootcode.bin $F/start.elf $F/fixup.dat $W/boot/
-        cp $W/root/usr/lib/u-boot/rpi_0_w/u-boot.bin $W/boot/
+        cp $F/bootcode.bin $F/start.elf $F/fixup.dat $F/start_cd.elf $F/fixup_cd.dat $F/u-boot.bin $W/boot/
         cp /bootsrc/config.txt $W/boot/
         cp $W/root/usr/lib/linux-image-*/bcm2708-rpi-zero-w.dtb $W/boot/
         mkimage -q -A arm -T script -C none -n "KDS A/B boot" -d /bootsrc/boot.cmd $W/boot/boot.scr
-        printf "BOOT_ORDER=A B\nBOOT_A_LEFT=3\nBOOT_B_LEFT=3\n" > $W/env.txt
-        mkenvimage -s 0x4000 -o $W/boot/uboot.env $W/env.txt
+        # Do not ship uboot.env: a valid file replaces all of U-Boot'"'"'s built-in
+        # defaults, including bootcmd, and it then waits at a prompt forever. The
+        # boot script sets the slot variables and saves the file on first boot.
 
         truncate -s "${BOOT}M" $W/p1
         mkfs.vfat -n KDS-BOOT $W/p1 >/dev/null

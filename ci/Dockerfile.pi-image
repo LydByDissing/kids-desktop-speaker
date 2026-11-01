@@ -46,6 +46,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     bluez \
     # RAUC
     rauc \
+    rauc-service \
     squashfs-tools \
     # Networking
     iproute2 \
@@ -60,7 +61,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     linux-image-rpi-v6 \
     firmware-brcm80211 \
     bluez-firmware \
-    u-boot-rpi \
     libubootenv-tool \
     e2fsprogs \
     dosfstools \
@@ -68,6 +68,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     rfkill \
     openssh-server \
     # System
+    systemd-timesyncd \
     zram-tools \
     # Utilities
     ca-certificates \
@@ -81,8 +82,19 @@ RUN cd /tmp && apt-get update && apt-get download raspi-firmware \
     && mkdir -p /usr/lib/kds-boot \
     && cp /tmp/fw/usr/lib/raspi-firmware/bootcode.bin \
           /tmp/fw/usr/lib/raspi-firmware/start.elf \
-          /tmp/fw/usr/lib/raspi-firmware/fixup.dat /usr/lib/kds-boot/ \
+          /tmp/fw/usr/lib/raspi-firmware/fixup.dat \
+          /tmp/fw/usr/lib/raspi-firmware/start_cd.elf \
+          /tmp/fw/usr/lib/raspi-firmware/fixup_cd.dat /usr/lib/kds-boot/ \
     && rm -rf /tmp/fw /tmp/raspi-firmware_*.deb /var/lib/apt/lists/*
+
+# U-Boot 2024.01, the version tested on real hardware. It's only a boot file, so
+# unpack it from Raspbian trixie, pinned by checksum.
+RUN cd /tmp \
+    && curl -fsSL -o u-boot.deb http://archive.raspbian.org/raspbian/pool/main/u/u-boot/u-boot-rpi_2024.01+dfsg-7+rpi1_armhf.deb \
+    && echo "8900536a854a656af4900d59bd61709b6d2c92043429da6abf78ce18df76b514  u-boot.deb" | sha256sum -c - \
+    && dpkg-deb -x u-boot.deb /tmp/ub \
+    && cp /tmp/ub/usr/lib/u-boot/rpi_0_w/u-boot.bin /usr/lib/kds-boot/u-boot.bin \
+    && rm -rf /tmp/ub /tmp/u-boot.deb
 
 # Stable kernel path for the boot script. It's a copy, because U-Boot reads it
 # directly from the root slot.
@@ -109,11 +121,11 @@ COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 # U-Boot's environment file, used by RAUC to switch slots
 RUN echo "/boot/firmware/uboot.env 0x0 0x4000" > /etc/fw_env.config
 
-# Partitions outside the root slots. nofail and the short timeout let the VM boot
-# without them.
+# Partitions outside the root slots. nofail lets the VM boot without them. The Pi
+# needs longer than 5s to bring up the device on boot.
 RUN mkdir -p /boot/firmware /data && printf '%s\n' \
-    "/dev/mmcblk0p1 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=5s 0 2" \
-    "/dev/mmcblk0p4 /data ext4 defaults,nofail,x-systemd.device-timeout=5s 0 2" \
+    "/dev/mmcblk0p1 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    "/dev/mmcblk0p4 /data ext4 defaults,nofail,x-systemd.device-timeout=60s 0 2" \
     > /etc/fstab
 
 # ---------------------------------------------------------------------------
@@ -181,6 +193,16 @@ RUN chmod +x /usr/local/bin/kds-device-config.sh \
     && printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' \
     > /etc/ssh/sshd_config.d/10-kds.conf
 
+# The Bluetooth adapter appears after this service's start condition is checked, so
+# drop the condition. bluetoothd waits for an adapter by itself.
+RUN mkdir -p /etc/systemd/system/bluetooth.service.d \
+    && printf '[Unit]\nConditionPathIsDirectory=\n' \
+    > /etc/systemd/system/bluetooth.service.d/10-kds.conf
+
+# Keep logs across reboots, so a device with no network can be diagnosed by reading
+# its SD card.
+RUN mkdir -p /var/log/journal
+
 # A hung boot resets through the hardware watchdog and uses up one of the slot's
 # boot tries, so rollback doesn't need anyone to power-cycle the device.
 RUN mkdir -p /etc/systemd/system.conf.d \
@@ -190,6 +212,7 @@ RUN mkdir -p /etc/systemd/system.conf.d \
 # Enable system services
 RUN systemctl enable \
         systemd-networkd.service \
+        systemd-timesyncd.service \
         kds-device-config.service \
         ssh.service \
         wpa_supplicant@wlan0.service \

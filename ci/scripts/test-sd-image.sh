@@ -15,13 +15,14 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "image has four partitions" "[ \$(sfdisk -d /sd.img | grep -c start=) = 4 ]"
     ok "fits an 8 GB card" "[ \$(stat -c%s /sd.img) -lt 7500000000 ]"
     ok "boot partition is bootable FAT" "sfdisk -d /sd.img | grep -E \"sd.img1 .*type=c, bootable\""
-    for f in bootcode.bin start.elf fixup.dat u-boot.bin config.txt boot.scr uboot.env bcm2708-rpi-zero-w.dtb; do
+    for f in bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin config.txt boot.scr bcm2708-rpi-zero-w.dtb; do
         ok "boot has $f" "mdir -i /p1 ::/$f"
     done
-    mcopy -i /p1 ::/boot.scr /boot.scr; mcopy -i /p1 ::/uboot.env /env; mcopy -i /p1 ::/config.txt /config.txt
+    mcopy -i /p1 ::/boot.scr /boot.scr; mcopy -i /p1 ::/config.txt /config.txt
     ok "boot script is a valid image" "dumpimage -l /boot.scr | grep -q Script"
     ok "config boots U-Boot" "grep -q ^kernel=u-boot.bin /config.txt"
-    ok "environment starts on slot A" "grep -aq \"BOOT_ORDER=A B\" /env"
+    ok "no uboot.env, which would replace the default bootcmd" "! mdir -i /p1 ::/uboot.env"
+    ok "gpu_mem=16 has its cut-down firmware" "! grep -q ^gpu_mem=16 /config.txt || mdir -i /p1 ::/start_cd.elf"
     ok "no Wi-Fi details or SSH keys in the boot partition" "! mdir -i /p1 ::/kds"
     dbg() { debugfs -R "$1" /p2 2>/dev/null; }
     ok "slot A has a kernel" "dbg \"stat /boot/vmlinuz-kds\" | grep -q Inode"
@@ -30,6 +31,8 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "slot A has RAUC keyring" "dbg \"stat /etc/rauc/keyring.pem\" | grep -q Inode"
     ok "slot A has no SSH host keys" "! dbg \"ls /etc/ssh\" | grep -q ssh_host_"
     ok "slot A has the data mount in fstab" "dbg \"cat /etc/fstab\" | grep -q mmcblk0p4"
+    ok "slot A has the RAUC D-Bus service" "dbg \"stat /usr/lib/systemd/system/rauc.service\" | grep -q Inode"
+    ok "slot A enables clock sync" "dbg \"stat /etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service\" | grep -q Inode"
     ok "root account is locked" "dbg \"cat /etc/shadow\" | grep -qE \"^root:[!*]\""
     ok "data partition is ext4" "dumpe2fs -h /p4 | grep -q \"volume name:.*data\""
     exit $fail
