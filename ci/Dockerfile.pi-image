@@ -61,6 +61,9 @@ RUN mkdir -p /etc/rauc
 # devices to simulate the partition layout for bundle creation.
 COPY ci/rauc/system.conf /etc/rauc/system.conf
 
+# RAUC keyring: public CA that verifies bundle signatures (DEC-023)
+COPY ci/rauc/keyring.pem /etc/rauc/keyring.pem
+
 # RAUC mark-good service — marks the current slot as good after successful boot
 COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 

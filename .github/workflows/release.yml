@@ -143,8 +143,30 @@ jobs:
       - name: Run smoke tests
         run: make -C ci test
 
-      - name: Build RAUC bundle
+      - name: Install VM test tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm genext2fs
+
+      - name: Cache VM kernel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ci/vm/vmlinuz
+            ci/vm/initrd.img
+          key: vm-kernel-${{ hashFiles('ci/vm/build-image.sh') }}
+
+      - name: Boot VM and run API smoke tests
+        run: make -C ci ci-test
+        env:
+          FORCE_REBUILD: "1"
+          KDS_VM_IMAGE: kids-desktop-speaker:latest
+          KDS_VM_BOOT_ATTEMPTS: "120"
+
+      - name: Build and verify signed RAUC bundle
         run: make -C ci bundle VERSION=${{ github.ref_name }}
+        env:
+          RAUC_SIGNING_KEY: ${{ secrets.RAUC_SIGNING_KEY }}
+          RAUC_SIGNING_CERT: ${{ secrets.RAUC_SIGNING_CERT }}
+          RAUC_REQUIRE_STABLE_KEY: "1"
 
       - name: Upload RAUC bundle
         uses: actions/upload-artifact@v4
@@ -153,22 +175,9 @@ jobs:
           path: ci/output/image.raucb
           retention-days: 7
 
-  # ── VM boot test (placeholder) ───────────────────────────
-  vm-boot-test:
-    needs: build-image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: VM boot test (placeholder)
-        run: |
-          # TODO: implement full VM boot test (DEC-010)
-          # requires: qemu-system-arm, RPi kernel, rootfs export
-          echo "VM boot test not yet implemented — placeholder"
-
-  # ── Publish GitHub Release (only after VM test passes) ────
+  # ── Publish GitHub Release (only after the image job passes) ──
   publish-release:
-    needs: vm-boot-test
+    needs: build-image
     runs-on: ubuntu-latest
     permissions:
       contents: write          # required to create a Release
@@ -187,6 +196,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          # Tags like v0.1.0-rc.1 are prereleases, which /releases/latest ignores,
+          # so devices never install them automatically.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             image.raucb
             manifest.json

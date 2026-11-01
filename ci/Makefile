@@ -76,9 +76,13 @@ export-rootfs:
 bundle: export-rootfs
 	mkdir -p $(OUTPUT_DIR)
 	docker run --rm --platform $(PLATFORM) \
+		--tmpfs /verify:size=1g \
 		-v $(OUTPUT_DIR):/output \
 		-v $(CURDIR)/create-bundle.sh:/usr/local/bin/create-bundle.sh:ro \
 		-e VERSION=$(VERSION) \
+		-e RAUC_SIGNING_KEY \
+		-e RAUC_SIGNING_CERT \
+		-e RAUC_REQUIRE_STABLE_KEY \
 		--entrypoint /bin/bash \
 		$(IMAGE_NAME):$(IMAGE_TAG) \
 		/usr/local/bin/create-bundle.sh

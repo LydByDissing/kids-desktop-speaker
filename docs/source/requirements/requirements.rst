@@ -319,6 +319,17 @@ Software — Networking
    OTA Updater can discover, verify, and download the update (ref DEC-001,
    OTA_REQ_001, and the ota-updater ``GitHub Releases Integration`` design).
 
+.. req:: CI_REQ_005
+   :id: CI_REQ_005
+   :status: open
+   :tags: infrastructure, ci, ota, security
+
+   Bundles published on a version tag shall be signed with a stable identity
+   that verifies against the keyring in the device image. The release shall
+   fail if that identity is unavailable or the bundle does not verify. Tags
+   containing a pre-release suffix shall be published as GitHub prereleases
+   (ref DEC-023).
+
 .. req:: NET_REQ_003
    :id: NET_REQ_003
    :status: open

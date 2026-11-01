@@ -56,6 +56,9 @@ jobs:
         run: make test
         working-directory: ci
 
+      - name: Test bundle signing
+        run: ci/scripts/test-signing.sh
+
       # The VM test is slow, so it runs on pushes to main, not on every PR.
       - name: Install VM test tools
         if: github.event_name == 'push'
