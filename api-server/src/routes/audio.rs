@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-};
+use axum::{extract::State, http::StatusCode, response::Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -11,10 +7,12 @@ use crate::state::AppState;
 pub async fn get_source(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let guard = state
-        .active_source
-        .read()
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error":"state poisoned"}))))?;
+    let guard = state.active_source.read().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"state poisoned"})),
+        )
+    })?;
     let active_str: Option<&str> = guard.as_ref().map(|s| match s {
         crate::state::Source::Airplay => "airplay",
         crate::state::Source::Spotify => "spotify",
@@ -33,10 +31,12 @@ pub async fn get_source(
 pub async fn get_volume_limit(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let guard = state
-        .vol_limit
-        .read()
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error":"state poisoned"}))))?;
+    let guard = state.vol_limit.read().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"state poisoned"})),
+        )
+    })?;
     Ok(Json(json!({ "limit": *guard })))
 }
 

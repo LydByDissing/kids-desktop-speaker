@@ -27,7 +27,12 @@ pub struct Manager {
 
 impl Manager {
     pub fn new(name: &'static str, bin: &'static str, args: Vec<String>) -> Self {
-        Manager { name, bin_path: bin, args, child: None }
+        Manager {
+            name,
+            bin_path: bin,
+            args,
+            child: None,
+        }
     }
 
     pub async fn start(&mut self) -> Result<(), ManagerError> {
@@ -46,8 +51,14 @@ impl Manager {
 
     pub async fn stop(&mut self) -> Result<(), ManagerError> {
         if let Some(mut child) = self.child.take() {
-            child.kill().await.map_err(|e| ManagerError::KillFailed(self.name, e))?;
-            child.wait().await.map_err(|e| ManagerError::WaitFailed(self.name, e))?;
+            child
+                .kill()
+                .await
+                .map_err(|e| ManagerError::KillFailed(self.name, e))?;
+            child
+                .wait()
+                .await
+                .map_err(|e| ManagerError::WaitFailed(self.name, e))?;
         }
         Ok(())
     }
