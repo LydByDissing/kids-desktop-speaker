@@ -2046,6 +2046,11 @@ rest of the system.
 - The image ships no ``uboot.env``. A valid file replaces all of U-Boot's built-in
   defaults, including ``bootcmd``, leaving it waiting at a prompt. The boot script
   creates the file on first boot.
+- ``ci/scripts/clean-rootfs.py`` removes what ``docker export`` leaves behind.
+  ``/.dockerenv`` makes systemd skip services meant only for real systems, such as
+  clock sync, and Docker blanks ``/etc/resolv.conf``.
+- A failed health check reboots, and the kernel reboots after a panic, so a bad
+  update always uses up its boot tries.
 - U-Boot is 2024.01 from Raspbian trixie, pinned by checksum, because that is the
   version tested on a Pi Zero W.
 - ``ci/boot/boot.cmd`` gives each slot three boot tries. ``rauc-mark-good`` restores

@@ -36,7 +36,10 @@ if test -z "${bootpart}"; then
 fi
 
 saveenv
-setenv bootargs "console=tty1 console=serial0,115200 root=/dev/mmcblk0p${bootpart} rootfstype=ext4 rootwait rw fsck.repair=yes rauc.slot=${raucslot}"
+setenv bootargs "console=tty1 console=serial0,115200 root=/dev/mmcblk0p${bootpart} rootfstype=ext4 rootwait rw fsck.repair=yes panic=10 rauc.slot=${raucslot}"
 echo "Booting slot ${raucslot} (A left ${BOOT_A_LEFT}, B left ${BOOT_B_LEFT})"
 load mmc 0:${bootpart} ${kernel_addr_r} /boot/vmlinuz-kds
 bootz ${kernel_addr_r} - ${fdt_addr}
+
+# Only reached if the kernel is missing or invalid. Use up this try and start over.
+reset

@@ -33,6 +33,10 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "slot A has the data mount in fstab" "dbg \"cat /etc/fstab\" | grep -q mmcblk0p4"
     ok "slot A has the RAUC D-Bus service" "dbg \"stat /usr/lib/systemd/system/rauc.service\" | grep -q Inode"
     ok "slot A enables clock sync" "dbg \"stat /etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service\" | grep -q Inode"
+    ok "slot A has no Docker marker" "! dbg \"stat /.dockerenv\" | grep -q Inode"
+    ok "slot A resolv.conf points to resolved" "dbg \"stat /etc/resolv.conf\" | grep -q symlink"
+    ok "slot A enables DNS" "dbg \"stat /etc/systemd/system/sysinit.target.wants/systemd-resolved.service\" | grep -qE Inode"
+    ok "boot script resets if the kernel will not start" "tail -c 200 /boot.scr | grep -aq reset"
     ok "root account is locked" "dbg \"cat /etc/shadow\" | grep -qE \"^root:[!*]\""
     ok "data partition is ext4" "dumpe2fs -h /p4 | grep -q \"volume name:.*data\""
     exit $fail

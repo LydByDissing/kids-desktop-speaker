@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test sd-image bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test sd-image bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -78,13 +78,19 @@ test-armv6:
 hw-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-test.sh
 
+## hw-ab-test — Prove A/B updates and rollback on a real Pi: make hw-ab-test PI_HOST=root@host
+hw-ab-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-ab-test.sh
+
 ## export-rootfs — Export the built image's root filesystem to a tar for bundling
 export-rootfs:
 	@echo "==> Exporting rootfs from $(IMAGE_NAME):$(IMAGE_TAG)..."
 	mkdir -p $(OUTPUT_DIR)
 	cid=$$(docker create --platform $(PLATFORM) $(IMAGE_NAME):$(IMAGE_TAG)); \
-	docker export "$$cid" > $(OUTPUT_DIR)/rootfs.tar; \
+	docker export "$$cid" > $(OUTPUT_DIR)/rootfs-raw.tar; \
 	docker rm "$$cid" >/dev/null 2>&1 || { sleep 3; docker rm -f "$$cid" >/dev/null 2>&1 || true; }
+	python3 scripts/clean-rootfs.py $(OUTPUT_DIR)/rootfs-raw.tar $(OUTPUT_DIR)/rootfs.tar
+	rm -f $(OUTPUT_DIR)/rootfs-raw.tar
 	@echo "==> rootfs exported: $(OUTPUT_DIR)/rootfs.tar ($$(du -sh $(OUTPUT_DIR)/rootfs.tar | cut -f1))"
 
 ## bundle — Build RAUC bundle (.raucb) of the real rootfs, signed with throwaway dev certs

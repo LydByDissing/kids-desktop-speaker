@@ -47,7 +47,9 @@ if [ ! -f "$OUTPUT" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
     echo "==> Exporting rootfs..."
     CONTAINER=$(docker create --platform linux/arm/v6 "$VM_IMAGE")
     TMPTAR=$(mktemp /tmp/rootfs-XXXX.tar)
-    docker export "$CONTAINER" > "$TMPTAR"
+    docker export "$CONTAINER" > "$TMPTAR.raw"
+    python3 "$(dirname "$SCRIPT_DIR")/scripts/clean-rootfs.py" "$TMPTAR.raw" "$TMPTAR"
+    rm -f "$TMPTAR.raw"
     # Removal can fail briefly while the storage driver is busy. It isn't fatal.
     docker rm "$CONTAINER" >/dev/null 2>&1 || { sleep 3; docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
 

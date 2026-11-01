@@ -69,6 +69,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     openssh-server \
     # System
     systemd-timesyncd \
+    systemd-resolved \
     zram-tools \
     # Utilities
     ca-certificates \
@@ -213,6 +214,7 @@ RUN mkdir -p /etc/systemd/system.conf.d \
 RUN systemctl enable \
         systemd-networkd.service \
         systemd-timesyncd.service \
+        systemd-resolved.service \
         kds-device-config.service \
         ssh.service \
         wpa_supplicant@wlan0.service \
