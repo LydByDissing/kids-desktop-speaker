@@ -11,11 +11,20 @@ fn parse(v: &str) -> Option<Version> {
     Version::parse(v.trim().trim_start_matches('v')).ok()
 }
 
+/// A valid candidate is newer than an unparseable current version, so a device
+/// with a missing or corrupt version can still recover by updating.
 pub fn is_newer(candidate: &str, current: &str) -> bool {
     match (parse(candidate), parse(current)) {
         (Some(c), Some(cur)) => c > cur,
-        _ => false,
+        (Some(_), None) => true,
+        (None, _) => false,
     }
+}
+
+/// `pending` is a version already installed and waiting for a reboot. The running
+/// version does not change until then, so without it each check would reinstall.
+pub fn should_install(candidate: &str, current: &str, pending: Option<&str>) -> bool {
+    is_newer(candidate, pending.unwrap_or(current))
 }
 
 #[cfg(test)]
@@ -43,9 +52,21 @@ mod tests {
     }
 
     #[test]
-    fn unparseable_never_newer() {
+    fn unparseable_candidate_is_never_newer() {
         assert!(!is_newer("garbage", "v1.0.0"));
-        assert!(!is_newer("v1.0.0", "garbage"));
+        assert!(!is_newer("garbage", "other-garbage"));
+    }
+
+    #[test]
+    fn unparseable_current_can_be_updated() {
+        assert!(is_newer("v1.0.0", "9394ee4-dirty"));
+    }
+
+    #[test]
+    fn pending_install_is_not_repeated() {
+        assert!(should_install("v1.1.0", "v1.0.0", None));
+        assert!(!should_install("v1.1.0", "v1.0.0", Some("v1.1.0")));
+        assert!(should_install("v1.2.0", "v1.0.0", Some("v1.1.0")));
     }
 
     #[test]

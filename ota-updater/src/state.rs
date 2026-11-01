@@ -13,7 +13,7 @@ pub enum OtaState {
 
 pub struct OtaStatus {
     pub state: OtaState,
-    pub version: Option<String>, // last installed version tag
+    pub version: Option<String>, // running version
 }
 
 #[derive(Clone)]
