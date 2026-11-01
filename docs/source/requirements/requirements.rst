@@ -330,6 +330,15 @@ Software — Networking
    containing a pre-release suffix shall be published as GitHub prereleases
    (ref DEC-023).
 
+.. req:: CI_REQ_006
+   :id: CI_REQ_006
+   :status: open
+   :tags: infrastructure, ci, hardware
+
+   The system image shall run on the Pi Zero W's ARMv6 CPU. The CI pipeline shall
+   build and test the image under emulation of that CPU, and shall fail if any
+   tested program crashes on it (ref DEC-024).
+
 .. req:: NET_REQ_003
    :id: NET_REQ_003
    :status: open

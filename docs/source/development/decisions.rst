@@ -1742,10 +1742,15 @@ of OpenSSL for TLS — OpenSSL cannot be reliably cross-compiled.
 
 **Context**
 
-The Pi Zero W runs ARMv6 with hard-float ABI. Rust's
-``armv7-unknown-linux-gnueabihf`` target produces compatible binaries —
-Raspberry Pi OS carries a compatibility layer that runs ARMv7 code on
-ARMv6 hardware. Binaries must be built on x86_64 developer and CI machines
+The Pi Zero W runs ARMv6 with hard-float ABI.
+
+.. warning::
+
+   The original text here claimed ARMv7 binaries run on ARMv6 hardware through
+   a compatibility layer. That is false: ARMv7 code crashes with an illegal
+   instruction. DEC-024 replaces the target and base image.
+
+Binaries must be built on x86_64 developer and CI machines
 and injected into the Docker image used to populate the QEMU VM rootfs.
 
 **Options Considered**
@@ -1961,3 +1966,55 @@ anchor that stays the same across releases.
   devices using this CA. Production signing still moves to a hardware key
   (DEC-009), and devices shipped with the development CA need a planned
   rotation first.
+
+DEC-024 — ARMv6 Raspbian Base and Emulated CPU Check
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_024
+   :status: resolved
+   :date: 2026-11-01
+   :tags: build, arm, ci, hardware
+
+**Decision**: Build the image from a **Raspbian bookworm rootfs** created with
+``debootstrap`` from ``archive.raspbian.org``, compile every service for
+``arm-unknown-linux-gnueabihf``, and run the image build and tests under QEMU
+pinned to **ARM1176**, the Pi Zero W's CPU. Supersedes the ARMv7 target in
+DEC-022.
+
+**Context**
+
+The image was based on ``arm32v7/debian:bookworm-slim``. Debian's ``armhf``
+port requires ARMv7, so its ``/bin/true`` crashes with an illegal instruction on
+ARM1176. Emulating ``linux/arm/v7`` and a Cortex-A15 VM could not detect this.
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Option
+     - Assessment
+   * - **Raspbian via debootstrap** *(chosen)*
+     - Hard-float ARMv6 with the same packages, built from the project's own
+       archive with a pinned signing key
+   * - ``balenalib/rpi-raspbian``
+     - Ready-made, but third-party and last built in 2023
+   * - Debian ``armel``
+     - Runs on ARMv6, but soft-float is a poor fit for DSP on this CPU
+   * - Pi Zero 2 W
+     - Removes the problem, but changes the target hardware
+
+**Consequences**
+
+- ``make test-armv6`` runs the image's programs on ARM1176, with a control
+  proving that ARMv7 code crashes.
+- ``ota-updater`` carries an ARMv7/NEON ELF tag from ``ring``. It completes a
+  real HTTPS request on ARM1176, which fits ``ring`` selecting code at runtime.
+- The full-system VM still uses an ARMv7 kernel on a Cortex-A15. It tests boot
+  behaviour, not the CPU.
+- Emulation is not hardware. A device test is still required, and the Raspberry
+  Pi kernel and bootloader are still outstanding.
+- ``librespot`` and ``camilladsp`` are not packaged by Raspbian and must be built
+  for ARMv6.

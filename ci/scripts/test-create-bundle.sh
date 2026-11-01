@@ -11,7 +11,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 IMAGE=kids-desktop-speaker:latest
-PLATFORM=linux/arm/v7
+PLATFORM=linux/arm/v6
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "error: $IMAGE not found — run 'make -C ci build' first" >&2

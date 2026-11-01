@@ -11,7 +11,8 @@ if ! command -v genext2fs &>/dev/null; then
 fi
 
 # Step 1: Get kernel + initrd from a temporary ARM container
-# We install linux-image-armmp-lpae inside arm32v7/debian:bookworm-slim
+# We install linux-image-armmp-lpae inside arm32v7/debian:bookworm-slim. This
+# ARMv7 kernel only boots the emulated VM (Cortex-A15); it never ships to a device.
 # and copy the kernel/initrd out to the host.
 if [ ! -f "$KERNEL_OUT" ]; then
     echo "==> Extracting ARM kernel..."
@@ -35,7 +36,7 @@ if [ ! -f "$OUTPUT" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
     if [ -z "$VM_IMAGE" ]; then
         VM_IMAGE=kids-desktop-speaker:vm
         echo "==> Building Docker image..."
-        docker buildx build --platform linux/arm/v7 \
+        docker buildx build --platform linux/arm/v6 \
             -f "$(dirname "$SCRIPT_DIR")/Dockerfile.pi-image" \
             -t "$VM_IMAGE" --load \
             "$(dirname "$SCRIPT_DIR")/.."
@@ -44,7 +45,7 @@ if [ ! -f "$OUTPUT" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
     fi
 
     echo "==> Exporting rootfs..."
-    CONTAINER=$(docker create --platform linux/arm/v7 "$VM_IMAGE")
+    CONTAINER=$(docker create --platform linux/arm/v6 "$VM_IMAGE")
     TMPTAR=$(mktemp /tmp/rootfs-XXXX.tar)
     docker export "$CONTAINER" > "$TMPTAR"
     docker rm "$CONTAINER"

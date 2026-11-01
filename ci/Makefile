@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -22,14 +22,16 @@
 
 IMAGE_NAME    := kids-desktop-speaker
 IMAGE_TAG     := latest
-PLATFORM      := linux/arm/v7
+PLATFORM      := linux/arm/v6
+QEMU_CPU      := arm1176
+BASE_TAR      := base/raspbian-bookworm-armhf.tar
 DOCKERFILE    := Dockerfile.pi-image
 OUTPUT_DIR    ?= $(CURDIR)/output
 
 # Source dir for cross-compiled service binaries, relative to the build
 # context (repo root). Default = local/VM debug build (DEC-022). The release
-# pipeline overrides this to ci/binaries (armv6 --release artifacts, DEC-007).
-BIN_DIR       ?= target/armv7-unknown-linux-gnueabihf/debug
+# pipeline overrides this to ci/binaries (--release artifacts, DEC-007).
+BIN_DIR       ?= target/arm-unknown-linux-gnueabihf/debug
 
 # Bundle version, written into the RAUC manifest. The release pipeline passes
 # the git tag (github.ref_name); locally it derives from git describe.
@@ -41,8 +43,12 @@ VERSION       ?= $(shell git -C .. describe --tags --always --dirty 2>/dev/null 
 
 all: build test bundle
 
+## base — Build the ARMv6 Raspbian root filesystem if it is missing (DEC-024)
+$(BASE_TAR):
+	@bash base/build-base.sh $(BASE_TAR)
+
 ## build — Build the Pi OS Docker image for ARM
-build:
+build: $(BASE_TAR)
 	@echo "==> Building Pi OS image ($(PLATFORM))..."
 	docker buildx build \
 		--platform $(PLATFORM) \
@@ -58,10 +64,15 @@ build:
 test:
 	@echo "==> Running smoke tests..."
 	docker run --rm --platform $(PLATFORM) \
+		-e QEMU_CPU=$(QEMU_CPU) \
 		--entrypoint /bin/bash \
 		$(IMAGE_NAME):$(IMAGE_TAG) \
 		/usr/local/bin/smoke-test.sh
 	@echo "==> Smoke tests passed"
+
+## test-armv6 — Run the image's programs on an emulated Pi Zero W CPU
+test-armv6:
+	@bash scripts/test-armv6.sh
 
 ## export-rootfs — Export the built image's root filesystem to a tar for bundling
 export-rootfs:
@@ -76,6 +87,7 @@ export-rootfs:
 bundle: export-rootfs
 	mkdir -p $(OUTPUT_DIR)
 	docker run --rm --platform $(PLATFORM) \
+		-e QEMU_CPU=$(QEMU_CPU) \
 		--tmpfs /verify:size=1g \
 		-v $(OUTPUT_DIR):/output \
 		-v $(CURDIR)/create-bundle.sh:/usr/local/bin/create-bundle.sh:ro \
@@ -94,14 +106,14 @@ clean:
 	rm -rf $(OUTPUT_DIR)
 	@echo "==> Clean complete"
 
-## cross-build — Cross-compile all workspace binaries for ARMv7
+## cross-build — Cross-compile all workspace binaries for ARMv6
 cross-build:
-	@echo "==> Cross-compiling for armv7-unknown-linux-gnueabihf..."
-	cd .. && cross build --target armv7-unknown-linux-gnueabihf
+	@echo "==> Cross-compiling for arm-unknown-linux-gnueabihf..."
+	cd .. && cross build --target arm-unknown-linux-gnueabihf
 	@echo "==> Cross-build complete"
 
 ## vm-image — Build QEMU ARM rootfs image (depends on cross-build)
-vm-image: cross-build
+vm-image: cross-build $(BASE_TAR)
 	@bash vm/build-image.sh
 
 ## vm — Boot QEMU ARM VM with port-forwarded API on :8080

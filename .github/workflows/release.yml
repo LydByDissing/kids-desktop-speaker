@@ -137,11 +137,20 @@ jobs:
       - name: Make binaries executable
         run: chmod +x ci/binaries/*
 
+      - name: Cache Raspbian base
+        uses: actions/cache@v4
+        with:
+          path: ci/base/raspbian-bookworm-armhf.tar
+          key: raspbian-base-${{ hashFiles('ci/base/build-base.sh', 'ci/base/raspbian.public.key') }}
+
       - name: Build image
         run: make -C ci build BIN_DIR=ci/binaries VERSION=${{ github.ref_name }}
 
       - name: Run smoke tests
         run: make -C ci test
+
+      - name: Test on emulated Pi Zero W CPU
+        run: make -C ci test-armv6
 
       - name: Install VM test tools
         run: sudo apt-get update && sudo apt-get install -y qemu-system-arm genext2fs

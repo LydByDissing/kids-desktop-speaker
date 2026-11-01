@@ -20,3 +20,6 @@ ci/binaries/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Raspbian base rootfs (built by ci/base/build-base.sh)
+ci/base/*.tar

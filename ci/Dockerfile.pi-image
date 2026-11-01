@@ -1,16 +1,22 @@
 # Dockerfile.pi-image — Raspberry Pi OS Lite (Bookworm) for Kids Desktop Speaker
 # ==============================================================================
-# Targets ARMv6 (Pi Zero W) via linux/arm/v7 platform.
+# Targets ARMv6 (Pi Zero W). Debian's armhf port needs ARMv7, so the base is a
+# Raspbian rootfs built by ci/base/build-base.sh (DEC-024).
 # Uses plain Docker + QEMU user-mode emulation — no Dagger required.
 #
-# Build:   docker buildx build --platform linux/arm/v7 -f Dockerfile.pi-image -t kids-desktop-speaker:latest --load .
-# Test:    docker run --rm --platform linux/arm/v7 --privileged kids-desktop-speaker:latest /smoke-test.sh
-# Bundle:  docker run --rm --platform linux/arm/v7 -v ./output:/output kids-desktop-speaker:latest rauc bundle ...
+# Build:   docker buildx build --platform linux/arm/v6 -f Dockerfile.pi-image -t kids-desktop-speaker:latest --load .
+# Test:    docker run --rm --platform linux/arm/v6 --privileged kids-desktop-speaker:latest /smoke-test.sh
+# Bundle:  docker run --rm --platform linux/arm/v6 -v ./output:/output kids-desktop-speaker:latest rauc bundle ...
 
-FROM arm32v7/debian:bookworm-slim
+FROM scratch
+ADD ci/base/raspbian-bookworm-armhf.tar /
+
+# Build-time only: every RUN below executes under QEMU pinned to the Pi Zero W's
+# CPU, so anything that isn't ARMv6 fails the build.
+ARG QEMU_CPU=arm1176
 
 LABEL maintainer="Kids Desktop Speaker project"
-LABEL description="Raspberry Pi OS Lite with Kids Desktop Speaker platform services and RAUC OTA"
+LABEL description="Raspbian with Kids Desktop Speaker platform services and RAUC OTA"
 
 # ---------------------------------------------------------------------------
 # Base system
@@ -19,7 +25,8 @@ LABEL description="Raspberry Pi OS Lite with Kids Desktop Speaker platform servi
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The base rootfs is cached, so upgrade here to pick up security fixes.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     # Core
     systemd \
     systemd-sysv \
@@ -71,13 +78,12 @@ COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 # Platform services
 # ---------------------------------------------------------------------------
 
-# Cross-compiled Rust service binaries. The source directory is selected by
-# BIN_DIR (relative to the build context = repo root) so the same Dockerfile
+# Cross-compiled ARMv6 Rust service binaries. The source directory is selected
+# by BIN_DIR (relative to the build context = repo root) so the same Dockerfile
 # serves both build paths:
-#   - local dev / QEMU VM: armv7 debug binaries (default, see DEC-022)
-#   - CI release pipeline: armv6 --release binaries staged in ci/binaries
-#     (cross-built as arm-unknown-linux-gnueabihf, see DEC-007)
-ARG BIN_DIR=target/armv7-unknown-linux-gnueabihf/debug
+#   - local dev / QEMU VM: debug binaries (default)
+#   - CI release pipeline: --release binaries staged in ci/binaries
+ARG BIN_DIR=target/arm-unknown-linux-gnueabihf/debug
 
 RUN mkdir -p /usr/local/bin/kids-desktop-speaker
 
