@@ -29,14 +29,22 @@ fi
 # genext2fs creates the image from a directory without needing root or loop mounts.
 # Device nodes under ./dev are excluded — the kernel populates /dev via devtmpfs on boot.
 if [ ! -f "$OUTPUT" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
-    echo "==> Building Docker image..."
-    docker buildx build --platform linux/arm/v7 \
-        -f "$(dirname "$SCRIPT_DIR")/Dockerfile.pi-image" \
-        -t kids-desktop-speaker:vm --load \
-        "$(dirname "$SCRIPT_DIR")/.."
+    # KDS_VM_IMAGE reuses an image that is already built (CI builds one earlier
+    # in the same job). Unset, the image is built here.
+    VM_IMAGE="${KDS_VM_IMAGE:-}"
+    if [ -z "$VM_IMAGE" ]; then
+        VM_IMAGE=kids-desktop-speaker:vm
+        echo "==> Building Docker image..."
+        docker buildx build --platform linux/arm/v7 \
+            -f "$(dirname "$SCRIPT_DIR")/Dockerfile.pi-image" \
+            -t "$VM_IMAGE" --load \
+            "$(dirname "$SCRIPT_DIR")/.."
+    else
+        echo "==> Reusing Docker image: $VM_IMAGE"
+    fi
 
     echo "==> Exporting rootfs..."
-    CONTAINER=$(docker create --platform linux/arm/v7 kids-desktop-speaker:vm)
+    CONTAINER=$(docker create --platform linux/arm/v7 "$VM_IMAGE")
     TMPTAR=$(mktemp /tmp/rootfs-XXXX.tar)
     docker export "$CONTAINER" > "$TMPTAR"
     docker rm "$CONTAINER"
