@@ -39,6 +39,10 @@ impl SharedStatus {
         let mut status = self.0.write().await;
         status.state = s;
     }
+    pub async fn set_version(&self, v: String) {
+        let mut status = self.0.write().await;
+        status.version = Some(v);
+    }
 }
 
 impl Default for SharedStatus {

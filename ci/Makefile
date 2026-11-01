@@ -48,6 +48,7 @@ build:
 		--platform $(PLATFORM) \
 		-f $(DOCKERFILE) \
 		--build-arg BIN_DIR=$(BIN_DIR) \
+		--build-arg VERSION=$(VERSION) \
 		-t $(IMAGE_NAME):$(IMAGE_TAG) \
 		--load \
 		..

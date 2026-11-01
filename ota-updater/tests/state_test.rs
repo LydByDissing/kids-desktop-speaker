@@ -1,4 +1,4 @@
-use ota_updater::{SharedStatus, OtaState};
+use ota_updater::{OtaState, SharedStatus};
 
 #[tokio::test]
 async fn test_initial_state_is_idle() {
