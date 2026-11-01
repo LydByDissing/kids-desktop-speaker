@@ -76,6 +76,7 @@ export-rootfs:
 bundle: export-rootfs
 	mkdir -p $(OUTPUT_DIR)
 	docker run --rm --platform $(PLATFORM) \
+		--tmpfs /verify:size=1g \
 		-v $(OUTPUT_DIR):/output \
 		-v $(CURDIR)/create-bundle.sh:/usr/local/bin/create-bundle.sh:ro \
 		-e VERSION=$(VERSION) \

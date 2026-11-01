@@ -19,14 +19,15 @@ mkdir -p "$TMP/stable" "$TMP/throwaway" "$TMP/required"
 
 bundle() { # output-dir [docker args]
     local out="$1"; shift
-    docker run --rm --platform "$PLATFORM" -v "$out:/output" \
+    docker run --rm --platform "$PLATFORM" --tmpfs /verify:size=1g -v "$out:/output" \
         -v "$TMP/id/keyring.pem:/etc/rauc/keyring.pem:ro" \
         -v "$REPO/ci/create-bundle.sh:/usr/local/bin/create-bundle.sh:ro" \
         "$@" --entrypoint /bin/bash "$IMAGE" /usr/local/bin/create-bundle.sh >"$out.log" 2>&1
 }
 verify() {
-    docker run --rm --platform "$PLATFORM" -v "$1:/output" -v "$TMP/id/keyring.pem:/k.pem:ro" \
-        --entrypoint /bin/bash "$IMAGE" -c "rauc info --keyring=/k.pem /output/image.raucb" >"$1.verify.log" 2>&1
+    docker run --rm --platform "$PLATFORM" --tmpfs /verify:size=1g -v "$1:/output" -v "$TMP/id/keyring.pem:/k.pem:ro" \
+        --entrypoint /bin/bash "$IMAGE" \
+        -c "cp /output/image.raucb /verify/ && rauc info --keyring=/k.pem /verify/image.raucb" >"$1.verify.log" 2>&1
 }
 
 fail=0
@@ -47,7 +48,10 @@ bundle "$TMP/throwaway"
 check "throwaway bundle builds" "$?" 0
 verify "$TMP/throwaway"
 [ "$?" -ne 0 ]
-check "throwaway bundle is rejected by keyring" "$?" 0
+check "throwaway bundle is rejected" "$?" 0
+grep -qiE 'signature|certificate|verif.*fail' "$TMP/throwaway.verify.log" && ! grep -q 'mounted device' "$TMP/throwaway.verify.log"
+check "rejection is a signature failure" "$?" 0
+tail -3 "$TMP/throwaway.verify.log" | cut -c1-160
 
 bundle "$TMP/required" -e RAUC_REQUIRE_STABLE_KEY=1
 [ "$?" -ne 0 ]

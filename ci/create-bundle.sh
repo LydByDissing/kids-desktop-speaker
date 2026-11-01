@@ -90,7 +90,14 @@ rauc bundle \
 
 if [ "$STABLE_KEY" = "1" ]; then
     echo "==> Verifying bundle against /etc/rauc/keyring.pem..."
-    rauc info --keyring=/etc/rauc/keyring.pem "$OUTPUT" >/dev/null
+    # RAUC must identify the bundle's mount, which can fail on bind mounts, so
+    # verify a copy on the tmpfs the caller mounts at /verify.
+    VERIFY_COPY="$OUTPUT"
+    if mountpoint -q /verify 2>/dev/null; then
+        VERIFY_COPY=/verify/image.raucb
+        cp "$OUTPUT" "$VERIFY_COPY"
+    fi
+    rauc info --keyring=/etc/rauc/keyring.pem "$VERIFY_COPY" >/dev/null
 fi
 
 echo "==> Bundle created: $OUTPUT ($(du -sh "$OUTPUT" | cut -f1))"
