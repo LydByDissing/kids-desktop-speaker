@@ -2014,6 +2014,9 @@ ARM1176. Emulating ``linux/arm/v7`` and a Cortex-A15 VM could not detect this.
   real HTTPS request on ARM1176, which fits ``ring`` selecting code at runtime.
 - The full-system VM still uses an ARMv7 kernel on a Cortex-A15. It tests boot
   behaviour, not the CPU.
+- ``make hw-test`` runs the same checks on a real Pi Zero W. QEMU has already
+  hidden one bug: launching a missing program looked successful under emulation
+  but fails on the device.
 - Emulation is not hardware. A device test is still required, and the Raspberry
   Pi kernel and bootloader are still outstanding.
 - ``librespot`` and ``camilladsp`` are not packaged by Raspbian and must be built

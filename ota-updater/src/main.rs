@@ -46,7 +46,7 @@ async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option
     let update = match release::fetch_latest(cfg).await {
         Ok(update) => update,
         Err(e) => {
-            eprintln!("ota: release check failed: {e}");
+            eprintln!("ota: release check failed: {:#}", anyhow::Error::new(e));
             return;
         }
     };
@@ -64,6 +64,6 @@ async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option
             println!("ota: installed {candidate}, active after reboot");
             *pending = Some(candidate);
         }
-        Err(e) => eprintln!("ota: install failed: {e}"),
+        Err(e) => eprintln!("ota: install failed: {:#}", anyhow::Error::new(e)),
     }
 }

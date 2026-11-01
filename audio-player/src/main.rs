@@ -24,11 +24,11 @@ async fn main() -> anyhow::Result<()> {
         ],
     );
 
-    // Start both subprocesses
-    airplay_manager.start().await?;
-    spotify_manager.start().await?;
+    // Start whichever sources are installed
+    let airplay = airplay_manager.start_if_available().await;
+    let spotify = spotify_manager.start_if_available().await;
 
-    println!("audio-player: subprocesses started");
+    println!("audio-player: started (airplay: {airplay}, spotify: {spotify})");
 
     // Spawn IPC server task
     let arb_clone = Arc::clone(&arb);

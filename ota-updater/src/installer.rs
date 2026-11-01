@@ -1,6 +1,7 @@
 use crate::state::{OtaState, SharedStatus};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
@@ -17,6 +18,8 @@ pub enum InstallerError {
 }
 
 const DEFAULT_BUNDLE_PATH: &str = "/var/tmp/kds-update.raucb";
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn bundle_path() -> PathBuf {
     std::env::var_os("OTA_BUNDLE_PATH")
@@ -52,7 +55,18 @@ pub async fn download_verified(
     expected_sha256: &str,
     path: &Path,
 ) -> Result<(), InstallerError> {
-    let result = stream_to_file(url, expected_sha256, path).await;
+    download_with_read_timeout(url, expected_sha256, path, READ_TIMEOUT).await
+}
+
+/// A slow download may take as long as it needs, but a stalled one must fail, or
+/// weak Wi-Fi could block updates until the next restart.
+pub async fn download_with_read_timeout(
+    url: &str,
+    expected_sha256: &str,
+    path: &Path,
+    read_timeout: Duration,
+) -> Result<(), InstallerError> {
+    let result = stream_to_file(url, expected_sha256, path, read_timeout).await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(path).await;
     }
@@ -63,8 +77,13 @@ async fn stream_to_file(
     url: &str,
     expected_sha256: &str,
     path: &Path,
+    read_timeout: Duration,
 ) -> Result<(), InstallerError> {
-    let mut response = reqwest::get(url).await?.error_for_status()?;
+    let http = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(read_timeout)
+        .build()?;
+    let mut response = http.get(url).send().await?.error_for_status()?;
     let mut file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)

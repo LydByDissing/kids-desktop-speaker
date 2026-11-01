@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -73,6 +73,10 @@ test:
 ## test-armv6 — Run the image's programs on an emulated Pi Zero W CPU
 test-armv6:
 	@bash scripts/test-armv6.sh
+
+## hw-test — Run the image's programs on a real Pi Zero W: make hw-test PI_HOST=user@host
+hw-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-test.sh
 
 ## export-rootfs — Export the built image's root filesystem to a tar for bundling
 export-rootfs:

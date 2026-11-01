@@ -60,6 +60,8 @@ pub fn parse_manifest(json: &str) -> Result<Manifest, serde_json::Error> {
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent("kds-ota-updater")
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .expect("reqwest client")
 }
