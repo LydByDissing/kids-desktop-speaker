@@ -34,38 +34,36 @@ async fn main() -> anyhow::Result<()> {
 
 async fn check_loop(cfg: OtaConfig, status: SharedStatus) {
     let mut ticker = tokio::time::interval(cfg.check_interval);
+    let mut pending = None;
     loop {
         ticker.tick().await;
-        check_once(&cfg, &status).await;
+        check_once(&cfg, &status, &mut pending).await;
     }
 }
 
-async fn check_once(cfg: &OtaConfig, status: &SharedStatus) {
+async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option<String>) {
     let current = version::read_current(&cfg.version_file).unwrap_or_else(|| "0.0.0".to_string());
-    match release::fetch_latest(cfg).await {
-        Ok(update) => {
-            if version::is_newer(&update.manifest.version, &current) {
-                println!(
-                    "ota: newer release {} available (current {current})",
-                    update.manifest.version
-                );
-                match installer::install_verified(
-                    &update.bundle_url,
-                    &update.manifest.sha256,
-                    status.clone(),
-                )
-                .await
-                {
-                    Ok(()) => {
-                        println!("ota: installed {}", update.manifest.version);
-                        status.set_version(update.manifest.version).await;
-                    }
-                    Err(e) => eprintln!("ota: install failed: {e}"),
-                }
-            } else {
-                println!("ota: up to date (current {current})");
-            }
+    let update = match release::fetch_latest(cfg).await {
+        Ok(update) => update,
+        Err(e) => {
+            eprintln!("ota: release check failed: {e}");
+            return;
         }
-        Err(e) => eprintln!("ota: release check failed: {e}"),
+    };
+    let candidate = update.manifest.version;
+    if !version::should_install(&candidate, &current, pending.as_deref()) {
+        println!("ota: nothing to install (current {current}, latest {candidate})");
+        return;
+    }
+    println!("ota: newer release {candidate} available (current {current})");
+    match installer::install_verified(&update.bundle_url, &update.manifest.sha256, status.clone())
+        .await
+    {
+        // The reported version stays the running one until the device reboots.
+        Ok(()) => {
+            println!("ota: installed {candidate}, active after reboot");
+            *pending = Some(candidate);
+        }
+        Err(e) => eprintln!("ota: install failed: {e}"),
     }
 }

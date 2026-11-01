@@ -1,6 +1,8 @@
 use crate::state::{OtaState, SharedStatus};
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Error)]
 pub enum InstallerError {
@@ -14,7 +16,13 @@ pub enum InstallerError {
     RaucFailed(i32),
 }
 
-const BUNDLE_PATH: &str = "/tmp/update.raucb";
+const DEFAULT_BUNDLE_PATH: &str = "/var/tmp/kds-update.raucb";
+
+fn bundle_path() -> PathBuf {
+    std::env::var_os("OTA_BUNDLE_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_BUNDLE_PATH))
+}
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -22,8 +30,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-pub fn verify_checksum(bytes: &[u8], expected: &str) -> Result<(), InstallerError> {
-    let actual = sha256_hex(bytes);
+fn check_digest(actual: String, expected: &str) -> Result<(), InstallerError> {
     if actual.eq_ignore_ascii_case(expected.trim()) {
         Ok(())
     } else {
@@ -34,48 +41,71 @@ pub fn verify_checksum(bytes: &[u8], expected: &str) -> Result<(), InstallerErro
     }
 }
 
+pub fn verify_checksum(bytes: &[u8], expected: &str) -> Result<(), InstallerError> {
+    check_digest(sha256_hex(bytes), expected)
+}
+
+/// Streams the bundle to `path`, hashing as it goes so the bundle is never held
+/// in RAM. On any failure the partial file is removed.
+pub async fn download_verified(
+    url: &str,
+    expected_sha256: &str,
+    path: &Path,
+) -> Result<(), InstallerError> {
+    let result = stream_to_file(url, expected_sha256, path).await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(path).await;
+    }
+    result
+}
+
+async fn stream_to_file(
+    url: &str,
+    expected_sha256: &str,
+    path: &Path,
+) -> Result<(), InstallerError> {
+    let mut response = reqwest::get(url).await?.error_for_status()?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .await?;
+    let mut hasher = Sha256::new();
+    while let Some(chunk) = response.chunk().await? {
+        hasher.update(&chunk);
+        file.write_all(&chunk).await?;
+    }
+    file.flush().await?;
+    check_digest(hex::encode(hasher.finalize()), expected_sha256)
+}
+
 pub async fn install_verified(
     url: &str,
     expected_sha256: &str,
     status: SharedStatus,
 ) -> Result<(), InstallerError> {
+    let path = bundle_path();
     status.set(OtaState::Downloading).await;
-    let bytes = match download(url).await {
-        Ok(b) => b,
-        Err(e) => {
-            status.set(OtaState::Error(e.to_string())).await;
-            return Err(e);
+    let result = match download_verified(url, expected_sha256, &path).await {
+        Ok(()) => {
+            status.set(OtaState::Installing).await;
+            let installed = rauc_install(&path).await;
+            let _ = tokio::fs::remove_file(&path).await;
+            installed
         }
+        Err(e) => Err(e),
     };
 
-    if let Err(e) = verify_checksum(&bytes, expected_sha256) {
-        status.set(OtaState::Error(e.to_string())).await;
-        return Err(e);
+    match &result {
+        Ok(()) => status.set(OtaState::Done).await,
+        Err(e) => status.set(OtaState::Error(e.to_string())).await,
     }
-
-    tokio::fs::write(BUNDLE_PATH, &bytes).await?;
-    status.set(OtaState::Installing).await;
-    let result = rauc_install(BUNDLE_PATH).await;
-    let _ = tokio::fs::remove_file(BUNDLE_PATH).await;
-
-    match result {
-        Ok(()) => {
-            status.set(OtaState::Done).await;
-            Ok(())
-        }
-        Err(e) => {
-            status.set(OtaState::Error(e.to_string())).await;
-            Err(e)
-        }
-    }
+    result
 }
 
-async fn download(url: &str) -> Result<Vec<u8>, InstallerError> {
-    let response = reqwest::get(url).await?.error_for_status()?;
-    Ok(response.bytes().await?.to_vec())
-}
-
-async fn rauc_install(path: &str) -> Result<(), InstallerError> {
+async fn rauc_install(path: &Path) -> Result<(), InstallerError> {
     let output = tokio::process::Command::new("rauc")
         .arg("install")
         .arg(path)
