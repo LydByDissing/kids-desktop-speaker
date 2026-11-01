@@ -1,30 +1,71 @@
-use ota_updater::SharedStatus;
-use ota_updater::ipc;
+use ota_updater::config::OtaConfig;
+use ota_updater::{installer, ipc, release, version, SharedStatus};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("ota-updater: starting");
 
-    // Create the shared status
+    let cfg = OtaConfig::from_env();
     let status = SharedStatus::new();
 
-    // Spawn IPC server task
-    let status_clone = status.clone();
+    if let Some(v) = version::read_current(&cfg.version_file) {
+        status.set_version(v).await;
+    }
+
+    let status_ipc = status.clone();
     let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc::serve("/run/kds/ota.sock", status_clone).await {
-            eprintln!("IPC server error: {}", e);
+        if let Err(e) = ipc::serve("/run/kds/ota.sock", status_ipc).await {
+            eprintln!("IPC server error: {e}");
         }
     });
 
-    // Wait for Ctrl+C
+    let status_check = status.clone();
+    let check_handle = tokio::spawn(async move {
+        check_loop(cfg, status_check).await;
+    });
+
     tokio::signal::ctrl_c().await?;
-
     println!("ota-updater: shutting down");
-
-    // Cancel the IPC task
     ipc_handle.abort();
-
+    check_handle.abort();
     println!("ota-updater: stopped");
-
     Ok(())
+}
+
+async fn check_loop(cfg: OtaConfig, status: SharedStatus) {
+    let mut ticker = tokio::time::interval(cfg.check_interval);
+    loop {
+        ticker.tick().await;
+        check_once(&cfg, &status).await;
+    }
+}
+
+async fn check_once(cfg: &OtaConfig, status: &SharedStatus) {
+    let current = version::read_current(&cfg.version_file).unwrap_or_else(|| "0.0.0".to_string());
+    match release::fetch_latest(cfg).await {
+        Ok(update) => {
+            if version::is_newer(&update.manifest.version, &current) {
+                println!(
+                    "ota: newer release {} available (current {current})",
+                    update.manifest.version
+                );
+                match installer::install_verified(
+                    &update.bundle_url,
+                    &update.manifest.sha256,
+                    status.clone(),
+                )
+                .await
+                {
+                    Ok(()) => {
+                        println!("ota: installed {}", update.manifest.version);
+                        status.set_version(update.manifest.version).await;
+                    }
+                    Err(e) => eprintln!("ota: install failed: {e}"),
+                }
+            } else {
+                println!("ota: up to date (current {current})");
+            }
+        }
+        Err(e) => eprintln!("ota: release check failed: {e}"),
+    }
 }

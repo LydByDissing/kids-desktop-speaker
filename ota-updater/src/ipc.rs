@@ -1,4 +1,4 @@
-use crate::installer::install;
+use crate::installer::install_verified;
 use crate::state::SharedStatus;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -21,7 +21,7 @@ enum Request {
     #[serde(rename = "status")]
     Status,
     #[serde(rename = "install")]
-    Install { url: String },
+    Install { url: String, sha256: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -40,7 +40,7 @@ pub async fn serve(sock_path: &str, status: SharedStatus) -> Result<(), IpcError
     let listener = UnixListener::bind(sock_path)?;
     let mut conn_set: JoinSet<()> = JoinSet::new();
     let mut install_set: JoinSet<()> = JoinSet::new();
-    let (install_tx, mut install_rx) = mpsc::channel::<String>(4);
+    let (install_tx, mut install_rx) = mpsc::channel::<(String, String)>(4);
 
     loop {
         tokio::select! {
@@ -55,10 +55,10 @@ pub async fn serve(sock_path: &str, status: SharedStatus) -> Result<(), IpcError
                 });
             }
             Some(_) = conn_set.join_next() => {}
-            Some(url) = install_rx.recv() => {
+            Some((url, sha256)) = install_rx.recv() => {
                 let status_clone = status.clone();
                 install_set.spawn(async move {
-                    if let Err(e) = install(&url, status_clone).await {
+                    if let Err(e) = install_verified(&url, &sha256, status_clone).await {
                         eprintln!("install failed: {e}");
                     }
                 });
@@ -71,7 +71,7 @@ pub async fn serve(sock_path: &str, status: SharedStatus) -> Result<(), IpcError
 async fn handle_connection(
     socket: tokio::net::UnixStream,
     status: SharedStatus,
-    install_tx: mpsc::Sender<String>,
+    install_tx: mpsc::Sender<(String, String)>,
 ) -> Result<(), IpcError> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
@@ -100,8 +100,8 @@ async fn handle_connection(
                 version: current_status.version,
             })?
         }
-        Request::Install { url } => {
-            let _ = install_tx.send(url).await;
+        Request::Install { url, sha256 } => {
+            let _ = install_tx.send((url, sha256)).await;
             serde_json::to_string(&OkResponse { ok: true })?
         }
     };

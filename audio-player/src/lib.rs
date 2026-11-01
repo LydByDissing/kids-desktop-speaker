@@ -1,3 +1,3 @@
 pub mod arbitrator;
-pub mod manager;
 pub mod ipc;
+pub mod manager;

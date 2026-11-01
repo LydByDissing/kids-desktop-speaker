@@ -1,10 +1,10 @@
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
-use tokio::process::Command as TokioCommand;
 use tokio::io::BufReader;
+use tokio::process::Command as TokioCommand;
 
-use crate::events::{AvrcpEvent, parse_bluetoothctl_line};
+use crate::events::{parse_bluetoothctl_line, AvrcpEvent};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ControllerError {
@@ -57,13 +57,9 @@ impl Controller {
             .spawn()
             .map_err(ControllerError::Spawn)?;
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| ControllerError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to capture stdout",
-            )))?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            ControllerError::Io(std::io::Error::other("failed to capture stdout"))
+        })?;
 
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();

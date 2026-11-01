@@ -262,6 +262,27 @@ Software — Networking
    User data (radio stations, podcast feeds, alarms, API tokens, Bluetooth
    pairings, voice models) shall persist across OTA updates and rollbacks.
 
+.. req:: OTA_REQ_004
+   :id: OTA_REQ_004
+   :status: open
+   :tags: software, ota
+
+   The OTA Updater shall periodically query the project's GitHub Releases for
+   the latest release and, when the release manifest's version is newer than
+   the running system version, download the RAUC bundle and verify its
+   SHA-256 against the manifest before invoking ``rauc install``. A bundle
+   whose checksum does not match the manifest shall not be installed (consumer
+   side of CI_REQ_004).
+
+.. req:: OTA_REQ_005
+   :id: OTA_REQ_005
+   :status: open
+   :tags: software, ota
+
+   The running system version shall be recorded at image build time in
+   ``/etc/kds-version`` (derived from the release tag). The OTA Updater shall
+   read this file as the current version for update comparison.
+
 .. req:: CI_REQ_001
    :id: CI_REQ_001
    :status: open

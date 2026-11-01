@@ -75,4 +75,6 @@ kids-desktop-speaker/
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+Copyright 2026 Lyd by Dissing. Licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Third-party components, including those in device images, keep their own licenses.

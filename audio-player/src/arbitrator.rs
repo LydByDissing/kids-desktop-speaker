@@ -57,7 +57,10 @@ impl Arbitrator {
     }
 
     pub fn state_of(&self, src: &Source) -> SourceState {
-        self.states.get(src).copied().unwrap_or(SourceState::Stopped)
+        self.states
+            .get(src)
+            .copied()
+            .unwrap_or(SourceState::Stopped)
     }
 }
 

@@ -5,8 +5,8 @@
 
 # -- Project information -----------------------------------------------------
 project = 'Kids Desktop Speaker'
-copyright = '2026, Kids Desktop Speaker Team'
-author = 'Kids Desktop Speaker Team'
+copyright = '2026, Lyd by Dissing'
+author = 'Lyd by Dissing'
 release = '0.1'
 
 # -- General configuration ---------------------------------------------------

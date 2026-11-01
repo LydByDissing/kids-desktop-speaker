@@ -36,6 +36,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Cross-compile services
+        run: make cross-build
+        working-directory: ci
+
       - name: Build image
         run: make build
         working-directory: ci
@@ -43,6 +55,24 @@ jobs:
       - name: Run smoke tests
         run: make test
         working-directory: ci
+
+      - name: Install VM test tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm genext2fs
+
+      - name: Boot VM and run API smoke tests
+        run: make ci-test
+        working-directory: ci
+        env:
+          FORCE_REBUILD: "1"
+          KDS_VM_BOOT_ATTEMPTS: "120"
+
+      - name: Upload VM boot log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-boot-log
+          path: /tmp/kds-vm.log
+          if-no-files-found: ignore
 
       - name: Bundle image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

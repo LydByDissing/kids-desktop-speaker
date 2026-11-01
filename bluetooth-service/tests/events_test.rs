@@ -1,4 +1,4 @@
-use bluetooth_service::events::{AvrcpEvent, parse_bluetoothctl_line};
+use bluetooth_service::events::{parse_bluetoothctl_line, AvrcpEvent};
 
 #[test]
 fn test_parse_key_playpause() {

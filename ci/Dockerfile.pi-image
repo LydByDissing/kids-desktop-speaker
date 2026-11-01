@@ -87,6 +87,11 @@ RUN chmod +x /usr/local/bin/api-server \
              /usr/local/bin/ota-updater \
              /usr/local/bin/bluetooth-service
 
+# Record the running system version so the OTA Updater can compare against the
+# latest GitHub Release (OTA_REQ_005). Set from the release tag in CI.
+ARG VERSION=0.0.0-dev
+RUN echo "$VERSION" > /etc/kds-version
+
 # ---------------------------------------------------------------------------
 # systemd unit files and services
 # ---------------------------------------------------------------------------

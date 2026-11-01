@@ -14,7 +14,9 @@ fn test_airplay_starts_first() {
     assert_eq!(arb.active(), Some(Source::Airplay));
 
     // Verify the transitions returned
-    assert!(transitions.iter().any(|(s, st)| *s == Source::Airplay && *st == SourceState::Playing));
+    assert!(transitions
+        .iter()
+        .any(|(s, st)| *s == Source::Airplay && *st == SourceState::Playing));
 }
 
 #[test]
@@ -36,8 +38,12 @@ fn test_spotify_wins_over_airplay() {
     assert_eq!(arb.active(), Some(Source::Spotify));
 
     // Verify the transitions
-    assert!(transitions.iter().any(|(s, st)| *s == Source::Spotify && *st == SourceState::Playing));
-    assert!(transitions.iter().any(|(s, st)| *s == Source::Airplay && *st == SourceState::Paused));
+    assert!(transitions
+        .iter()
+        .any(|(s, st)| *s == Source::Spotify && *st == SourceState::Playing));
+    assert!(transitions
+        .iter()
+        .any(|(s, st)| *s == Source::Airplay && *st == SourceState::Paused));
 }
 
 #[test]
@@ -59,8 +65,12 @@ fn test_airplay_wins_over_spotify() {
     assert_eq!(arb.active(), Some(Source::Airplay));
 
     // Verify the transitions
-    assert!(transitions.iter().any(|(s, st)| *s == Source::Airplay && *st == SourceState::Playing));
-    assert!(transitions.iter().any(|(s, st)| *s == Source::Spotify && *st == SourceState::Paused));
+    assert!(transitions
+        .iter()
+        .any(|(s, st)| *s == Source::Airplay && *st == SourceState::Playing));
+    assert!(transitions
+        .iter()
+        .any(|(s, st)| *s == Source::Spotify && *st == SourceState::Paused));
 }
 
 #[test]

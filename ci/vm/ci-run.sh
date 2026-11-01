@@ -3,7 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Build image if not present
-if [ ! -f "$SCRIPT_DIR/rootfs.img" ] || [ ! -f "$SCRIPT_DIR/vmlinuz" ]; then
+if [ ! -f "$SCRIPT_DIR/rootfs.img" ] || [ ! -f "$SCRIPT_DIR/vmlinuz" ] || [ "${FORCE_REBUILD:-}" = "1" ]; then
     "$SCRIPT_DIR/build-image.sh"
 fi
 
@@ -44,8 +44,8 @@ echo "==> QEMU PID: $QEMU_PID"
 trap "kill $QEMU_PID 2>/dev/null || true; wait $QEMU_PID 2>/dev/null || true" EXIT
 
 echo "==> Waiting for API to be ready..."
-# Poll localhost:8080/health every 3s up to 90s
-MAX_ATTEMPTS=30
+# Poll localhost:8080/health every 3s; 30 attempts by default (slower CI runners set more)
+MAX_ATTEMPTS="${KDS_VM_BOOT_ATTEMPTS:-30}"
 ATTEMPT=0
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
@@ -54,7 +54,7 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     fi
     ATTEMPT=$((ATTEMPT + 1))
     if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-        echo "FAIL: API did not become ready within 90 seconds"
+        echo "FAIL: API did not become ready after $MAX_ATTEMPTS attempts"
         exit 1
     fi
     sleep 3

@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
-use tokio::net::{UnixListener, UnixStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinSet;
 
 #[derive(Debug, thiserror::Error)]
@@ -61,7 +61,7 @@ async fn handle_connection(
     let mut buffer = [0u8; 1024];
 
     match stream.read(&mut buffer).await? {
-        0 => return Ok(()), // Connection closed
+        0 => Ok(()), // Connection closed
         n => {
             let request_str = std::str::from_utf8(&buffer[..n])?;
 
@@ -74,8 +74,14 @@ async fn handle_connection(
                     .map_err(|_| IpcError::Io(std::io::Error::other("state poisoned")))?;
 
                 let response = match cmd {
-                    "status" => StatusResponse { connected: is_connected, controller: None },
-                    _ => StatusResponse { connected: false, controller: None },
+                    "status" => StatusResponse {
+                        connected: is_connected,
+                        controller: None,
+                    },
+                    _ => StatusResponse {
+                        connected: false,
+                        controller: None,
+                    },
                 };
 
                 let response_json = serde_json::to_string(&response)?;

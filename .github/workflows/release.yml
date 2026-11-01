@@ -138,7 +138,7 @@ jobs:
         run: chmod +x ci/binaries/*
 
       - name: Build image
-        run: make -C ci build BIN_DIR=ci/binaries
+        run: make -C ci build BIN_DIR=ci/binaries VERSION=${{ github.ref_name }}
 
       - name: Run smoke tests
         run: make -C ci test
