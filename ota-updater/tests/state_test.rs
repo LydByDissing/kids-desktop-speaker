@@ -40,3 +40,8 @@ async fn test_set_error_stores_message() {
     let s = status.get().await;
     assert_eq!(s.state, OtaState::Error("rauc exit 1".to_string()));
 }
+
+#[test]
+fn deliberate_failure_for_ci_check() {
+    assert_eq!(1, 2);
+}
