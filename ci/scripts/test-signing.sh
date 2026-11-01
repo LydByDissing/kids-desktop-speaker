@@ -22,11 +22,11 @@ bundle() { # output-dir [docker args]
     docker run --rm --platform "$PLATFORM" -v "$out:/output" \
         -v "$TMP/id/keyring.pem:/etc/rauc/keyring.pem:ro" \
         -v "$REPO/ci/create-bundle.sh:/usr/local/bin/create-bundle.sh:ro" \
-        "$@" --entrypoint /bin/bash "$IMAGE" /usr/local/bin/create-bundle.sh >/dev/null 2>&1
+        "$@" --entrypoint /bin/bash "$IMAGE" /usr/local/bin/create-bundle.sh >"$out.log" 2>&1
 }
 verify() {
     docker run --rm --platform "$PLATFORM" -v "$1:/output" -v "$TMP/id/keyring.pem:/k.pem:ro" \
-        --entrypoint /bin/bash "$IMAGE" -c "rauc info --keyring=/k.pem /output/image.raucb" >/dev/null 2>&1
+        --entrypoint /bin/bash "$IMAGE" -c "rauc info --keyring=/k.pem /output/image.raucb" >"$1.verify.log" 2>&1
 }
 
 fail=0
@@ -36,6 +36,12 @@ bundle "$TMP/stable" -e RAUC_SIGNING_KEY="$(cat "$TMP/id/signing.key")" -e RAUC_
 check "stable-signed bundle builds" "$?" 0
 verify "$TMP/stable"
 check "stable-signed bundle verifies against keyring" "$?" 0
+
+# The stable path should succeed, so show its output if it did not.
+if [ "$fail" -ne 0 ]; then
+    echo "--- stable bundle log"; tail -20 "$TMP/stable.log"
+    echo "--- stable verify log"; tail -20 "$TMP/stable.verify.log"
+fi
 
 bundle "$TMP/throwaway"
 check "throwaway bundle builds" "$?" 0
