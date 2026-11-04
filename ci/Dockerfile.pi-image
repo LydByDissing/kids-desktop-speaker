@@ -202,11 +202,11 @@ RUN chmod +x /usr/local/bin/kds-device-config.sh \
     && printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' \
     > /etc/ssh/sshd_config.d/10-kds.conf
 
-# The Bluetooth adapter appears after this service's start condition is checked, so
-# drop the condition. bluetoothd waits for an adapter by itself.
-RUN mkdir -p /etc/systemd/system/bluetooth.service.d \
-    && printf '[Unit]\nConditionPathIsDirectory=\n' \
-    > /etc/systemd/system/bluetooth.service.d/10-kds.conf
+# On the Pi the Bluetooth adapter appears after bluetooth.service has checked for
+# it and been skipped. Start the service when an adapter appears. Without an
+# adapter, as in the VM, it stays skipped rather than failing.
+RUN printf '%s\n' 'ACTION=="add", SUBSYSTEM=="bluetooth", TAG+="systemd", ENV{SYSTEMD_WANTS}+="bluetooth.service"' \
+    > /etc/udev/rules.d/90-kds-bluetooth.rules
 
 # Keep logs across reboots, so a device with no network can be diagnosed by reading
 # its SD card.

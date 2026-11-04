@@ -2,6 +2,8 @@
 Description=Mark this RAUC slot good once the speaker is healthy
 After=multi-user.target api-server.service
 Requires=api-server.service
+# Only on a device booted by U-Boot into a RAUC slot, not in the VM.
+ConditionKernelCommandLine=rauc.slot
 # An unhealthy boot must reboot, or the device stays on a bad slot. Each attempt
 # uses up one of the slot's tries, so it eventually falls back to the other slot.
 FailureAction=reboot

@@ -2054,6 +2054,11 @@ rest of the system.
   device by MAC address, so its IP address survives a slot switch.
 - A failed health check reboots, and the kernel reboots after a panic, so a bad
   update always uses up its boot tries.
+- The CI VM checks over SSH that the system reaches ``running`` with every service
+  active. Its disk is built with ``mke2fs -d`` in a container so files keep their
+  real owners, and ``rauc-mark-good`` only runs when booted into a RAUC slot.
+- Bluetooth starts when its adapter appears, via a udev rule, because on the Pi
+  the adapter shows up after ``bluetooth.service`` has already been skipped.
 - The boot script arms the hardware watchdog before starting the kernel. Without
   this, a kernel that hung before Linux armed the watchdog left the device stuck
   until power-cycled, as seen on real hardware.

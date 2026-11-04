@@ -25,6 +25,8 @@ IMAGE_TAG     := latest
 PLATFORM      := linux/arm/v6
 QEMU_CPU      := arm1176
 BASE_TAR      := base/raspbian-bookworm-armhf.tar
+# Extra docker buildx flags, such as layer caching in CI. Empty for local builds.
+BUILDX_CACHE  ?=
 DOCKERFILE    := Dockerfile.pi-image
 OUTPUT_DIR    ?= $(CURDIR)/output
 
@@ -55,6 +57,7 @@ build: $(BASE_TAR)
 		-f $(DOCKERFILE) \
 		--build-arg BIN_DIR=$(BIN_DIR) \
 		--build-arg VERSION=$(VERSION) \
+		$(BUILDX_CACHE) \
 		-t $(IMAGE_NAME):$(IMAGE_TAG) \
 		--load \
 		..
