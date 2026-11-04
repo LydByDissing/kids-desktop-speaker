@@ -176,13 +176,21 @@ RUN chmod +x /usr/local/bin/kds-set-hostname.sh
 # Copy NTP configuration
 COPY ci/config/timesyncd.conf /etc/systemd/timesyncd.conf
 
+# Each device creates its machine ID on first boot (see clean-rootfs.py). That
+# makes systemd apply presets, which must not switch services on: the access
+# point (hostapd, dnsmasq) is only for Wi-Fi setup, and dnsmasq would clash with
+# systemd-resolved on port 53.
+RUN mkdir -p /etc/systemd/system-preset \
+    && echo 'disable *' > /etc/systemd/system-preset/00-kds.preset
+
 # Network: DHCP on any ethernet interface so QEMU hostfwd port-forwarding works.
-# QEMU user-mode NAT assigns 10.0.2.15 via its built-in DHCP server.
+# QEMU user-mode NAT assigns 10.0.2.15 via its built-in DHCP server. DHCP uses the
+# MAC address, so a device keeps its address when it switches slots.
 # Without this the guest has no IP and packets cannot be routed in from the host.
 RUN mkdir -p /etc/systemd/network && \
-    printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n' \
+    printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n' \
     > /etc/systemd/network/20-dhcp.network && \
-    printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n' \
+    printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n' \
     > /etc/systemd/network/25-wifi.network
 
 # Per-device settings, plus SSH with keys only. Host keys are removed so devices
@@ -225,6 +233,7 @@ RUN systemctl enable \
         audio-player.service \
         ota-updater.service \
         bluetooth-service.service && \
+    systemctl disable dnsmasq.service hostapd.service && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 

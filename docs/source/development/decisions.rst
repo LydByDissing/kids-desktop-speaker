@@ -2049,8 +2049,14 @@ rest of the system.
 - ``ci/scripts/clean-rootfs.py`` removes what ``docker export`` leaves behind.
   ``/.dockerenv`` makes systemd skip services meant only for real systems, such as
   clock sync, and Docker blanks ``/etc/resolv.conf``.
+- Each device creates its own machine ID on first boot, and a ``disable *``
+  preset stops that first boot from switching services on. DHCP identifies the
+  device by MAC address, so its IP address survives a slot switch.
 - A failed health check reboots, and the kernel reboots after a panic, so a bad
   update always uses up its boot tries.
+- The boot script arms the hardware watchdog before starting the kernel. Without
+  this, a kernel that hung before Linux armed the watchdog left the device stuck
+  until power-cycled, as seen on real hardware.
 - U-Boot is 2024.01 from Raspbian trixie, pinned by checksum, because that is the
   version tested on a Pi Zero W.
 - ``ci/boot/boot.cmd`` gives each slot three boot tries. ``rauc-mark-good`` restores

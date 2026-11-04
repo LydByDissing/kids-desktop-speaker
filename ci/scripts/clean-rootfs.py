@@ -4,7 +4,8 @@
 Usage: clean-rootfs.py <input.tar> <output.tar>
 
 Docker adds /.dockerenv, which makes systemd think it runs in a container and skip
-services such as clock sync. It also blanks resolv.conf, hostname and hosts.
+services such as clock sync. It also blanks resolv.conf, hostname and hosts, and
+the build leaves one machine-id that every device would otherwise share.
 """
 import io
 import sys
@@ -12,7 +13,8 @@ import tarfile
 
 RESOLV_TARGET = "/run/systemd/resolve/stub-resolv.conf"
 HOSTS = b"127.0.0.1\tlocalhost\n127.0.1.1\tkidsspeaker\n::1\tlocalhost ip6-localhost ip6-loopback\n"
-FILES = {"etc/hostname": b"kidsspeaker\n", "etc/hosts": HOSTS}
+# An empty machine-id is created on first boot, so devices don't share one.
+FILES = {"etc/hostname": b"kidsspeaker\n", "etc/hosts": HOSTS, "etc/machine-id": b""}
 
 
 def clean(src_path, dst_path):
@@ -21,7 +23,14 @@ def clean(src_path, dst_path):
             name = member.name.removeprefix("./")
             if name == ".dockerenv":
                 continue
-            if name == "etc/resolv.conf":
+            if name == "var/lib/dbus/machine-id":
+                # systemd copies this into an empty /etc/machine-id, so it must
+                # point there rather than hold the build's ID.
+                member.type = tarfile.SYMTYPE
+                member.linkname = "/etc/machine-id"
+                member.size = 0
+                dst.addfile(member)
+            elif name == "etc/resolv.conf":
                 member.type = tarfile.SYMTYPE
                 member.linkname = RESOLV_TARGET
                 member.size = 0

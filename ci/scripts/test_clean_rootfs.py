@@ -31,6 +31,8 @@ class CleanRootfsTest(unittest.TestCase):
             add(tar, "etc/resolv.conf")
             add(tar, "etc/hostname")
             add(tar, "etc/hosts")
+            add(tar, "etc/machine-id", b"1278cb00626849cb8a226e307f448a55\n")
+            add(tar, "var/lib/dbus/machine-id", b"1278cb00626849cb8a226e307f448a55\n")
             add(tar, "usr/bin/tool", b"binary", 0o755)
         clean_rootfs.clean(src, dst)
         self.out = tarfile.open(dst)
@@ -47,6 +49,14 @@ class CleanRootfsTest(unittest.TestCase):
     def test_fills_hostname_and_hosts(self):
         self.assertEqual(self.out.extractfile("etc/hostname").read(), b"kidsspeaker\n")
         self.assertIn(b"localhost", self.out.extractfile("etc/hosts").read())
+
+    def test_empties_machine_id(self):
+        self.assertEqual(self.out.extractfile("etc/machine-id").read(), b"")
+
+    def test_dbus_machine_id_follows_etc(self):
+        member = self.out.getmember("var/lib/dbus/machine-id")
+        self.assertTrue(member.issym())
+        self.assertEqual(member.linkname, "/etc/machine-id")
 
     def test_keeps_other_files_and_modes(self):
         self.assertEqual(self.out.extractfile("usr/bin/tool").read(), b"binary")

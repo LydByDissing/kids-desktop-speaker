@@ -1,7 +1,8 @@
 #!/bin/bash
 # hw-ab-test.sh — prove A/B updates and rollback on a real Pi Zero W (KDS-hf9)
 # ============================================================================
-# Usage: PI_HOST=root@host hw-ab-test.sh
+# Usage: PI_HOST=root@kidsspeaker-XXXX.local hw-ab-test.sh
+# Use the mDNS name rather than an IP address, which can change after an update.
 #
 # Requires a Pi running our SD image, and ci/output/rootfs.tar (make sd-image).
 # Installs a good update, then two broken ones, and checks that the Pi falls back
@@ -16,8 +17,9 @@ ROOTFS="$REPO/ci/output/rootfs.tar"
 WORK="$REPO/ci/output/abtest"
 IMAGE=kids-desktop-speaker:latest
 PLATFORM=linux/arm/v6
-SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 "$PI_HOST")
-SCP=(scp -q -o BatchMode=yes -o ConnectTimeout=20)
+# Host keys live on the data partition, so they stay the same across slots.
+SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "$PI_HOST")
+SCP=(scp -q -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new)
 GOOD=v0.2.0-test
 
 fail=0
@@ -91,7 +93,7 @@ wait_settled() { # slot-wanted limit-seconds
     return 1
 }
 
-install_and_reboot() { # bundle-name
+install_and_reboot() { # bundle-name [may-not-return]
     log "copying $1 to the Pi..."
     "${SCP[@]}" "$WORK/$1/image.raucb" "$PI_HOST:/data/ota/test.raucb" || { log "copy failed"; return 1; }
     log "installing $1..."
@@ -99,7 +101,12 @@ install_and_reboot() { # bundle-name
     [ "$(cat "$WORK/rc")" = 0 ] || { log "install failed:"; remote tail -5 /tmp/install.log; return 1; }
     local id; id=$(boot_id)
     remote "nohup sh -c 'sleep 2; systemctl reboot' >/dev/null 2>&1 &"
-    wait_for_reboot "$id" 420 >/dev/null || { log "Pi did not come back"; return 1; }
+    # A broken slot may reboot before it is ever reachable. Its result is checked
+    # once the Pi settles.
+    if ! wait_for_reboot "$id" 420 >/dev/null; then
+        [ "${2:-}" = may-not-return ] && return 0
+        log "Pi did not come back"; return 1
+    fi
 }
 
 summary() {
@@ -135,17 +142,20 @@ check "runs the new version" "$(remote cat /etc/kds-version)" "$GOOD"
 check "new slot was marked good" "$(remote systemctl is-active rauc-mark-good)" active
 check "services are healthy" "$(remote systemctl is-system-running)" running
 check "API answers" "$(remote curl -s -m 5 -o /dev/null -w '%{http_code}' http://localhost:8080/health)" 200
+check "machine-id is unique to the device" "$(remote "grep -c 1278cb00626849cb8a226e307f448a55 /etc/machine-id")" 0
 GOOD_SLOT=$OTHER
 
 for bad in bad-api bad-kernel; do
     log "=== Test: $bad update falls back"
     t0=$SECONDS
-    install_and_reboot "$bad" || fail=1
+    BAD_SLOT=$([ "$GOOD_SLOT" = A ] && echo B || echo A)
+    install_and_reboot "$bad" may-not-return || fail=1
     # Three failed tries, each a full boot plus the health check's wait.
-    wait_settled "$GOOD_SLOT" 1500 || log "  did not settle back on slot $GOOD_SLOT"
+    wait_settled "$GOOD_SLOT" 1800 || log "  did not settle back on slot $GOOD_SLOT"
     log "  settled after $((SECONDS - t0))s"
     summary
     check "fell back to the good slot" "$(state)" "$GOOD_SLOT"
+    check "used up the bad slot's tries" "$(remote fw_printenv -n BOOT_${BAD_SLOT}_LEFT)" 0
     check "runs the good version" "$(remote cat /etc/kds-version)" "$GOOD"
     check "services are healthy" "$(remote systemctl is-system-running)" running
 done
