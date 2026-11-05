@@ -27,6 +27,12 @@ pub fn should_install(candidate: &str, current: &str, pending: Option<&str>) -> 
     is_newer(candidate, pending.unwrap_or(current))
 }
 
+/// A release that failed verification fails the same way every time, so it is
+/// skipped until its manifest changes, rather than downloaded again each minute.
+pub fn is_known_bad(version: &str, sha256: &str, failed: Option<(&str, &str)>) -> bool {
+    failed.is_some_and(|(v, s)| v == version && s.eq_ignore_ascii_case(sha256))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,6 +66,16 @@ mod tests {
     #[test]
     fn unparseable_current_can_be_updated() {
         assert!(is_newer("v1.0.0", "9394ee4-dirty"));
+    }
+
+    #[test]
+    fn failed_release_is_skipped_until_its_manifest_changes() {
+        let failed = Some(("v1.1.0", "abc"));
+        assert!(is_known_bad("v1.1.0", "abc", failed));
+        assert!(is_known_bad("v1.1.0", "ABC", failed));
+        assert!(!is_known_bad("v1.1.0", "def", failed));
+        assert!(!is_known_bad("v1.2.0", "abc", failed));
+        assert!(!is_known_bad("v1.1.0", "abc", None));
     }
 
     #[test]

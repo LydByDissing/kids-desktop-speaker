@@ -29,7 +29,7 @@ trap cleanup EXIT
 
 serve() { # sha256-to-advertise
     [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null && wait "$SERVER_PID" 2>/dev/null
-    python3 - "$WORK/good/image.raucb" "$1" "$HOST_IP" "$PORT" "$VERSION" <<'PY' &
+    python3 - "$WORK/good/image.raucb" "$1" "$HOST_IP" "$PORT" "$VERSION" <<'PY' 2>>"$WORK/server.log" &
 import http.server, json, os, sys
 bundle, sha, host, port, version = sys.argv[1:6]
 base = f"http://{host}:{port}"
@@ -94,6 +94,10 @@ for _ in $(seq 1 40); do ota_log 600 | grep -q 'checksum mismatch' && break; sle
 check "updater reports a checksum mismatch" "$(ota_log 600 | grep -c 'checksum mismatch' | sed 's/[1-9][0-9]*/yes/')" yes
 check "nothing was installed" "$(remote "rauc status 2>/dev/null | grep -c '$VERSION'")" 0
 check "partial download was removed" "$(remote 'ls /data/ota/staging/ 2>/dev/null | wc -l')" 0
+# Checks run every 20 s here. A bad release must not be downloaded again (KDS-6pb).
+sleep 90
+check "bad release is not downloaded again" "$(grep -c 'GET /image.raucb' "$WORK/server.log")" 1
+check "updater says it is skipping the bad release" "$(ota_log 120 | grep -c 'failed verification earlier' | sed 's/[1-9][0-9]*/yes/')" yes
 
 log "=== Test 2: valid release is installed"
 serve "$REAL_SHA"
