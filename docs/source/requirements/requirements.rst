@@ -348,6 +348,15 @@ Software — Networking
    A/B root slots. The image shall contain no shared credentials: no known passwords,
    SSH keys, host keys or Wi-Fi details (ref DEC-025).
 
+.. req:: CI_REQ_008
+   :id: CI_REQ_008
+   :status: open
+   :tags: infrastructure, ci, licensing
+
+   Each release shall publish a license inventory listing every third-party
+   package and Rust crate it distributes, with versions, source versions and
+   licenses, plus each package's copyright file (ref KDS-khs).
+
 .. req:: NET_REQ_003
    :id: NET_REQ_003
    :status: open

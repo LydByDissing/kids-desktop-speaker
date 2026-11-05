@@ -177,11 +177,21 @@ jobs:
           RAUC_SIGNING_CERT: ${{ secrets.RAUC_SIGNING_CERT }}
           RAUC_REQUIRE_STABLE_KEY: "1"
 
+      # Every package, its source version and license, for GPL and LGPL
+      # obligations (KDS-khs).
+      - name: Install Rust for the crate license list
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build license inventory
+        run: ci/scripts/license-inventory.sh ci/output/licenses.tar.gz
+
       - name: Upload RAUC bundle
         uses: actions/upload-artifact@v4
         with:
           name: rauc-bundle-staging
-          path: ci/output/image.raucb
+          path: |
+            ci/output/image.raucb
+            ci/output/licenses.tar.gz
           retention-days: 7
 
   # ── Publish GitHub Release (only after the image job passes) ──
@@ -211,3 +221,4 @@ jobs:
           files: |
             image.raucb
             manifest.json
+            licenses.tar.gz
