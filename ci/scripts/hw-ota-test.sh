@@ -9,6 +9,9 @@
 # tampered manifest must be rejected first. The updater is pointed at this server
 # with a runtime drop-in that disappears on reboot. Bundles use a throwaway key
 # trusted only by the device under test, so reflash it afterwards.
+#
+# The Pi first gets the build under test installed, so the checks exercise this
+# build's updater rather than whatever the device was running.
 
 set -uo pipefail
 : "${PI_HOST:?set PI_HOST=root@host}"
@@ -77,13 +80,29 @@ remote true || { echo "error: cannot reach $PI_HOST" >&2; exit 2; }
 HOST_IP=127.0.0.1
 cleanup; mkdir -p "$WORK"
 log "=== Setup"
-ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
-    -R "$PORT:127.0.0.1:$PORT" "$PI_HOST" &
-TUNNEL_PID=$!
+
 make_test_identity || exit 1
+make_bundle base v0.4.0-test none || exit 1
 make_bundle good "$VERSION" none || exit 1
 trust_test_identity
 REAL_SHA=$(sha256sum "$WORK/good/image.raucb" | cut -d' ' -f1)
+
+log "=== Installing the build under test"
+"${SCP[@]}" "$WORK/base/image.raucb" "$PI_HOST:/data/ota/base.raucb" || exit 1
+remote 'rauc install /data/ota/base.raucb >/tmp/install.log 2>&1; rc=$?; rm -f /data/ota/base.raucb; exit $rc' \
+    || { log "install failed"; remote tail -5 /tmp/install.log; exit 1; }
+BASE_SLOT=$([ "$(slot)" = A ] && echo B || echo A)
+id=$(boot_id); reboot_pi
+wait_for_reboot "$id" 420 || { log "Pi did not come back"; exit 1; }
+wait_settled "$BASE_SLOT" 300 || { log "did not settle on slot $BASE_SLOT"; exit 1; }
+check "runs the build under test" "$(remote cat /etc/kds-version)" v0.4.0-test
+# The test identity has to be trusted by the newly booted slot too.
+trust_test_identity
+# Open the tunnel only now: a reboot drops it.
+ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
+    -o ServerAliveInterval=15 -R "$PORT:127.0.0.1:$PORT" "$PI_HOST" &
+TUNNEL_PID=$!
+sleep 3
 START=$(slot); START_VERSION=$(remote cat /etc/kds-version)
 summary
 
