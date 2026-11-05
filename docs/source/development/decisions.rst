@@ -2059,9 +2059,10 @@ rest of the system.
   real owners, and ``rauc-mark-good`` only runs when booted into a RAUC slot.
 - Bluetooth starts when its adapter appears, via a udev rule, because on the Pi
   the adapter shows up after ``bluetooth.service`` has already been skipped.
-- The boot script arms the hardware watchdog before starting the kernel. Without
-  this, a kernel that hung before Linux armed the watchdog left the device stuck
-  until power-cycled, as seen on real hardware.
+- Open problem: a kernel that hangs before Linux arms the watchdog leaves the
+  device stuck until power-cycled, as seen on real hardware. Arming the watchdog
+  from the boot script made healthy boots fail on the Pi as well, so it was
+  removed. KDS-fjl tracks the follow-up.
 - U-Boot is 2024.01 from Raspbian trixie, pinned by checksum, because that is the
   version tested on a Pi Zero W.
 - ``ci/boot/boot.cmd`` gives each slot three boot tries. ``rauc-mark-good`` restores

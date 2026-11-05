@@ -37,7 +37,6 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "slot A resolv.conf points to resolved" "dbg \"stat /etc/resolv.conf\" | grep -q symlink"
     ok "slot A enables DNS" "dbg \"stat /etc/systemd/system/sysinit.target.wants/systemd-resolved.service\" | grep -qE Inode"
     ok "boot script resets if the kernel will not start" "tail -c 200 /boot.scr | grep -aq reset"
-    ok "boot script arms the watchdog before the kernel" "grep -aq \"mw.l 0x2010001c\" /boot.scr"
     ok "slot A has an empty machine-id" "[ -z \"\$(dbg \"cat /etc/machine-id\")\" ]"
     ok "slot A has no stored D-Bus machine-id" "dbg \"stat /var/lib/dbus/machine-id\" | grep -qE \"symlink|File not found\" || ! dbg \"stat /var/lib/dbus/machine-id\" | grep -q Inode"
     ok "slot A uses MAC-based DHCP" "dbg \"cat /etc/systemd/network/25-wifi.network\" | grep -q ClientIdentifier=mac"
