@@ -10,7 +10,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 IMAGE=kids-desktop-speaker:latest
-PLATFORM=linux/arm/v7
+PLATFORM=linux/arm/v6
 
 TMP=$(mktemp -d)
 trap 'docker run --rm -v "$TMP:/t" --entrypoint /bin/rm --platform "$PLATFORM" "$IMAGE" -rf /t/stable /t/throwaway /t/required >/dev/null 2>&1; rm -rf "$TMP"' EXIT

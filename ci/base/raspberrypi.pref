@@ -1,0 +1,8 @@
+# Take only hardware support from the Raspberry Pi archive. The rest is Raspbian.
+Package: *
+Pin: origin archive.raspberrypi.com
+Pin-Priority: 100
+
+Package: linux-image-* linux-base firmware-brcm80211 bluez-firmware
+Pin: origin archive.raspberrypi.com
+Pin-Priority: 900

@@ -49,6 +49,18 @@ impl Manager {
         Ok(())
     }
 
+    /// Starts the source if it can. A missing source is reported rather than fatal,
+    /// so the rest of the speaker keeps working without it. Returns whether it started.
+    pub async fn start_if_available(&mut self) -> bool {
+        match self.start().await {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("audio-player: source unavailable: {e}");
+                false
+            }
+        }
+    }
+
     pub async fn stop(&mut self) -> Result<(), ManagerError> {
         if let Some(mut child) = self.child.take() {
             child

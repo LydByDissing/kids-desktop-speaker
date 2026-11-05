@@ -1,4 +1,4 @@
-use ota_updater::config::OtaConfig;
+use ota_updater::config::{next_check_delay, OtaConfig};
 use ota_updater::{installer, ipc, release, version, SharedStatus};
 
 #[tokio::main]
@@ -33,27 +33,27 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn check_loop(cfg: OtaConfig, status: SharedStatus) {
-    let mut ticker = tokio::time::interval(cfg.check_interval);
     let mut pending = None;
     loop {
-        ticker.tick().await;
-        check_once(&cfg, &status, &mut pending).await;
+        let succeeded = check_once(&cfg, &status, &mut pending).await;
+        tokio::time::sleep(next_check_delay(succeeded, cfg.check_interval)).await;
     }
 }
 
-async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option<String>) {
+/// Returns whether the check completed, so a failure can be retried soon.
+async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option<String>) -> bool {
     let current = version::read_current(&cfg.version_file).unwrap_or_else(|| "0.0.0".to_string());
     let update = match release::fetch_latest(cfg).await {
         Ok(update) => update,
         Err(e) => {
-            eprintln!("ota: release check failed: {e}");
-            return;
+            eprintln!("ota: release check failed: {:#}", anyhow::Error::new(e));
+            return false;
         }
     };
     let candidate = update.manifest.version;
     if !version::should_install(&candidate, &current, pending.as_deref()) {
         println!("ota: nothing to install (current {current}, latest {candidate})");
-        return;
+        return true;
     }
     println!("ota: newer release {candidate} available (current {current})");
     match installer::install_verified(&update.bundle_url, &update.manifest.sha256, status.clone())
@@ -63,7 +63,11 @@ async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option
         Ok(()) => {
             println!("ota: installed {candidate}, active after reboot");
             *pending = Some(candidate);
+            true
         }
-        Err(e) => eprintln!("ota: install failed: {e}"),
+        Err(e) => {
+            eprintln!("ota: install failed: {:#}", anyhow::Error::new(e));
+            false
+        }
     }
 }

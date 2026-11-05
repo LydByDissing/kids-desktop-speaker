@@ -27,7 +27,7 @@ exec qemu-system-arm \
     -append "root=/dev/vda rw console=ttyAMA0,115200 loglevel=3 quiet" \
     -drive file="$SCRIPT_DIR/rootfs.img",format=raw,if=none,id=vda \
     -device virtio-blk-device,drive=vda \
-    -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
+    -netdev user,id=net0,hostfwd=tcp::8080-:8080,hostfwd=tcp::2222-:22 \
     -device virtio-net-device,netdev=net0 \
     "${AUDIO_ARGS[@]}" \
     -nographic \

@@ -1,16 +1,22 @@
 # Dockerfile.pi-image — Raspberry Pi OS Lite (Bookworm) for Kids Desktop Speaker
 # ==============================================================================
-# Targets ARMv6 (Pi Zero W) via linux/arm/v7 platform.
+# Targets ARMv6 (Pi Zero W). Debian's armhf port needs ARMv7, so the base is a
+# Raspbian rootfs built by ci/base/build-base.sh (DEC-024).
 # Uses plain Docker + QEMU user-mode emulation — no Dagger required.
 #
-# Build:   docker buildx build --platform linux/arm/v7 -f Dockerfile.pi-image -t kids-desktop-speaker:latest --load .
-# Test:    docker run --rm --platform linux/arm/v7 --privileged kids-desktop-speaker:latest /smoke-test.sh
-# Bundle:  docker run --rm --platform linux/arm/v7 -v ./output:/output kids-desktop-speaker:latest rauc bundle ...
+# Build:   docker buildx build --platform linux/arm/v6 -f Dockerfile.pi-image -t kids-desktop-speaker:latest --load .
+# Test:    docker run --rm --platform linux/arm/v6 --privileged kids-desktop-speaker:latest /smoke-test.sh
+# Bundle:  docker run --rm --platform linux/arm/v6 -v ./output:/output kids-desktop-speaker:latest rauc bundle ...
 
-FROM arm32v7/debian:bookworm-slim
+FROM scratch
+ADD ci/base/raspbian-bookworm-armhf.tar /
+
+# Build-time only: every RUN below executes under QEMU pinned to the Pi Zero W's
+# CPU, so anything that isn't ARMv6 fails the build.
+ARG QEMU_CPU=arm1176
 
 LABEL maintainer="Kids Desktop Speaker project"
-LABEL description="Raspberry Pi OS Lite with Kids Desktop Speaker platform services and RAUC OTA"
+LABEL description="Raspbian with Kids Desktop Speaker platform services and RAUC OTA"
 
 # ---------------------------------------------------------------------------
 # Base system
@@ -19,7 +25,15 @@ LABEL description="Raspberry Pi OS Lite with Kids Desktop Speaker platform servi
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Hardware support comes from the Raspberry Pi archive, with its signing key pinned
+# in the repo. See raspberrypi.pref for what it may provide.
+COPY ci/base/raspberrypi.gpg.key /etc/apt/trusted.gpg.d/raspberrypi.asc
+COPY ci/base/raspberrypi.pref /etc/apt/preferences.d/raspberrypi.pref
+RUN echo "deb http://archive.raspberrypi.com/debian bookworm main" \
+    > /etc/apt/sources.list.d/raspberrypi.list
+
+# The base rootfs is cached, so upgrade here to pick up security fixes.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     # Core
     systemd \
     systemd-sysv \
@@ -32,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bluez \
     # RAUC
     rauc \
+    rauc-service \
     squashfs-tools \
     # Networking
     iproute2 \
@@ -42,12 +57,49 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss-mdns \
     hostapd \
     dnsmasq \
+    # Pi Zero W hardware and boot chain (DEC-025)
+    linux-image-rpi-v6 \
+    firmware-brcm80211 \
+    bluez-firmware \
+    libubootenv-tool \
+    e2fsprogs \
+    dosfstools \
+    wpasupplicant \
+    rfkill \
+    openssh-server \
     # System
+    systemd-timesyncd \
+    systemd-resolved \
     zram-tools \
     # Utilities
     ca-certificates \
     kmod \
     && rm -rf /var/lib/apt/lists/*
+
+# Boot firmware goes on the boot partition, not the root slots. Its package won't
+# install without a mounted boot partition, so unpack it instead.
+RUN cd /tmp && apt-get update && apt-get download raspi-firmware \
+    && dpkg-deb -x raspi-firmware_*.deb /tmp/fw \
+    && mkdir -p /usr/lib/kds-boot \
+    && cp /tmp/fw/usr/lib/raspi-firmware/bootcode.bin \
+          /tmp/fw/usr/lib/raspi-firmware/start.elf \
+          /tmp/fw/usr/lib/raspi-firmware/fixup.dat \
+          /tmp/fw/usr/lib/raspi-firmware/start_cd.elf \
+          /tmp/fw/usr/lib/raspi-firmware/fixup_cd.dat /usr/lib/kds-boot/ \
+    && rm -rf /tmp/fw /tmp/raspi-firmware_*.deb /var/lib/apt/lists/*
+
+# U-Boot 2024.01, the version tested on real hardware. It's only a boot file, so
+# unpack it from Raspbian trixie, pinned by checksum.
+RUN cd /tmp \
+    && curl -fsSL -o u-boot.deb http://archive.raspbian.org/raspbian/pool/main/u/u-boot/u-boot-rpi_2024.01+dfsg-7+rpi1_armhf.deb \
+    && echo "8900536a854a656af4900d59bd61709b6d2c92043429da6abf78ce18df76b514  u-boot.deb" | sha256sum -c - \
+    && dpkg-deb -x u-boot.deb /tmp/ub \
+    && cp /tmp/ub/usr/lib/u-boot/rpi_0_w/u-boot.bin /usr/lib/kds-boot/u-boot.bin \
+    && rm -rf /tmp/ub /tmp/u-boot.deb
+
+# Stable kernel path for the boot script. It's a copy, because U-Boot reads it
+# directly from the root slot.
+RUN cp "$(ls -1 /boot/vmlinuz-*-rpi-v6 | sort -V | tail -1)" /boot/vmlinuz-kds
 
 # ---------------------------------------------------------------------------
 # RAUC configuration
@@ -67,17 +119,26 @@ COPY ci/rauc/keyring.pem /etc/rauc/keyring.pem
 # RAUC mark-good service — marks the current slot as good after successful boot
 COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 
+# U-Boot's environment file, used by RAUC to switch slots
+RUN echo "/boot/firmware/uboot.env 0x0 0x4000" > /etc/fw_env.config
+
+# Partitions outside the root slots. nofail lets the VM boot without them. The Pi
+# needs longer than 5s to bring up the device on boot.
+RUN mkdir -p /boot/firmware /data && printf '%s\n' \
+    "/dev/mmcblk0p1 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    "/dev/mmcblk0p4 /data ext4 defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    > /etc/fstab
+
 # ---------------------------------------------------------------------------
 # Platform services
 # ---------------------------------------------------------------------------
 
-# Cross-compiled Rust service binaries. The source directory is selected by
-# BIN_DIR (relative to the build context = repo root) so the same Dockerfile
+# Cross-compiled ARMv6 Rust service binaries. The source directory is selected
+# by BIN_DIR (relative to the build context = repo root) so the same Dockerfile
 # serves both build paths:
-#   - local dev / QEMU VM: armv7 debug binaries (default, see DEC-022)
-#   - CI release pipeline: armv6 --release binaries staged in ci/binaries
-#     (cross-built as arm-unknown-linux-gnueabihf, see DEC-007)
-ARG BIN_DIR=target/armv7-unknown-linux-gnueabihf/debug
+#   - local dev / QEMU VM: debug binaries (default)
+#   - CI release pipeline: --release binaries staged in ci/binaries
+ARG BIN_DIR=target/arm-unknown-linux-gnueabihf/debug
 
 RUN mkdir -p /usr/local/bin/kids-desktop-speaker
 
@@ -115,30 +176,72 @@ RUN chmod +x /usr/local/bin/kds-set-hostname.sh
 # Copy NTP configuration
 COPY ci/config/timesyncd.conf /etc/systemd/timesyncd.conf
 
+# Each device creates its machine ID on first boot (see clean-rootfs.py). That
+# makes systemd apply presets, which must not switch services on: the access
+# point (hostapd, dnsmasq) is only for Wi-Fi setup, and dnsmasq would clash with
+# systemd-resolved on port 53.
+RUN mkdir -p /etc/systemd/system-preset \
+    && echo 'disable *' > /etc/systemd/system-preset/00-kds.preset
+
 # Network: DHCP on any ethernet interface so QEMU hostfwd port-forwarding works.
-# QEMU user-mode NAT assigns 10.0.2.15 via its built-in DHCP server.
+# QEMU user-mode NAT assigns 10.0.2.15 via its built-in DHCP server. DHCP uses the
+# MAC address, so a device keeps its address when it switches slots.
 # Without this the guest has no IP and packets cannot be routed in from the host.
 RUN mkdir -p /etc/systemd/network && \
-    printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n' \
-    > /etc/systemd/network/20-dhcp.network
+    printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n' \
+    > /etc/systemd/network/20-dhcp.network && \
+    printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n' \
+    > /etc/systemd/network/25-wifi.network
+
+# Per-device settings, plus SSH with keys only. Host keys are removed so devices
+# never share them, and are created at boot.
+COPY ci/device/kds-device-config.sh /usr/local/bin/kds-device-config.sh
+COPY ci/device/kds-device-config.service /etc/systemd/system/kds-device-config.service
+RUN chmod +x /usr/local/bin/kds-device-config.sh \
+    && rm -f /etc/ssh/ssh_host_* \
+    && printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' \
+    > /etc/ssh/sshd_config.d/10-kds.conf
+
+# On the Pi the Bluetooth adapter appears after bluetooth.service has checked for
+# it and been skipped. Start the service when an adapter appears. Without an
+# adapter, as in the VM, it stays skipped rather than failing.
+RUN printf '%s\n' 'ACTION=="add", SUBSYSTEM=="bluetooth", TAG+="systemd", ENV{SYSTEMD_WANTS}+="bluetooth.service"' \
+    > /etc/udev/rules.d/90-kds-bluetooth.rules
+
+# Keep logs across reboots, so a device with no network can be diagnosed by reading
+# its SD card.
+RUN mkdir -p /var/log/journal
+
+# A hung boot resets through the hardware watchdog and uses up one of the slot's
+# boot tries, so rollback doesn't need anyone to power-cycle the device.
+RUN mkdir -p /etc/systemd/system.conf.d \
+    && printf '[Manager]\nRuntimeWatchdogSec=15\nRebootWatchdogSec=60\n' \
+    > /etc/systemd/system.conf.d/10-watchdog.conf
 
 # Enable system services
 RUN systemctl enable \
         systemd-networkd.service \
+        systemd-timesyncd.service \
+        systemd-resolved.service \
+        kds-device-config.service \
+        ssh.service \
+        wpa_supplicant@wlan0.service \
+        rauc-mark-good.service \
         avahi-daemon.service \
         kds-hostname.service \
         api-server.service \
         audio-player.service \
         ota-updater.service \
         bluetooth-service.service && \
+    systemctl disable dnsmasq.service hostapd.service && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 
 # ---------------------------------------------------------------------------
-# Dev VM login — root password + autologin on ttyAMA0 (QEMU serial console)
+# Console login — no root password; VM autologin on ttyAMA0 (QEMU serial console)
 # ---------------------------------------------------------------------------
 
-RUN echo 'root:kds' | chpasswd
+RUN passwd -l root
 
 # Serial console autologin (ttyAMA0 = QEMU -nographic serial port)
 RUN mkdir -p /etc/systemd/system/serial-getty@ttyAMA0.service.d && \

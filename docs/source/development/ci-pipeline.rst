@@ -59,9 +59,9 @@ and executed via transparent binary translation.
    image build ~5-15 min, not hours.
 - ⚠️ Cannot test actual hardware (no GPIO, no I2S, no Wi-Fi). This is
    acceptable — hardware validation happens separately on real Pi Zero W.
-- ⚠️ ARMv7 (armhf) not ARMv6. The Pi Zero W is ARMv6, but Debian's
-   armhf port runs on ARMv6. The emulation is arm32v7 which is a superset.
-   For CI testing of userspace services this is fine.
+- ⚠️ Superseded by DEC-024: this page originally assumed Debian's armhf port
+   runs on ARMv6. It does not. The image now uses an ARMv6 Raspbian base, and
+   the ``arm32v7`` commands on this page are historical.
 
 **Architecture:**
 

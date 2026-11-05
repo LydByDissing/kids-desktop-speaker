@@ -75,6 +75,14 @@ echo "--- RAUC ---"
 require_cmd rauc
 require_file /etc/rauc/system.conf
 require_file /etc/rauc/keyring.pem
+require_file /etc/fw_env.config
+require_file /usr/lib/systemd/system/rauc.service
+require_file /usr/lib/systemd/system/systemd-timesyncd.service
+require_file /usr/lib/kds-boot/u-boot.bin
+require_file /usr/lib/kds-boot/start_cd.elf
+require_file /boot/vmlinuz-kds
+require_file /usr/lib/kds-boot/start.elf
+require_file /etc/systemd/system/kds-device-config.service
 ok "RAUC system.conf installed"
 
 echo ""

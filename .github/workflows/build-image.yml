@@ -48,12 +48,34 @@ jobs:
         run: make cross-build
         working-directory: ci
 
+      - name: Cache Raspbian base
+        uses: actions/cache@v4
+        with:
+          path: ci/base/raspbian-bookworm-armhf.tar
+          key: raspbian-base-${{ hashFiles('ci/base/build-base.sh', 'ci/base/raspbian.public.key') }}
+
+      # Layer caching skips the slow emulated package installs. The scope changes
+      # weekly so security updates still arrive. Releases build without it.
+      - name: Expose GitHub cache to Docker
+        uses: crazy-max/ghaction-github-runtime@v3
+
+      - name: Set weekly cache scope
+        run: echo "CACHE_SCOPE=pi-image-$(date +%G-%V)" >> "$GITHUB_ENV"
+
       - name: Build image
         run: make build
         working-directory: ci
+        env:
+          BUILDX_CACHE: >-
+            --cache-from type=gha,scope=${{ env.CACHE_SCOPE }}
+            --cache-to type=gha,mode=max,scope=${{ env.CACHE_SCOPE }},ignore-error=true
 
       - name: Run smoke tests
         run: make test
+        working-directory: ci
+
+      - name: Test on emulated Pi Zero W CPU
+        run: make test-armv6
         working-directory: ci
 
       - name: Test bundle signing
@@ -62,7 +84,7 @@ jobs:
       # The VM test is slow, so it runs on pushes to main, not on every PR.
       - name: Install VM test tools
         if: github.event_name == 'push'
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm genext2fs
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm
 
       - name: Cache VM kernel
         if: github.event_name == 'push'
@@ -89,6 +111,11 @@ jobs:
           name: vm-boot-log
           path: /tmp/kds-vm.log
           if-no-files-found: ignore
+
+      - name: Build and test SD card image
+        if: github.event_name == 'push'
+        run: make sd-image
+        working-directory: ci
 
       - name: Bundle image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

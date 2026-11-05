@@ -10,6 +10,8 @@ target/
 ci/vm/rootfs.img
 ci/vm/vmlinuz
 ci/vm/initrd.img
+ci/vm/ci_key
+ci/vm/ci_key.pub
 ci/output/
 
 # Release pipeline binary staging (populated by artifact download in CI)
@@ -20,3 +22,6 @@ ci/binaries/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Raspbian base rootfs (built by ci/base/build-base.sh)
+ci/base/*.tar

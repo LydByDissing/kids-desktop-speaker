@@ -1,4 +1,4 @@
-use ota_updater::installer::{download_verified, sha256_hex};
+use ota_updater::installer::{download_verified, download_with_read_timeout, sha256_hex};
 use ota_updater::release::fetch_latest;
 use ota_updater::{InstallerError, OtaConfig, ReleaseError};
 use serde_json::json;
@@ -140,5 +140,33 @@ async fn download_reports_http_errors_and_leaves_no_file() {
     let result = download_verified(&url, "abc", &target).await;
 
     assert!(matches!(result, Err(InstallerError::Download(_))));
+    assert!(!target.exists());
+}
+
+#[tokio::test]
+async fn download_fails_when_the_connection_stalls() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        "/image.raucb",
+        ResponseTemplate::new(200)
+            .set_body_bytes(BUNDLE)
+            .set_delay(Duration::from_secs(5)),
+    )
+    .await;
+    let target = temp_path("stalled");
+
+    let url = format!("{}/image.raucb", server.uri());
+    let started = std::time::Instant::now();
+    let result = download_with_read_timeout(
+        &url,
+        &sha256_hex(BUNDLE),
+        &target,
+        Duration::from_millis(200),
+    )
+    .await;
+
+    assert!(matches!(result, Err(InstallerError::Download(_))));
+    assert!(started.elapsed() < Duration::from_secs(4));
     assert!(!target.exists());
 }

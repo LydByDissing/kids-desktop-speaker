@@ -1742,10 +1742,15 @@ of OpenSSL for TLS — OpenSSL cannot be reliably cross-compiled.
 
 **Context**
 
-The Pi Zero W runs ARMv6 with hard-float ABI. Rust's
-``armv7-unknown-linux-gnueabihf`` target produces compatible binaries —
-Raspberry Pi OS carries a compatibility layer that runs ARMv7 code on
-ARMv6 hardware. Binaries must be built on x86_64 developer and CI machines
+The Pi Zero W runs ARMv6 with hard-float ABI.
+
+.. warning::
+
+   The original text here claimed ARMv7 binaries run on ARMv6 hardware through
+   a compatibility layer. That is false: ARMv7 code crashes with an illegal
+   instruction. DEC-024 replaces the target and base image.
+
+Binaries must be built on x86_64 developer and CI machines
 and injected into the Docker image used to populate the QEMU VM rootfs.
 
 **Options Considered**
@@ -1961,3 +1966,117 @@ anchor that stays the same across releases.
   devices using this CA. Production signing still moves to a hardware key
   (DEC-009), and devices shipped with the development CA need a planned
   rotation first.
+
+DEC-024 — ARMv6 Raspbian Base and Emulated CPU Check
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_024
+   :status: resolved
+   :date: 2026-11-01
+   :tags: build, arm, ci, hardware
+
+**Decision**: Build the image from a **Raspbian bookworm rootfs** created with
+``debootstrap`` from ``archive.raspbian.org``, compile every service for
+``arm-unknown-linux-gnueabihf``, and run the image build and tests under QEMU
+pinned to **ARM1176**, the Pi Zero W's CPU. Supersedes the ARMv7 target in
+DEC-022.
+
+**Context**
+
+The image was based on ``arm32v7/debian:bookworm-slim``. Debian's ``armhf``
+port requires ARMv7, so its ``/bin/true`` crashes with an illegal instruction on
+ARM1176. Emulating ``linux/arm/v7`` and a Cortex-A15 VM could not detect this.
+
+**Options Considered**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Option
+     - Assessment
+   * - **Raspbian via debootstrap** *(chosen)*
+     - Hard-float ARMv6 with the same packages, built from the project's own
+       archive with a pinned signing key
+   * - ``balenalib/rpi-raspbian``
+     - Ready-made, but third-party and last built in 2023
+   * - Debian ``armel``
+     - Runs on ARMv6, but soft-float is a poor fit for DSP on this CPU
+   * - Pi Zero 2 W
+     - Removes the problem, but changes the target hardware
+
+**Consequences**
+
+- ``make test-armv6`` runs the image's programs on ARM1176, with a control
+  proving that ARMv7 code crashes.
+- ``ota-updater`` carries an ARMv7/NEON ELF tag from ``ring``. It completes a
+  real HTTPS request on ARM1176, which fits ``ring`` selecting code at runtime.
+- The full-system VM still uses an ARMv7 kernel on a Cortex-A15. It tests boot
+  behaviour, not the CPU.
+- ``make hw-test`` runs the same checks on a real Pi Zero W. QEMU has already
+  hidden one bug: launching a missing program looked successful under emulation
+  but fails on the device.
+- Emulation is not hardware. A device test is still required, and the Raspberry
+  Pi kernel and bootloader are still outstanding.
+- ``librespot`` and ``camilladsp`` are not packaged by Raspbian and must be built
+  for ARMv6.
+
+DEC-025 — Pi Zero W Boot Chain and Device Settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_025
+   :status: resolved
+   :date: 2026-11-01
+   :tags: boot, ota, rauc, hardware, security
+
+**Decision**: Boot with Raspberry Pi firmware, then U-Boot running an A/B script,
+then the kernel stored **inside the root slot**. The SD card has four partitions:
+boot (FAT), root A, root B and data.
+
+**Context**
+
+RAUC needs a bootloader that can switch slots and count failed attempts. Keeping
+the kernel in the root slot means a kernel update is atomic and rolls back with the
+rest of the system.
+
+**Details**
+
+- The image ships no ``uboot.env``. A valid file replaces all of U-Boot's built-in
+  defaults, including ``bootcmd``, leaving it waiting at a prompt. The boot script
+  creates the file on first boot.
+- ``ci/scripts/clean-rootfs.py`` removes what ``docker export`` leaves behind.
+  ``/.dockerenv`` makes systemd skip services meant only for real systems, such as
+  clock sync, and Docker blanks ``/etc/resolv.conf``.
+- Each device creates its own machine ID on first boot, and a ``disable *``
+  preset stops that first boot from switching services on. DHCP identifies the
+  device by MAC address, so its IP address survives a slot switch.
+- A failed health check reboots, and the kernel reboots after a panic, so a bad
+  update always uses up its boot tries.
+- The CI VM checks over SSH that the system reaches ``running`` with every service
+  active. Its disk is built with ``mke2fs -d`` in a container so files keep their
+  real owners, and ``rauc-mark-good`` only runs when booted into a RAUC slot.
+- Bluetooth starts when its adapter appears, via a udev rule, because on the Pi
+  the adapter shows up after ``bluetooth.service`` has already been skipped.
+- Open problem: a kernel that hangs before Linux arms the watchdog leaves the
+  device stuck until power-cycled, as seen on real hardware. Arming the watchdog
+  from the boot script made healthy boots fail on the Pi as well, so it was
+  removed. KDS-fjl tracks the follow-up.
+- U-Boot is 2024.01 from Raspbian trixie, pinned by checksum, because that is the
+  version tested on a Pi Zero W.
+- ``ci/boot/boot.cmd`` gives each slot three boot tries. ``rauc-mark-good`` restores
+  them only after the API answers ``/health``.
+- The hardware watchdog resets a hung boot, so rollback needs no manual power cycle.
+- Firmware, U-Boot and the device tree sit on the boot partition, which RAUC does
+  not update. Changing them requires reflashing.
+- Wi-Fi details and SSH keys are files on the boot partition, added after flashing,
+  so they never enter the image or repository.
+
+**Security**
+
+- The root account is locked, replacing the previous known password.
+- SSH accepts keys only. Without a key on the boot partition, nobody can log in.
+- Host keys are created per device and kept on the data partition.
+- The serial console in the VM still logs in automatically. This must be reviewed
+  before shipping devices.

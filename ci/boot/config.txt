@@ -1,0 +1,6 @@
+# Pi Zero W firmware configuration. U-Boot selects the A/B slot (DEC-025).
+kernel=u-boot.bin
+enable_uart=1
+gpu_mem=16
+dtparam=watchdog=on
+disable_splash=1
