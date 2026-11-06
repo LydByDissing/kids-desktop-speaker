@@ -2118,3 +2118,29 @@ the binaries, and the release fails if any of it can't be fetched.
   reflashable SD card probably satisfies.
 
 These should be reviewed by a lawyer before devices are sold.
+
+DEC-027 — IPC: Newline-Delimited JSON over Unix Sockets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_027
+   :status: resolved
+   :date: 2026-11-06
+   :tags: ipc, architecture
+
+**Decision**: Services exchange newline-delimited JSON over Unix sockets, one
+request and one response per connection, as specified in the IPC protocol page.
+This replaces the length-prefixed framing first proposed in KDS-31u.
+
+**Context**
+
+Three services already used newline-delimited JSON. JSON escapes newlines inside
+strings, so a newline reliably ends a message, and a length prefix adds nothing
+for small messages. The text form can be tested by hand with ``socat`` on a
+device. Socket names follow the deployed services, not the earlier design.
+
+**Consequences**
+
+- A shared ``kds-ipc`` crate implements framing, error responses, size limits,
+  timeouts and socket setup, so services can't drift apart.
+- Pushed events will need a subscription command with a long-lived connection.

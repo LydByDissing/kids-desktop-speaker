@@ -411,6 +411,45 @@ Software — Accessibility
    The system shall support multiple languages in the user interface and voice
    feedback.
 
+Software — Internal Communication
+---------------------------------
+
+.. req:: IPC_REQ_001
+   :id: IPC_REQ_001
+   :status: open
+   :tags: software, ipc
+
+   Services shall communicate over Unix domain sockets in ``/run/kds`` using
+   newline-delimited JSON, with one request and one response per connection
+   (ref DEC-027).
+
+.. req:: IPC_REQ_002
+   :id: IPC_REQ_002
+   :status: open
+   :tags: software, ipc
+
+   Every response shall contain ``ok``. A failed request shall receive
+   ``ok: false`` and an ``error`` message, including for malformed, oversized
+   or unknown requests, rather than a closed connection.
+
+.. req:: IPC_REQ_003
+   :id: IPC_REQ_003
+   :status: open
+   :tags: software, ipc, reliability
+
+   A server shall create ``/run/kds`` if missing and replace a stale socket, so
+   services work regardless of start order. Messages over 64 KiB shall be
+   rejected.
+
+.. req:: IPC_REQ_004
+   :id: IPC_REQ_004
+   :status: open
+   :tags: software, ipc, api
+
+   The API Server shall report live service state by querying the services'
+   sockets, and shall answer ``503 Service Unavailable`` when a service can't be
+   reached within its timeout.
+
 Software — Diagnostics
 ----------------------
 

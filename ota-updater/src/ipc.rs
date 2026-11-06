@@ -1,112 +1,55 @@
+//! The OTA Updater's IPC server: `status` and `install` (IPC protocol, DEC-027).
+
 use crate::installer::install_verified;
-use crate::state::SharedStatus;
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixListener;
-use tokio::sync::mpsc;
-use tokio::task::JoinSet;
+use crate::state::{OtaState, SharedStatus};
+use kds_ipc::{command, error, ok};
+use serde_json::{json, Value};
 
-#[derive(Debug, Error)]
-pub enum IpcError {
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("json error: {0}")]
-    Json(#[from] serde_json::Error),
+pub async fn serve(sock_path: &str, status: SharedStatus) -> std::io::Result<()> {
+    kds_ipc::serve(sock_path, move |request| {
+        let status = status.clone();
+        async move { handle(request, status).await }
+    })
+    .await
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "cmd")]
-enum Request {
-    #[serde(rename = "status")]
-    Status,
-    #[serde(rename = "install")]
-    Install { url: String, sha256: String },
-}
-
-#[derive(Debug, Serialize)]
-struct StatusResponse {
-    state: String,
-    version: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct OkResponse {
-    ok: bool,
-}
-
-pub async fn serve(sock_path: &str, status: SharedStatus) -> Result<(), IpcError> {
-    let _ = std::fs::remove_file(sock_path);
-    let listener = UnixListener::bind(sock_path)?;
-    let mut conn_set: JoinSet<()> = JoinSet::new();
-    let mut install_set: JoinSet<()> = JoinSet::new();
-    let (install_tx, mut install_rx) = mpsc::channel::<(String, String)>(4);
-
-    loop {
-        tokio::select! {
-            result = listener.accept() => {
-                let (socket, _) = result?;
-                let status_clone = status.clone();
-                let tx = install_tx.clone();
-                conn_set.spawn(async move {
-                    if let Err(e) = handle_connection(socket, status_clone, tx).await {
-                        eprintln!("ipc connection error: {e}");
-                    }
-                });
-            }
-            Some(_) = conn_set.join_next() => {}
-            Some((url, sha256)) = install_rx.recv() => {
-                let status_clone = status.clone();
-                install_set.spawn(async move {
-                    if let Err(e) = install_verified(&url, &sha256, None, status_clone).await {
-                        eprintln!("install failed: {e}");
-                    }
-                });
-            }
-            Some(_) = install_set.join_next() => {}
-        }
-    }
-}
-
-async fn handle_connection(
-    socket: tokio::net::UnixStream,
-    status: SharedStatus,
-    install_tx: mpsc::Sender<(String, String)>,
-) -> Result<(), IpcError> {
-    let (reader, mut writer) = socket.into_split();
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
-
-    reader.read_line(&mut line).await?;
-    let line = line.trim();
-    if line.is_empty() {
-        return Ok(());
-    }
-
-    let request: Request = serde_json::from_str(line)?;
-
-    let response = match request {
-        Request::Status => {
-            let current_status = status.get().await;
-            let state_str = match &current_status.state {
-                crate::state::OtaState::Idle => "idle".to_string(),
-                crate::state::OtaState::Downloading => "downloading".to_string(),
-                crate::state::OtaState::Installing => "installing".to_string(),
-                crate::state::OtaState::Done => "done".to_string(),
-                crate::state::OtaState::Error(msg) => format!("error: {msg}"),
+/// Answers one request. `install` starts the install in the background and
+/// returns at once; progress shows in `status`.
+pub async fn handle(request: Value, status: SharedStatus) -> Value {
+    match command(&request) {
+        Some("status") => {
+            let current = status.get().await;
+            let (state, detail) = match &current.state {
+                OtaState::Idle => ("idle", None),
+                OtaState::Downloading => ("downloading", None),
+                OtaState::Installing => ("installing", None),
+                OtaState::Done => ("done", None),
+                OtaState::Error(message) => ("error", Some(message.clone())),
             };
-            serde_json::to_string(&StatusResponse {
-                state: state_str,
-                version: current_status.version,
-            })?
+            ok(json!({ "state": state, "detail": detail, "version": current.version }))
         }
-        Request::Install { url, sha256 } => {
-            let _ = install_tx.send((url, sha256)).await;
-            serde_json::to_string(&OkResponse { ok: true })?
+        Some("install") => {
+            let (Some(url), Some(sha256)) = (
+                request.get("url").and_then(Value::as_str),
+                request.get("sha256").and_then(Value::as_str),
+            ) else {
+                return error("install needs url and sha256");
+            };
+            if matches!(
+                status.get().await.state,
+                OtaState::Downloading | OtaState::Installing
+            ) {
+                return error("an install is already in progress");
+            }
+            let (url, sha256) = (url.to_string(), sha256.to_string());
+            tokio::spawn(async move {
+                if let Err(e) = install_verified(&url, &sha256, None, status).await {
+                    eprintln!("ota: install failed: {e}");
+                }
+            });
+            ok(Value::Null)
         }
-    };
-
-    writer.write_all(response.as_bytes()).await?;
-    writer.write_all(b"\n").await?;
-    Ok(())
+        Some(other) => error(format!("unknown command: {other}")),
+        None => error("missing cmd"),
+    }
 }

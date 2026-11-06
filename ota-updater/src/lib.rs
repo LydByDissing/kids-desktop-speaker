@@ -7,6 +7,5 @@ pub mod version;
 
 pub use config::OtaConfig;
 pub use installer::InstallerError;
-pub use ipc::IpcError;
 pub use release::{LatestUpdate, Manifest, ReleaseError};
 pub use state::{OtaState, OtaStatus, SharedStatus};

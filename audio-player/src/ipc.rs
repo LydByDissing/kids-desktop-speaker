@@ -1,100 +1,43 @@
+//! The Audio Player's IPC server: `status` and `mute` (IPC protocol, DEC-027).
+
 use crate::arbitrator::{Arbitrator, Source};
-use serde::{Deserialize, Serialize};
+use kds_ipc::{command, error, ok};
+use serde_json::{json, Value};
 use std::sync::Arc;
-use thiserror::Error;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixListener;
 use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 
-#[derive(Debug, Error)]
-pub enum IpcError {
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("json error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("unknown source: {0}")]
-    UnknownSource(String),
+pub async fn serve(sock_path: &str, arb: Arc<Mutex<Arbitrator>>) -> std::io::Result<()> {
+    kds_ipc::serve(sock_path, move |request| {
+        let arb = Arc::clone(&arb);
+        async move { handle(request, arb).await }
+    })
+    .await
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "cmd")]
-enum Request {
-    #[serde(rename = "status")]
-    Status,
-    #[serde(rename = "mute")]
-    Mute { source: String },
-}
-
-#[derive(Debug, Serialize)]
-struct StatusResponse {
-    active: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct OkResponse {
-    ok: bool,
-}
-
-pub async fn serve(sock_path: &str, arb: Arc<Mutex<Arbitrator>>) -> Result<(), IpcError> {
-    let _ = std::fs::remove_file(sock_path);
-    let listener = UnixListener::bind(sock_path)?;
-    let mut set: JoinSet<()> = JoinSet::new();
-
-    loop {
-        tokio::select! {
-            result = listener.accept() => {
-                let (socket, _) = result?;
-                let arb_clone = Arc::clone(&arb);
-                set.spawn(async move {
-                    if let Err(e) = handle_connection(socket, arb_clone).await {
-                        eprintln!("ipc connection error: {e}");
-                    }
-                });
-            }
-            Some(_) = set.join_next() => {}
-        }
+fn source_name(source: &Source) -> &'static str {
+    match source {
+        Source::Airplay => "airplay",
+        Source::Spotify => "spotify",
     }
 }
 
-async fn handle_connection(
-    socket: tokio::net::UnixStream,
-    arb: Arc<Mutex<Arbitrator>>,
-) -> Result<(), IpcError> {
-    let (reader, mut writer) = socket.into_split();
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
-
-    reader.read_line(&mut line).await?;
-    let line = line.trim();
-    if line.is_empty() {
-        return Ok(());
-    }
-
-    let request: Request = serde_json::from_str(line)?;
-
-    let response = match request {
-        Request::Status => {
+pub async fn handle(request: Value, arb: Arc<Mutex<Arbitrator>>) -> Value {
+    match command(&request) {
+        Some("status") => {
             let arb = arb.lock().await;
-            let active = arb.active().map(|src| match src {
-                Source::Airplay => "airplay".to_string(),
-                Source::Spotify => "spotify".to_string(),
-            });
-            serde_json::to_string(&StatusResponse { active })?
+            ok(json!({ "active": arb.active().as_ref().map(source_name) }))
         }
-        Request::Mute { source } => {
-            let src = match source.as_str() {
-                "airplay" => Source::Airplay,
-                "spotify" => Source::Spotify,
-                other => return Err(IpcError::UnknownSource(other.to_string())),
+        Some("mute") => {
+            let source = match request.get("source").and_then(Value::as_str) {
+                Some("airplay") => Source::Airplay,
+                Some("spotify") => Source::Spotify,
+                Some(other) => return error(format!("unknown source: {other}")),
+                None => return error("mute needs source"),
             };
-            let mut arb = arb.lock().await;
-            arb.source_stopped(src);
-            serde_json::to_string(&OkResponse { ok: true })?
+            arb.lock().await.source_stopped(source);
+            ok(Value::Null)
         }
-    };
-
-    writer.write_all(response.as_bytes()).await?;
-    writer.write_all(b"\n").await?;
-    Ok(())
+        Some(other) => error(format!("unknown command: {other}")),
+        None => error("missing cmd"),
+    }
 }
