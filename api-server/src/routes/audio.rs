@@ -2,28 +2,26 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::state::AppState;
+use crate::routes::services::{query, ApiResult};
+use crate::state::{AppState, Service};
 
-pub async fn get_source(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let guard = state.active_source.read().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":"state poisoned"})),
-        )
-    })?;
-    let active_str: Option<&str> = guard.as_ref().map(|s| match s {
-        crate::state::Source::Airplay => "airplay",
-        crate::state::Source::Spotify => "spotify",
-        crate::state::Source::Radio => "radio",
-    });
+/// The active source, from the Audio Player. Sources it doesn't report are idle.
+pub async fn get_source(State(state): State<AppState>) -> ApiResult {
+    let status = query(&state, Service::AudioPlayer, "status").await?;
+    let active = status.get("active").and_then(Value::as_str);
+    let source_state = |name: &str| {
+        if active == Some(name) {
+            "playing"
+        } else {
+            "idle"
+        }
+    };
     Ok(Json(json!({
-        "active": active_str,
+        "active": active,
         "sources": {
-            "airplay": { "state": "idle" },
-            "spotify": { "state": "idle" },
-            "radio":   { "state": "idle" }
+            "airplay": { "state": source_state("airplay") },
+            "spotify": { "state": source_state("spotify") },
+            "radio":   { "state": source_state("radio") }
         }
     })))
 }
