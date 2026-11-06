@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test sd-image bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -120,6 +120,18 @@ bundle: export-rootfs
 sd-image: export-rootfs
 	@bash scripts/build-sd-image.sh $(OUTPUT_DIR)/rootfs.tar $(OUTPUT_DIR)/kds-sdcard.img.xz
 	@bash scripts/test-sd-image.sh $(OUTPUT_DIR)/kds-sdcard.img.xz
+
+## legal-info — License inventory, SBOM and GPL/LGPL source for the built image (DEC-026)
+LEGAL_DIR := $(OUTPUT_DIR)/legal-info
+legal-info: export-rootfs
+	rm -rf $(LEGAL_DIR) && mkdir -p $(LEGAL_DIR)
+	bash scripts/license-inventory.sh $(LEGAL_DIR)/licenses.tar.gz
+	bash scripts/gen-sbom.sh $(OUTPUT_DIR)/rootfs.tar $(LEGAL_DIR)/sbom.spdx.json $(VERSION)
+	tar -xzf $(LEGAL_DIR)/licenses.tar.gz -C $(LEGAL_DIR) licenses/packages.tsv
+	python3 scripts/collect-sources.py $(LEGAL_DIR)/licenses/packages.tsv $(LEGAL_DIR)/sources
+	tar -C $(LEGAL_DIR) -cf $(LEGAL_DIR)/sources.tar sources
+	rm -rf $(LEGAL_DIR)/sources $(LEGAL_DIR)/licenses
+	@echo "==> legal-info: $$(ls $(LEGAL_DIR) | tr '\n' ' ')"
 
 ## clean — Remove build artifacts
 clean:

@@ -112,9 +112,13 @@ jobs:
           path: /tmp/kds-vm.log
           if-no-files-found: ignore
 
-      - name: Test license inventory
+      - name: Test license inventory and SBOM
         if: github.event_name == 'push'
-        run: ci/scripts/test-license-inventory.sh
+        run: |
+          ci/scripts/test-license-inventory.sh
+          make -C ci export-rootfs
+          ci/scripts/gen-sbom.sh ci/output/rootfs.tar ci/output/sbom.spdx.json
+          python3 ci/scripts/test_sbom.py ci/output/sbom.spdx.json ci/output/rootfs.tar
 
       - name: Build and test SD card image
         if: github.event_name == 'push'

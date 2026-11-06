@@ -25,6 +25,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: python3 ci/scripts/test_clean_rootfs.py
+      - run: python3 ci/scripts/test_collect_sources.py
 
   cross-build:
     name: Cross-compile for ARMv6
