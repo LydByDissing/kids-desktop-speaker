@@ -870,6 +870,7 @@ name = "ota-updater"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "hex",
  "kds-ipc",
  "reqwest",
