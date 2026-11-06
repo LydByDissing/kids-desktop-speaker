@@ -41,8 +41,10 @@ hw_cleanup; mkdir -p "$WORK"
 log "=== Setup"
 make_test_identity || exit 1
 make_bundle good "$GOOD" none || exit 1
-# The VM leaves out bad-kernel: with no watchdog it hangs, as in KDS-fjl.
-BAD_UPDATES="${HW_BAD_UPDATES:-bad-api bad-kernel}"
+# bad-kernel is opt-in (HW_BAD_UPDATES="bad-api bad-kernel"): a kernel that hangs
+# before Linux arms the watchdog leaves the device stuck until power-cycled
+# (KDS-fjl), which strands an unattended Pi.
+BAD_UPDATES="${HW_BAD_UPDATES:-bad-api}"
 for bad in $BAD_UPDATES; do
     make_bundle "$bad" "v0.3.0-$bad" "$bad" || exit 1
 done

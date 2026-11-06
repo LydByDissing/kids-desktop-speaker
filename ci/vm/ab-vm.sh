@@ -97,7 +97,7 @@ fi
 
 rc=0
 PI_HOST=root@localhost HW_SSH_PORT="$PORT" HW_SSH_KEY="$VM/ci_key" HW_ROOTFS="$WORK/rootfs.tar" \
-    HW_BAD_UPDATES=bad-api bash "$REPO/ci/scripts/hw-ab-test.sh" || rc=$?
+    bash "$REPO/ci/scripts/hw-ab-test.sh" || rc=$?
 if [ "$rc" -ne 0 ]; then
     echo "--- last serial output"; tr -d '\r' < "$WORK/serial.log" | grep -av '^\s*$' | tail -25
 fi
