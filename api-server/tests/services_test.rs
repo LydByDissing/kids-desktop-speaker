@@ -133,3 +133,42 @@ async fn a_service_error_is_502() {
     assert_eq!(status, StatusCode::BAD_GATEWAY);
     assert_eq!(body["error"], "ota-updater: state unavailable");
 }
+
+#[tokio::test]
+async fn ota_check_and_reboot_are_forwarded() {
+    let dir = run_dir("ota-post");
+    let path = dir.join("ota.sock");
+    let server_path = path.clone();
+    tokio::spawn(async move {
+        kds_ipc::serve(server_path, |request: Value| async move {
+            match command(&request) {
+                Some("check") | Some("reboot") => ok(json!({"accepted": command(&request)})),
+                _ => error("unexpected"),
+            }
+        })
+        .await
+        .unwrap();
+    });
+    for _ in 0..100 {
+        if tokio::net::UnixStream::connect(&path).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    for (uri, cmd) in [("/api/ota/check", "check"), ("/api/ota/reboot", "reboot")] {
+        let response = app(AppState::with_run_dir(&dir))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["accepted"], cmd);
+    }
+}

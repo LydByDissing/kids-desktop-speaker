@@ -283,6 +283,24 @@ Software — Networking
    ``/etc/kds-version`` (derived from the release tag). The OTA Updater shall
    read this file as the current version for update comparison.
 
+.. req:: OTA_REQ_006
+   :id: OTA_REQ_006
+   :status: open
+   :tags: software, ota
+
+   After installing an update, the OTA Updater shall reboot the device to
+   activate it only inside a configurable maintenance window (default
+   03:00–05:00 local time), only while no audio is playing, and only after a
+   grace period of 5 minutes during which activity is checked again.
+
+.. req:: OTA_REQ_007
+   :id: OTA_REQ_007
+   :status: open
+   :tags: software, ota, api
+
+   The API Server shall let a user check for an update immediately and reboot
+   immediately, the latter skipping the maintenance window.
+
 .. req:: CI_REQ_001
    :id: CI_REQ_001
    :status: open

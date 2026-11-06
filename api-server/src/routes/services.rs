@@ -38,6 +38,16 @@ pub async fn get_ota_status(State(state): State<AppState>) -> ApiResult {
     query(&state, Service::OtaUpdater, "status").await.map(Json)
 }
 
+/// Asks the OTA Updater to check for an update now (OTA_REQ_007).
+pub async fn post_ota_check(State(state): State<AppState>) -> ApiResult {
+    query(&state, Service::OtaUpdater, "check").await.map(Json)
+}
+
+/// Asks the OTA Updater to reboot now, skipping the maintenance window (OTA_REQ_007).
+pub async fn post_ota_reboot(State(state): State<AppState>) -> ApiResult {
+    query(&state, Service::OtaUpdater, "reboot").await.map(Json)
+}
+
 pub async fn get_bluetooth_status(State(state): State<AppState>) -> ApiResult {
     query(&state, Service::Bluetooth, "status").await.map(Json)
 }

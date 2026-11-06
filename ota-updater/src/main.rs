@@ -1,5 +1,6 @@
 use ota_updater::config::{next_check_delay, OtaConfig};
-use ota_updater::{installer, ipc, release, version, SharedStatus};
+use ota_updater::ipc::Controls;
+use ota_updater::{installer, ipc, reboot, release, version, SharedStatus};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,21 +13,31 @@ async fn main() -> anyhow::Result<()> {
         status.set_version(v).await;
     }
 
+    let controls = Controls::default();
     let status_ipc = status.clone();
+    let controls_ipc = controls.clone();
     let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc::serve("/run/kds/ota.sock", status_ipc).await {
+        if let Err(e) = ipc::serve("/run/kds/ota.sock", status_ipc, controls_ipc).await {
             eprintln!("IPC server error: {e}");
         }
     });
 
+    let reboot_handle = tokio::spawn(reboot::reboot_loop(
+        cfg.clone(),
+        status.clone(),
+        controls.reboot_now.clone(),
+    ));
+
     let status_check = status.clone();
+    let check_now = controls.check_now.clone();
     let check_handle = tokio::spawn(async move {
-        check_loop(cfg, status_check).await;
+        check_loop(cfg, status_check, check_now).await;
     });
 
     tokio::signal::ctrl_c().await?;
     println!("ota-updater: shutting down");
     ipc_handle.abort();
+    reboot_handle.abort();
     check_handle.abort();
     println!("ota-updater: stopped");
     Ok(())
@@ -41,11 +52,19 @@ struct CheckState {
     failed: Option<(String, String)>,
 }
 
-async fn check_loop(cfg: OtaConfig, status: SharedStatus) {
+async fn check_loop(
+    cfg: OtaConfig,
+    status: SharedStatus,
+    check_now: std::sync::Arc<tokio::sync::Notify>,
+) {
     let mut state = CheckState::default();
     loop {
         let succeeded = check_once(&cfg, &status, &mut state).await;
-        tokio::time::sleep(next_check_delay(succeeded, cfg.check_interval)).await;
+        // A `check` command cuts the wait short.
+        tokio::select! {
+            _ = tokio::time::sleep(next_check_delay(succeeded, cfg.check_interval)) => {}
+            _ = check_now.notified() => println!("ota: check requested"),
+        }
     }
 }
 
@@ -76,6 +95,7 @@ async fn check_once(cfg: &OtaConfig, status: &SharedStatus, state: &mut CheckSta
         // The reported version stays the running one until the device reboots.
         Ok(()) => {
             println!("ota: installed {candidate}, active after reboot");
+            status.set_pending(candidate.clone()).await;
             state.pending = Some(candidate);
             true
         }

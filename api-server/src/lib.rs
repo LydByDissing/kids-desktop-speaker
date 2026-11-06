@@ -1,7 +1,10 @@
 pub mod routes;
 pub mod state;
 
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use state::AppState;
 
 pub fn app(state: AppState) -> Router {
@@ -10,6 +13,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/system/time", get(routes::system::get_time))
         .route("/api/audio/source", get(routes::audio::get_source))
         .route("/api/ota/status", get(routes::services::get_ota_status))
+        .route("/api/ota/check", post(routes::services::post_ota_check))
+        .route("/api/ota/reboot", post(routes::services::post_ota_reboot))
         .route(
             "/api/bluetooth/status",
             get(routes::services::get_bluetooth_status),

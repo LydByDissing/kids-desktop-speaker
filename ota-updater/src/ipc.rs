@@ -4,18 +4,34 @@ use crate::installer::install_verified;
 use crate::state::{OtaState, SharedStatus};
 use kds_ipc::{command, error, ok};
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
-pub async fn serve(sock_path: &str, status: SharedStatus) -> std::io::Result<()> {
+/// Signals from IPC commands to the updater's background loops.
+#[derive(Clone, Default)]
+pub struct Controls {
+    /// Check for an update now instead of waiting for the next check.
+    pub check_now: Arc<Notify>,
+    /// Reboot now, skipping the maintenance window (OTA_REQ_007).
+    pub reboot_now: Arc<Notify>,
+}
+
+pub async fn serve(
+    sock_path: &str,
+    status: SharedStatus,
+    controls: Controls,
+) -> std::io::Result<()> {
     kds_ipc::serve(sock_path, move |request| {
         let status = status.clone();
-        async move { handle(request, status).await }
+        let controls = controls.clone();
+        async move { handle(request, status, &controls).await }
     })
     .await
 }
 
 /// Answers one request. `install` starts the install in the background and
 /// returns at once; progress shows in `status`.
-pub async fn handle(request: Value, status: SharedStatus) -> Value {
+pub async fn handle(request: Value, status: SharedStatus, controls: &Controls) -> Value {
     match command(&request) {
         Some("status") => {
             let current = status.get().await;
@@ -26,7 +42,12 @@ pub async fn handle(request: Value, status: SharedStatus) -> Value {
                 OtaState::Done => ("done", None),
                 OtaState::Error(message) => ("error", Some(message.clone())),
             };
-            ok(json!({ "state": state, "detail": detail, "version": current.version }))
+            ok(json!({
+                "state": state,
+                "detail": detail,
+                "version": current.version,
+                "pending": current.pending,
+            }))
         }
         Some("install") => {
             let (Some(url), Some(sha256)) = (
@@ -47,6 +68,14 @@ pub async fn handle(request: Value, status: SharedStatus) -> Value {
                     eprintln!("ota: install failed: {e}");
                 }
             });
+            ok(Value::Null)
+        }
+        Some("check") => {
+            controls.check_now.notify_one();
+            ok(Value::Null)
+        }
+        Some("reboot") => {
+            controls.reboot_now.notify_one();
             ok(Value::Null)
         }
         Some(other) => error(format!("unknown command: {other}")),

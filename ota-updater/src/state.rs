@@ -14,6 +14,8 @@ pub enum OtaState {
 pub struct OtaStatus {
     pub state: OtaState,
     pub version: Option<String>, // running version
+    /// An installed version waiting for a reboot.
+    pub pending: Option<String>,
 }
 
 #[derive(Clone)]
@@ -24,6 +26,7 @@ impl SharedStatus {
         SharedStatus(Arc::new(RwLock::new(OtaStatus {
             state: OtaState::Idle,
             version: None,
+            pending: None,
         })))
     }
 
@@ -32,12 +35,17 @@ impl SharedStatus {
         OtaStatus {
             state: status.state.clone(),
             version: status.version.clone(),
+            pending: status.pending.clone(),
         }
     }
 
     pub async fn set(&self, s: OtaState) {
         let mut status = self.0.write().await;
         status.state = s;
+    }
+    pub async fn set_pending(&self, v: String) {
+        let mut status = self.0.write().await;
+        status.pending = Some(v);
     }
     pub async fn set_version(&self, v: String) {
         let mut status = self.0.write().await;

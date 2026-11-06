@@ -1,6 +1,7 @@
 pub mod config;
 pub mod installer;
 pub mod ipc;
+pub mod reboot;
 pub mod release;
 pub mod state;
 pub mod version;
