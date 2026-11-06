@@ -101,9 +101,14 @@ async fn download_writes_a_bundle_with_matching_checksum() {
     let target = temp_path("good");
 
     let url = format!("{}/image.raucb", server.uri());
-    download_verified(&url, &sha256_hex(BUNDLE), &target)
-        .await
-        .unwrap();
+    download_verified(
+        &url,
+        &sha256_hex(BUNDLE),
+        Some(BUNDLE.len() as u64),
+        &target,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(std::fs::read(&target).unwrap(), BUNDLE);
     std::fs::remove_file(&target).unwrap();
@@ -121,7 +126,13 @@ async fn download_removes_a_bundle_with_wrong_checksum() {
     let target = temp_path("tampered");
 
     let url = format!("{}/image.raucb", server.uri());
-    let result = download_verified(&url, &sha256_hex(b"something else"), &target).await;
+    let result = download_verified(
+        &url,
+        &sha256_hex(b"something else"),
+        Some(BUNDLE.len() as u64),
+        &target,
+    )
+    .await;
 
     assert!(matches!(
         result,
@@ -137,7 +148,7 @@ async fn download_reports_http_errors_and_leaves_no_file() {
     let target = temp_path("server-error");
 
     let url = format!("{}/image.raucb", server.uri());
-    let result = download_verified(&url, "abc", &target).await;
+    let result = download_verified(&url, "abc", None, &target).await;
 
     assert!(matches!(result, Err(InstallerError::Download(_))));
     assert!(!target.exists());
@@ -161,6 +172,7 @@ async fn download_fails_when_the_connection_stalls() {
     let result = download_with_read_timeout(
         &url,
         &sha256_hex(BUNDLE),
+        None,
         &target,
         Duration::from_millis(200),
     )
@@ -168,5 +180,31 @@ async fn download_fails_when_the_connection_stalls() {
 
     assert!(matches!(result, Err(InstallerError::Download(_))));
     assert!(started.elapsed() < Duration::from_secs(4));
+    assert!(!target.exists());
+}
+
+#[tokio::test]
+async fn short_download_is_incomplete_not_a_bad_release() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        "/image.raucb",
+        ResponseTemplate::new(200).set_body_bytes(&BUNDLE[..5]),
+    )
+    .await;
+    let target = temp_path("short");
+
+    let url = format!("{}/image.raucb", server.uri());
+    let result = download_verified(
+        &url,
+        &sha256_hex(BUNDLE),
+        Some(BUNDLE.len() as u64),
+        &target,
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert!(matches!(err, InstallerError::Incomplete { .. }));
+    assert!(!err.is_bad_release());
     assert!(!target.exists());
 }

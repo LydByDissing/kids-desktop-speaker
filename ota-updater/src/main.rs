@@ -32,16 +32,25 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What the check loop remembers between checks.
+#[derive(Default)]
+struct CheckState {
+    /// A version already installed and waiting for a reboot.
+    pending: Option<String>,
+    /// The version and checksum of a release that failed verification.
+    failed: Option<(String, String)>,
+}
+
 async fn check_loop(cfg: OtaConfig, status: SharedStatus) {
-    let mut pending = None;
+    let mut state = CheckState::default();
     loop {
-        let succeeded = check_once(&cfg, &status, &mut pending).await;
+        let succeeded = check_once(&cfg, &status, &mut state).await;
         tokio::time::sleep(next_check_delay(succeeded, cfg.check_interval)).await;
     }
 }
 
 /// Returns whether the check completed, so a failure can be retried soon.
-async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option<String>) -> bool {
+async fn check_once(cfg: &OtaConfig, status: &SharedStatus, state: &mut CheckState) -> bool {
     let current = version::read_current(&cfg.version_file).unwrap_or_else(|| "0.0.0".to_string());
     let update = match release::fetch_latest(cfg).await {
         Ok(update) => update,
@@ -51,21 +60,29 @@ async fn check_once(cfg: &OtaConfig, status: &SharedStatus, pending: &mut Option
         }
     };
     let candidate = update.manifest.version;
-    if !version::should_install(&candidate, &current, pending.as_deref()) {
+    let sha256 = update.manifest.sha256;
+    if !version::should_install(&candidate, &current, state.pending.as_deref()) {
         println!("ota: nothing to install (current {current}, latest {candidate})");
         return true;
     }
+    let failed = state.failed.as_ref().map(|(v, s)| (v.as_str(), s.as_str()));
+    if version::is_known_bad(&candidate, &sha256, failed) {
+        println!("ota: skipping {candidate}, which failed verification earlier");
+        return true;
+    }
     println!("ota: newer release {candidate} available (current {current})");
-    match installer::install_verified(&update.bundle_url, &update.manifest.sha256, status.clone())
-        .await
-    {
+    let size = Some(update.manifest.size);
+    match installer::install_verified(&update.bundle_url, &sha256, size, status.clone()).await {
         // The reported version stays the running one until the device reboots.
         Ok(()) => {
             println!("ota: installed {candidate}, active after reboot");
-            *pending = Some(candidate);
+            state.pending = Some(candidate);
             true
         }
         Err(e) => {
+            if e.is_bad_release() {
+                state.failed = Some((candidate, sha256));
+            }
             eprintln!("ota: install failed: {:#}", anyhow::Error::new(e));
             false
         }

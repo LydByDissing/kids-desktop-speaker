@@ -58,7 +58,7 @@ pub async fn serve(sock_path: &str, status: SharedStatus) -> Result<(), IpcError
             Some((url, sha256)) = install_rx.recv() => {
                 let status_clone = status.clone();
                 install_set.spawn(async move {
-                    if let Err(e) = install_verified(&url, &sha256, status_clone).await {
+                    if let Err(e) = install_verified(&url, &sha256, None, status_clone).await {
                         eprintln!("install failed: {e}");
                     }
                 });

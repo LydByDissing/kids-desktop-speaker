@@ -112,6 +112,10 @@ jobs:
           path: /tmp/kds-vm.log
           if-no-files-found: ignore
 
+      - name: Test license inventory
+        if: github.event_name == 'push'
+        run: ci/scripts/test-license-inventory.sh
+
       - name: Build and test SD card image
         if: github.event_name == 'push'
         run: make sd-image

@@ -15,6 +15,21 @@ pub enum InstallerError {
     ChecksumMismatch { expected: String, actual: String },
     #[error("rauc failed: exit {0}")]
     RaucFailed(i32),
+    #[error("download incomplete: expected {expected} bytes, got {actual}")]
+    Incomplete { expected: u64, actual: u64 },
+}
+
+impl InstallerError {
+    /// Whether the release itself is bad, rather than this attempt failing. A full
+    /// download with the wrong checksum, or a bundle RAUC rejects, fails the same
+    /// way every time, so it shouldn't be downloaded again. A short download is a
+    /// network problem and is worth retrying.
+    pub fn is_bad_release(&self) -> bool {
+        matches!(
+            self,
+            InstallerError::ChecksumMismatch { .. } | InstallerError::RaucFailed(_)
+        )
+    }
 }
 
 const DEFAULT_BUNDLE_PATH: &str = "/data/ota/staging/bundle.raucb";
@@ -53,9 +68,10 @@ pub fn verify_checksum(bytes: &[u8], expected: &str) -> Result<(), InstallerErro
 pub async fn download_verified(
     url: &str,
     expected_sha256: &str,
+    expected_size: Option<u64>,
     path: &Path,
 ) -> Result<(), InstallerError> {
-    download_with_read_timeout(url, expected_sha256, path, READ_TIMEOUT).await
+    download_with_read_timeout(url, expected_sha256, expected_size, path, READ_TIMEOUT).await
 }
 
 /// A slow download may take as long as it needs, but a stalled one must fail, or
@@ -63,10 +79,11 @@ pub async fn download_verified(
 pub async fn download_with_read_timeout(
     url: &str,
     expected_sha256: &str,
+    expected_size: Option<u64>,
     path: &Path,
     read_timeout: Duration,
 ) -> Result<(), InstallerError> {
-    let result = stream_to_file(url, expected_sha256, path, read_timeout).await;
+    let result = stream_to_file(url, expected_sha256, expected_size, path, read_timeout).await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(path).await;
     }
@@ -76,6 +93,7 @@ pub async fn download_with_read_timeout(
 async fn stream_to_file(
     url: &str,
     expected_sha256: &str,
+    expected_size: Option<u64>,
     path: &Path,
     read_timeout: Duration,
 ) -> Result<(), InstallerError> {
@@ -95,22 +113,35 @@ async fn stream_to_file(
         .open(path)
         .await?;
     let mut hasher = Sha256::new();
+    let mut received: u64 = 0;
     while let Some(chunk) = response.chunk().await? {
         hasher.update(&chunk);
         file.write_all(&chunk).await?;
+        received += chunk.len() as u64;
     }
     file.flush().await?;
+    // Check the size first, so a cut-off download counts as a network failure and
+    // not as a bad release.
+    if let Some(expected) = expected_size {
+        if received != expected {
+            return Err(InstallerError::Incomplete {
+                expected,
+                actual: received,
+            });
+        }
+    }
     check_digest(hex::encode(hasher.finalize()), expected_sha256)
 }
 
 pub async fn install_verified(
     url: &str,
     expected_sha256: &str,
+    expected_size: Option<u64>,
     status: SharedStatus,
 ) -> Result<(), InstallerError> {
     let path = bundle_path();
     status.set(OtaState::Downloading).await;
-    let result = match download_verified(url, expected_sha256, &path).await {
+    let result = match download_verified(url, expected_sha256, expected_size, &path).await {
         Ok(()) => {
             status.set(OtaState::Installing).await;
             let installed = rauc_install(&path).await;
@@ -143,6 +174,21 @@ async fn rauc_install(path: &Path) -> Result<(), InstallerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bad_release_errors_are_classified() {
+        let mismatch = InstallerError::ChecksumMismatch {
+            expected: "a".into(),
+            actual: "b".into(),
+        };
+        assert!(mismatch.is_bad_release());
+        assert!(InstallerError::RaucFailed(1).is_bad_release());
+        let short = InstallerError::Incomplete {
+            expected: 10,
+            actual: 4,
+        };
+        assert!(!short.is_bad_release());
+    }
 
     #[test]
     fn sha256_matches_known_vector() {
