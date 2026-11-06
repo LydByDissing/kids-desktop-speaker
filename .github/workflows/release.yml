@@ -217,6 +217,10 @@ jobs:
         with:
           name: rauc-bundle-staging
 
+      # The artifact keeps the legal files in legal-info/, below the bundle.
+      - name: Check every release file is present
+        run: ls -l image.raucb legal-info/licenses.tar.gz legal-info/sbom.spdx.json legal-info/sources.tar
+
       - name: Generate manifest
         run: ci/scripts/gen-manifest.sh image.raucb "${{ github.ref_name }}" > manifest.json
 
@@ -230,6 +234,9 @@ jobs:
           files: |
             image.raucb
             manifest.json
-            licenses.tar.gz
-            sbom.spdx.json
-            sources.tar
+            legal-info/licenses.tar.gz
+            legal-info/sbom.spdx.json
+            legal-info/sources.tar
+          # A missing file fails the release instead of being skipped silently,
+          # as happened to v0.1.0-rc.3.
+          fail_on_unmatched_files: true
