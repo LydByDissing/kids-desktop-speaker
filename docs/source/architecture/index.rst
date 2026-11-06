@@ -255,3 +255,4 @@ Zero W:
    :caption: Cross-Cutting
 
    data-model/index
+   ipc/index

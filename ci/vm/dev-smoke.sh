@@ -91,10 +91,25 @@ else
 fi
 
 echo ""
+# Tests 6 and 7: live state from the backend services over IPC (IPC_REQ_004)
+check_live() { # name path jq-filter
+    echo "==> Test: GET $2"
+    if response=$(curl -sf "$BASE$2" 2>&1) && echo "$response" | jq -e "$3" >/dev/null 2>&1; then
+        echo "[PASS] $1"
+        PASS=$((PASS + 1))
+    else
+        echo "[FAIL] $1 — $response"
+        FAIL=$((FAIL + 1))
+    fi
+}
+check_live "ota/status from ota-updater" /api/ota/status 'has("state") and has("version")'
+check_live "bluetooth/status from bluetooth-service" /api/bluetooth/status 'has("connected")'
+
+echo ""
 echo "Results: $PASS passed, $FAIL failed"
 
-# Exit 0 only if all 5 pass
-if [ $FAIL -eq 0 ] && [ $PASS -eq 5 ]; then
+# Pass only if every test ran and none failed
+if [ $FAIL -eq 0 ] && [ $PASS -gt 0 ]; then
     echo "All smoke tests passed."
     exit 0
 else

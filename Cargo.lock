@@ -34,6 +34,7 @@ dependencies = [
  "axum",
  "chrono",
  "http-body-util",
+ "kds-ipc",
  "serde",
  "serde_json",
  "tokio",
@@ -72,6 +73,7 @@ name = "audio-player"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "kds-ipc",
  "nix",
  "serde",
  "serde_json",
@@ -166,6 +168,7 @@ name = "bluetooth-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "kds-ipc",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -750,6 +753,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kds-ipc"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -858,7 +870,9 @@ name = "ota-updater"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "hex",
+ "kds-ipc",
  "reqwest",
  "semver",
  "serde",

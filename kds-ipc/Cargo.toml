@@ -1,0 +1,14 @@
+[package]
+name = "kds-ipc"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Newline-delimited JSON over Unix sockets, shared by the speaker's services (DEC-027)"
+
+[dependencies]
+tokio = { version = "1", features = ["net", "io-util", "rt", "time", "macros", "fs"] }
+serde_json = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

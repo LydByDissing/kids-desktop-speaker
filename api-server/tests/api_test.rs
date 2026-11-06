@@ -55,8 +55,8 @@ async fn test_system_time() {
 }
 
 #[tokio::test]
-async fn test_get_audio_source() {
-    let app = make_app();
+async fn test_audio_source_is_unavailable_without_audio_player() {
+    let app = app(AppState::with_run_dir("/nonexistent/kds"));
     let response = app
         .oneshot(
             Request::builder()
@@ -67,15 +67,7 @@ async fn test_get_audio_source() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    // active is null by default
-    assert!(json["active"].is_null());
-    assert!(json["sources"]["airplay"].is_object());
-    assert!(json["sources"]["spotify"].is_object());
-    assert!(json["sources"]["radio"].is_object());
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]

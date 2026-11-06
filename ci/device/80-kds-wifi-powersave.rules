@@ -1,0 +1,4 @@
+# Turn off Wi-Fi power saving on the Pi Zero W (KDS-3kd). With it on, latency to
+# the device varied far more (up to 69 ms against 12 ms off), which hurts incoming
+# audio streams. The speaker is mains powered, so the extra power draw is small.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan0", RUN+="/usr/sbin/iw dev %k set power_save off"

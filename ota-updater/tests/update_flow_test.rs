@@ -16,6 +16,7 @@ fn config(server: &MockServer) -> OtaConfig {
         check_interval: Duration::from_secs(1),
         version_file: "/nonexistent".into(),
         api_base: server.uri(),
+        ..OtaConfig::from_env()
     }
 }
 

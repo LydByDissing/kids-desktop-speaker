@@ -66,8 +66,8 @@ The API Server is a single Axum (Rust) binary that:
 
    interface "Audio Player\n/run/kds/audio-player.sock" as ap_sock
    interface "TTS Engine\n/run/kds/tts-engine.sock" as tts_sock
-   interface "OTA Updater\n/run/kds/ota-updater.sock" as ota_sock
-   interface "Bluetooth\n/run/kds/bluetooth.sock" as bt_sock
+   interface "OTA Updater\n/run/kds/ota.sock" as ota_sock
+   interface "Bluetooth\n/run/kds/bt.sock" as bt_sock
    component "CamillaDSP\n127.0.0.1:1234" as cdsp
 
    http --> leptos : serve frontend
@@ -92,26 +92,23 @@ The API Server is a single Axum (Rust) binary that:
 Service Registry
 ----------------
 
-The Service Registry manages connections to all backend services. Each
-backend has a client struct that:
-
-1. Connects to the Unix domain socket
-2. Sends commands (length-prefixed JSON)
-3. Listens for events in a background task
-4. Forwards events to the State Aggregator
+The Service Registry talks to the backend services over Unix domain sockets,
+following the :doc:`IPC protocol <../ipc/index>`: newline-delimited JSON, one
+request and one response per connection.
 
 .. code-block:: text
 
    Service Registry
-       ├── AudioPlayerClient    → /run/kds/audio-player.sock
-       ├── TtsEngineClient      → /run/kds/tts-engine.sock
-       ├── OtaUpdaterClient     → /run/kds/ota-updater.sock
-       ├── BluetoothClient      → /run/kds/bluetooth.sock
-       └── CamillaDSPClient     → 127.0.0.1:1234 (WebSocket)
+       ├── Audio Player         → /run/kds/audio.sock
+       ├── TTS Engine           → /run/kds/tts.sock (not yet implemented)
+       ├── OTA Updater          → /run/kds/ota.sock
+       ├── Bluetooth Service    → /run/kds/bt.sock
+       └── CamillaDSP           → 127.0.0.1:1234 (WebSocket)
 
 If a backend service is not running, the API Server returns a
-``503 Service Unavailable`` for commands routed to that service. The
-client reconnects automatically when the service comes back.
+``503 Service Unavailable`` for requests routed to that service. Each request
+opens a new connection, so a service is used again as soon as it's back. Pushed
+events for live updates are not built yet (KDS-izr).
 
 State Aggregator
 ----------------
@@ -357,16 +354,16 @@ Interfaces
      - HTTPS + mDNS
      - External automation control
    * - Audio Player
-     - Unix socket ``/run/kds/audio-player.sock``
+     - Unix socket ``/run/kds/audio.sock``
      - Playback commands, state events
    * - TTS Engine
-     - Unix socket ``/run/kds/tts-engine.sock``
+     - Unix socket ``/run/kds/tts.sock``
      - TTS messages, queue events
    * - OTA Updater
-     - Unix socket ``/run/kds/ota-updater.sock``
+     - Unix socket ``/run/kds/ota.sock``
      - Update commands, status events
    * - Bluetooth Service
-     - Unix socket ``/run/kds/bluetooth.sock``
+     - Unix socket ``/run/kds/bt.sock``
      - Pairing, AVRCP events
    * - CamillaDSP
      - WebSocket ``127.0.0.1:1234``

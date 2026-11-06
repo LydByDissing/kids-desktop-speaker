@@ -46,8 +46,11 @@ docker run --rm \
 
         IMG=$W/sd.img
         truncate -s "${TOTAL}M" $IMG
+        # A fixed disk ID gives fixed partition UUIDs (4b445300-01 to -04), which
+        # fstab, RAUC and the boot script use on the Pi and in the VM alike.
         sfdisk -q $IMG <<SFDISK
 label: dos
+label-id: 0x4b445300
 ${START}M,${BOOT}M,c,*
 ,${SLOT}M,83
 ,${SLOT}M,83

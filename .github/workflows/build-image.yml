@@ -93,6 +93,7 @@ jobs:
           path: |
             ci/vm/vmlinuz
             ci/vm/initrd.img
+            ci/vm/modules.tar
           key: vm-kernel-${{ hashFiles('ci/vm/build-image.sh') }}
 
       - name: Boot VM and run API smoke tests
@@ -119,6 +120,11 @@ jobs:
           make -C ci export-rootfs
           ci/scripts/gen-sbom.sh ci/output/rootfs.tar ci/output/sbom.spdx.json
           python3 ci/scripts/test_sbom.py ci/output/sbom.spdx.json ci/output/rootfs.tar
+
+      # A/B update and rollback with U-Boot in QEMU (KDS-in5, DEC-028).
+      - name: A/B update and rollback test in QEMU
+        if: github.event_name == 'push'
+        run: make -C ci vm-ab-test
 
       - name: Build and test SD card image
         if: github.event_name == 'push'

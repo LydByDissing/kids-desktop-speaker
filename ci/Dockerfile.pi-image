@@ -65,6 +65,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     e2fsprogs \
     dosfstools \
     wpasupplicant \
+    iw \
     rfkill \
     openssh-server \
     # System
@@ -120,13 +121,15 @@ COPY ci/rauc/keyring.pem /etc/rauc/keyring.pem
 COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 
 # U-Boot's environment file, used by RAUC to switch slots
-RUN echo "/boot/firmware/uboot.env 0x0 0x4000" > /etc/fw_env.config
+# The A/B state file written by the boot script (DEC-028), not U-Boot's own
+# environment. fw_setenv creates it if it's missing.
+RUN echo "/boot/firmware/kds-ab.env 0x0 0x4000" > /etc/fw_env.config
 
 # Partitions outside the root slots. nofail lets the VM boot without them. The Pi
 # needs longer than 5s to bring up the device on boot.
 RUN mkdir -p /boot/firmware /data && printf '%s\n' \
-    "/dev/mmcblk0p1 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=60s 0 2" \
-    "/dev/mmcblk0p4 /data ext4 defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    "PARTUUID=4b445300-01 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    "PARTUUID=4b445300-04 /data ext4 defaults,nofail,x-systemd.device-timeout=60s 0 2" \
     > /etc/fstab
 
 # ---------------------------------------------------------------------------
@@ -192,6 +195,9 @@ RUN mkdir -p /etc/systemd/network && \
     > /etc/systemd/network/20-dhcp.network && \
     printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n' \
     > /etc/systemd/network/25-wifi.network
+
+# Wi-Fi power saving off, for steady latency (KDS-3kd)
+COPY ci/device/80-kds-wifi-powersave.rules /etc/udev/rules.d/80-kds-wifi-powersave.rules
 
 # Per-device settings, plus SSH with keys only. Host keys are removed so devices
 # never share them, and are created at boot.

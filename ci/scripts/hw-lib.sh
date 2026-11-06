@@ -3,10 +3,13 @@
 
 IMAGE=kids-desktop-speaker:latest
 PLATFORM=linux/arm/v6
-ROOTFS="$REPO/ci/output/rootfs.tar"
+ROOTFS="${HW_ROOTFS:-$REPO/ci/output/rootfs.tar}"
+# HW_SSH_PORT and HW_SSH_KEY let the same tests drive the A/B VM (ci/vm/ab-vm.sh).
+SSH_EXTRA=()
+[ -n "${HW_SSH_KEY:-}" ] && SSH_EXTRA+=(-i "$HW_SSH_KEY" -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
 # Host keys live on the data partition, so they stay the same across slots.
-SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "$PI_HOST")
-SCP=(scp -q -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new)
+SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "${SSH_EXTRA[@]}" -p "${HW_SSH_PORT:-22}" "$PI_HOST")
+SCP=(scp -q -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new "${SSH_EXTRA[@]}" -P "${HW_SSH_PORT:-22}")
 
 fail=0
 log() { echo "[$(date +%H:%M:%S)] $*"; }

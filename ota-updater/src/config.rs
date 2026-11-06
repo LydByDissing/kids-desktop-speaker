@@ -7,6 +7,14 @@ pub struct OtaConfig {
     pub check_interval: Duration,
     pub version_file: String,
     pub api_base: String,
+    /// Local time range in which a pending update may reboot the device.
+    pub reboot_window: crate::reboot::Window,
+    /// Wait before rebooting, rechecking activity at the end.
+    pub reboot_grace: Duration,
+    /// The command that reboots the device. Tests replace it.
+    pub reboot_command: String,
+    /// The Audio Player's socket, asked whether audio is playing.
+    pub audio_socket: String,
 }
 
 impl OtaConfig {
@@ -21,6 +29,19 @@ impl OtaConfig {
             check_interval: Duration::from_secs(interval_secs),
             version_file: env_or("OTA_VERSION_FILE", "/etc/kds-version"),
             api_base: env_or("OTA_API_BASE", "https://api.github.com"),
+            reboot_window: crate::reboot::Window::parse(&env_or(
+                "OTA_REBOOT_WINDOW",
+                "03:00-05:00",
+            ))
+            .unwrap_or_default(),
+            reboot_grace: Duration::from_secs(
+                std::env::var("OTA_REBOOT_GRACE_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(300),
+            ),
+            reboot_command: env_or("OTA_REBOOT_COMMAND", "systemctl reboot"),
+            audio_socket: env_or("OTA_AUDIO_SOCKET", "/run/kds/audio.sock"),
         }
     }
 }
