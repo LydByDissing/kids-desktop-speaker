@@ -2080,3 +2080,41 @@ rest of the system.
 - Host keys are created per device and kept on the data partition.
 - The serial console in the VM still logs in automatically. This must be reviewed
   before shipping devices.
+
+DEC-026 — Release License Information: SBOM, Inventory and Source
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_026
+   :status: resolved
+   :date: 2026-11-06
+   :tags: licensing, ci, release
+
+**Decision**: Every release publishes, next to its bundle:
+
+- ``sbom.spdx.json``: an SPDX software bill of materials from Syft, listing each
+  Debian package in the image and each Rust crate, with versions and licenses.
+- ``licenses.tar.gz``: the license inventory, with each package's source version
+  and copyright file.
+- ``sources.tar``: the Debian source packages for the GPL and LGPL software in the
+  image, at the exact versions shipped.
+
+``make -C ci legal-info`` produces all three, using existing tooling: Syft for the
+SBOM, and the archives' own source packages for the source.
+
+**Context**
+
+The project's own code is Apache-2.0 and public. The image also redistributes
+third-party GPL and LGPL binaries from the Raspbian and Raspberry Pi archives.
+Those archives are rolling: versions shipped in an image disappeared from them
+within days. The source is therefore collected in the same build that produces
+the binaries, and the release fails if any of it can't be fetched.
+
+**Open questions**
+
+- Devices sold with the image preinstalled may also need a written offer in their
+  documentation.
+- GPLv3's installation-information requirement for consumer products, which a
+  reflashable SD card probably satisfies.
+
+These should be reviewed by a lawyer before devices are sold.

@@ -182,8 +182,10 @@ jobs:
       - name: Install Rust for the crate license list
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build license inventory
-        run: ci/scripts/license-inventory.sh ci/output/licenses.tar.gz
+      # Collected in the same build as the binaries, while the exact source
+      # versions are still in the archives (DEC-026).
+      - name: Build license inventory, SBOM and GPL/LGPL source
+        run: make -C ci legal-info VERSION=${{ github.ref_name }}
 
       - name: Upload RAUC bundle
         uses: actions/upload-artifact@v4
@@ -191,7 +193,9 @@ jobs:
           name: rauc-bundle-staging
           path: |
             ci/output/image.raucb
-            ci/output/licenses.tar.gz
+            ci/output/legal-info/licenses.tar.gz
+            ci/output/legal-info/sbom.spdx.json
+            ci/output/legal-info/sources.tar
           retention-days: 7
 
   # ── Publish GitHub Release (only after the image job passes) ──
@@ -222,3 +226,5 @@ jobs:
             image.raucb
             manifest.json
             licenses.tar.gz
+            sbom.spdx.json
+            sources.tar
