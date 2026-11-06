@@ -41,8 +41,11 @@ hw_cleanup; mkdir -p "$WORK"
 log "=== Setup"
 make_test_identity || exit 1
 make_bundle good "$GOOD" none || exit 1
-make_bundle bad-api v0.3.0-bad-api bad-api || exit 1
-make_bundle bad-kernel v0.3.0-bad-kernel bad-kernel || exit 1
+# The VM leaves out bad-kernel: with no watchdog it hangs, as in KDS-fjl.
+BAD_UPDATES="${HW_BAD_UPDATES:-bad-api bad-kernel}"
+for bad in $BAD_UPDATES; do
+    make_bundle "$bad" "v0.3.0-$bad" "$bad" || exit 1
+done
 
 # The boot partition isn't updated by RAUC, so install the current boot script.
 docker run --rm -v "$REPO/ci/boot:/b:ro" -v "$WORK:/o" debian:bookworm-slim bash -c \
@@ -65,7 +68,7 @@ check "API answers" "$(remote curl -s -m 5 -o /dev/null -w '%{http_code}' http:/
 check "machine-id is unique to the device" "$(remote "grep -c 1278cb00626849cb8a226e307f448a55 /etc/machine-id")" 0
 GOOD_SLOT=$OTHER
 
-for bad in bad-api bad-kernel; do
+for bad in $BAD_UPDATES; do
     log "=== Test: $bad update falls back"
     t0=$SECONDS
     BAD_SLOT=$([ "$GOOD_SLOT" = A ] && echo B || echo A)

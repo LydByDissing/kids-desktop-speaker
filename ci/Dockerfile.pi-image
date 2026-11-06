@@ -121,13 +121,15 @@ COPY ci/rauc/keyring.pem /etc/rauc/keyring.pem
 COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 
 # U-Boot's environment file, used by RAUC to switch slots
-RUN echo "/boot/firmware/uboot.env 0x0 0x4000" > /etc/fw_env.config
+# The A/B state file written by the boot script (DEC-028), not U-Boot's own
+# environment. fw_setenv creates it if it's missing.
+RUN echo "/boot/firmware/kds-ab.env 0x0 0x4000" > /etc/fw_env.config
 
 # Partitions outside the root slots. nofail lets the VM boot without them. The Pi
 # needs longer than 5s to bring up the device on boot.
 RUN mkdir -p /boot/firmware /data && printf '%s\n' \
-    "/dev/mmcblk0p1 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=60s 0 2" \
-    "/dev/mmcblk0p4 /data ext4 defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    "PARTUUID=4b445300-01 /boot/firmware vfat defaults,nofail,x-systemd.device-timeout=60s 0 2" \
+    "PARTUUID=4b445300-04 /data ext4 defaults,nofail,x-systemd.device-timeout=60s 0 2" \
     > /etc/fstab
 
 # ---------------------------------------------------------------------------

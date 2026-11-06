@@ -161,6 +161,7 @@ jobs:
           path: |
             ci/vm/vmlinuz
             ci/vm/initrd.img
+            ci/vm/modules.tar
           key: vm-kernel-${{ hashFiles('ci/vm/build-image.sh') }}
 
       - name: Boot VM and run API smoke tests
@@ -169,6 +170,10 @@ jobs:
           FORCE_REBUILD: "1"
           KDS_VM_IMAGE: kids-desktop-speaker:latest
           KDS_VM_BOOT_ATTEMPTS: "120"
+
+      # A/B update and rollback with U-Boot in QEMU (KDS-in5, DEC-028).
+      - name: A/B update and rollback test in QEMU
+        run: make -C ci vm-ab-test
 
       - name: Build and verify signed RAUC bundle
         run: make -C ci bundle VERSION=${{ github.ref_name }}
