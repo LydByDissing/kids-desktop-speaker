@@ -25,3 +25,6 @@ ci/binaries/
 
 # Raspbian base rootfs (built by ci/base/build-base.sh)
 ci/base/*.tar
+
+# Python bytecode
+__pycache__/
