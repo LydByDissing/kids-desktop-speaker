@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -88,6 +88,10 @@ hw-ab-test:
 ## hw-ota-test — Prove the OTA updater end to end on a real Pi: make hw-ota-test PI_HOST=root@host
 hw-ota-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-ota-test.sh
+
+## hw-wifi-test — Repeated downloads on a real Pi: make hw-wifi-test PI_HOST=root@host
+hw-wifi-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-wifi-test.sh
 
 ## export-rootfs — Export the built image's root filesystem to a tar for bundling
 export-rootfs:
