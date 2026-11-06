@@ -65,6 +65,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     e2fsprogs \
     dosfstools \
     wpasupplicant \
+    iw \
     rfkill \
     openssh-server \
     # System
@@ -192,6 +193,9 @@ RUN mkdir -p /etc/systemd/network && \
     > /etc/systemd/network/20-dhcp.network && \
     printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\n' \
     > /etc/systemd/network/25-wifi.network
+
+# Wi-Fi power saving off, for steady latency (KDS-3kd)
+COPY ci/device/80-kds-wifi-powersave.rules /etc/udev/rules.d/80-kds-wifi-powersave.rules
 
 # Per-device settings, plus SSH with keys only. Host keys are removed so devices
 # never share them, and are created at boot.

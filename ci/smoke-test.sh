@@ -76,6 +76,8 @@ require_cmd rauc
 require_file /etc/rauc/system.conf
 require_file /etc/rauc/keyring.pem
 require_file /etc/fw_env.config
+require_file /etc/udev/rules.d/80-kds-wifi-powersave.rules
+require_cmd iw
 require_file /usr/lib/systemd/system/rauc.service
 require_file /usr/lib/systemd/system/systemd-timesyncd.service
 require_file /usr/lib/kds-boot/u-boot.bin

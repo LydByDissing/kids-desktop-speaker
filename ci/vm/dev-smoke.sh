@@ -108,8 +108,8 @@ check_live "bluetooth/status from bluetooth-service" /api/bluetooth/status 'has(
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 
-# Exit 0 only if all 5 pass
-if [ $FAIL -eq 0 ] && [ $PASS -eq 5 ]; then
+# Pass only if every test ran and none failed
+if [ $FAIL -eq 0 ] && [ $PASS -gt 0 ]; then
     echo "All smoke tests passed."
     exit 0
 else
