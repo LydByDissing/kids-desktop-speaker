@@ -77,21 +77,23 @@ pipeline:
   - {type: Mixer, name: to_stereo}
 YML
 # The same, plus 10 peaking EQ filters per output channel, as an upper bound.
-python3 - <<'PY'
-import re
-base = open("camilla-design.yml").read()
-eq = "".join(f"  eq{i}: {{type: Biquad, parameters: {{type: Peaking, freq: {100*(i+1)}, q: 1.0, gain: -1.0}}}}\n" for i in range(10))
-names = ", ".join(f"eq{i}" for i in range(10))
-out = base.replace("mixers:", eq + "mixers:").rstrip("\n") + f"\n  - {{type: Filter, channels: [0, 1], names: [{names}]}}\n"
-open("camilla-eq.yml", "w").write(out)
-PY
+# Plain shell: the device has no python3.
+{
+    sed '/^mixers:/,$d' camilla-design.yml
+    for i in $(seq 0 9); do
+        echo "  eq$i: {type: Biquad, parameters: {type: Peaking, freq: $((100 * (i + 1))), q: 1.0, gain: -1.0}}"
+    done
+    sed -n '/^mixers:/,$p' camilla-design.yml
+    echo "  - {type: Filter, channels: [0, 1], names: [eq0, eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9]}"
+} > camilla-eq.yml
 speaker-test -D hw:Loopback,0,0 -c 6 -r 48000 -F S32_LE -t sine >/dev/null 2>&1 &
 FEEDER=$!
 sleep 2
 ./camilladsp --check camilla-design.yml >/dev/null 2>&1 && echo "design config is valid for CamillaDSP v4" || { echo "design config INVALID:"; ./camilladsp --check camilla-design.yml 2>&1 | tail -3; }
 measure "camilladsp design pipeline" $RUN ./camilladsp camilla-design.yml
 measure "camilladsp + 10 EQ per channel" $RUN ./camilladsp camilla-eq.yml
-measure "speaker-test feeding loopback" 20 sleep 20
+a=$(awk '{print $14+$15}' /proc/$FEEDER/stat); sleep 20; b=$(awk '{print $14+$15}' /proc/$FEEDER/stat)
+printf "%-34s CPU %6s%%\n" "speaker-test feeding loopback" "$(awk -v d=$((b - a)) -v t=$TICKS 'BEGIN{printf "%.1f", 100*d/(20*t)}')"
 kill $FEEDER 2>/dev/null; wait $FEEDER 2>/dev/null
 grep -iE "error|underrun|overrun" camilladsp*.log 2>/dev/null | head -3
 
@@ -110,8 +112,9 @@ for engine in espeak-ng flite; do
     esac
     e=$(( ($(date +%s%N) - s) / 1000000 ))
     f=tts-${engine%-ng}.wav
-    dur=$(python3 -c "import wave;w=wave.open('$f');print(round(w.getnframes()/w.getframerate(),1))" 2>/dev/null)
-    printf "%-34s %6s ms to synthesise %s s of speech\n" "$engine" "$e" "$dur"
+    rate=$(od -An -tu4 -j24 -N4 "$f" | tr -d ' ')
+    dur=$(awk -v s="$(stat -c%s "$f")" -v r="$rate" 'BEGIN{printf "%.1f", (s - 44) / (r * 2)}')
+    printf "%-34s %6s ms to synthesise %s s of speech at %s Hz\n" "$engine" "$e" "$dur" "$rate"
 done
 ./piper/piper --help >/dev/null 2>&1; rc=$?
 case $rc in
