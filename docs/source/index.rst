@@ -17,6 +17,7 @@ streaming speaker for children, built on Raspberry Pi Zero W.
    development/ci-tooling
    development/ci-workflows
    development/flashing
+   development/hardware-measurements
    development/decisions
 
 Indices and Tables
