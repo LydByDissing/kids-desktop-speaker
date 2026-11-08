@@ -66,6 +66,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     dosfstools \
     wpasupplicant \
     iw \
+    u-boot-tools \
     rfkill \
     openssh-server \
     # System
@@ -119,6 +120,8 @@ COPY ci/rauc/keyring.pem /etc/rauc/keyring.pem
 
 # RAUC mark-good service — marks the current slot as good after successful boot
 COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
+COPY ci/device/kds-health-check.sh /usr/local/bin/kds-health-check.sh
+RUN chmod +x /usr/local/bin/kds-health-check.sh
 
 # U-Boot's environment file, used by RAUC to switch slots
 # The A/B state file written by the boot script (DEC-028), not U-Boot's own
@@ -158,6 +161,16 @@ RUN chmod +x /usr/local/bin/api-server \
 # latest GitHub Release (OTA_REQ_005). Set from the release tag in CI.
 ARG VERSION=0.0.0-dev
 RUN echo "$VERSION" > /etc/kds-version
+
+# Every boot partition file in one place, so the SD image and updates use the same
+# files (DEC-029). The post-install hook copies changed ones to the boot partition.
+COPY ci/boot/boot.cmd ci/boot/config.txt /usr/lib/kds-boot/
+COPY ci/device/update-boot.sh /usr/lib/kds-boot/update-boot.sh
+RUN cd /usr/lib/kds-boot \
+    && mkimage -q -A arm -T script -C none -n "KDS A/B boot" -d boot.cmd boot.scr \
+    && cp "$(ls -d /usr/lib/linux-image-*-rpi-v6 | sort -V | tail -1)/bcm2708-rpi-zero-w.dtb" . \
+    && echo "$VERSION" > kds-boot.version \
+    && chmod +x update-boot.sh
 
 # ---------------------------------------------------------------------------
 # systemd unit files and services

@@ -11,9 +11,11 @@ FailureAction=reboot
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# A boot only counts as good once the API answers. Otherwise the slot's boot tries
-# run out and U-Boot falls back to the other slot.
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do curl -sf http://localhost:8080/health >/dev/null && exit 0; sleep 2; done; exit 1'
+# The health check waits up to about 4 minutes, for the API and then Wi-Fi.
+TimeoutStartSec=600
+# A boot only counts as good once it's healthy (OTA_REQ_009). Otherwise the slot's
+# boot tries run out and U-Boot falls back to the other slot.
+ExecStartPre=/usr/local/bin/kds-health-check.sh
 ExecStart=/usr/bin/rauc status mark-good
 
 [Install]

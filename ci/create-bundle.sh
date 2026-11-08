@@ -77,9 +77,29 @@ cat > "$STAGING/manifest.raucm" <<MANIFEST
 compatible=kids-desktop-speaker
 version=$VERSION
 
+[hooks]
+filename=hook.sh
+
 [image.rootfs]
 filename=$IMG
+hooks=post-install
 MANIFEST
+
+# After the new slot is written, and before RAUC activates it, update the boot
+# partition from the new slot's own boot files (DEC-029). A failure aborts the
+# install, so the device stays on its current slot.
+cat > "$STAGING/hook.sh" <<'HOOK'
+#!/bin/sh
+set -e
+case "$1" in
+    slot-post-install)
+        [ "$RAUC_SLOT_CLASS" = rootfs ] || exit 0
+        "$RAUC_SLOT_MOUNT_POINT/usr/lib/kds-boot/update-boot.sh" \
+            "$RAUC_SLOT_MOUNT_POINT/usr/lib/kds-boot" /boot/firmware
+        ;;
+esac
+HOOK
+chmod +x "$STAGING/hook.sh"
 
 echo "==> Running rauc bundle..."
 rm -f "$OUTPUT"

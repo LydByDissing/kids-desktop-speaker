@@ -29,10 +29,11 @@ docker run --rm \
 
         tar -xf /rootfs.tar -C $W/root --numeric-owner --exclude="./dev/*" --exclude="./proc/*" --exclude="./sys/*"
         F=$W/root/usr/lib/kds-boot
-        cp $F/bootcode.bin $F/start.elf $F/fixup.dat $F/start_cd.elf $F/fixup_cd.dat $F/u-boot.bin $W/boot/
-        cp /bootsrc/config.txt $W/boot/
-        cp $W/root/usr/lib/linux-image-*/bcm2708-rpi-zero-w.dtb $W/boot/
-        mkimage -q -A arm -T script -C none -n "KDS A/B boot" -d /bootsrc/boot.cmd $W/boot/boot.scr
+        # Every boot file comes from the image, as in updates (DEC-029).
+        for f in bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin \
+                 bcm2708-rpi-zero-w.dtb config.txt boot.scr kds-boot.version; do
+            cp $F/$f $W/boot/
+        done
         # Do not ship uboot.env: a valid file replaces all of U-Boot'"'"'s built-in
         # defaults, including bootcmd, and it then waits at a prompt forever. The
         # boot script sets the slot variables and saves the file on first boot.

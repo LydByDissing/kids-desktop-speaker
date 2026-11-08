@@ -29,7 +29,7 @@ trust_test_identity() {
     remote 'grep -qF "$(sed -n 2p /tmp/test-ca.pem)" /etc/rauc/keyring.pem || cat /tmp/test-ca.pem >> /etc/rauc/keyring.pem; systemctl restart rauc; sync'
 }
 
-make_bundle() { # name version mutation(none|bad-api|bad-kernel)
+make_bundle() { # name version mutation(none|bad-api|bad-kernel|bad-wifi)
     local dir="$WORK/$1"; mkdir -p "$dir"
     python3 - "$ROOTFS" "$dir/rootfs.tar" "$2" "$3" "$WORK/id/keyring.pem" <<'PY'
 import io, sys, tarfile
@@ -39,7 +39,7 @@ with tarfile.open(src_path) as src, tarfile.open(dst_path, "w", format=tarfile.G
     for m in src:
         name = m.name.removeprefix("./")
         data = src.extractfile(m).read() if m.isreg() else None
-        if name == "etc/kds-version":
+        if name in ("etc/kds-version", "usr/lib/kds-boot/kds-boot.version"):
             data = version.encode() + b"\n"
         elif name == "etc/rauc/keyring.pem":
             data += extra_ca
@@ -47,6 +47,9 @@ with tarfile.open(src_path) as src, tarfile.open(dst_path, "w", format=tarfile.G
             data = b"#!/bin/sh\nexit 1\n"
         elif mutation == "bad-kernel" and name == "boot/vmlinuz-kds":
             data = data[:4096]
+        # bad-wifi: the update stops starting wpa_supplicant, so Wi-Fi never comes up.
+        if mutation == "bad-wifi" and name == "etc/systemd/system/multi-user.target.wants/wpa_supplicant@wlan0.service":
+            continue
         if data is not None:
             m.size = len(data)
             dst.addfile(m, io.BytesIO(data))

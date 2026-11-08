@@ -41,10 +41,10 @@ hw_cleanup; mkdir -p "$WORK"
 log "=== Setup"
 make_test_identity || exit 1
 make_bundle good "$GOOD" none || exit 1
-# bad-kernel is opt-in (HW_BAD_UPDATES="bad-api bad-kernel"): a kernel that hangs
-# before Linux arms the watchdog leaves the device stuck until power-cycled
-# (KDS-fjl), which strands an unattended Pi.
-BAD_UPDATES="${HW_BAD_UPDATES:-bad-api}"
+# bad-wifi needs Wi-Fi configured, so the VM leaves it out. bad-kernel is opt-in:
+# a kernel that hangs before Linux arms the watchdog leaves the device stuck until
+# power-cycled (KDS-fjl), which strands an unattended Pi.
+BAD_UPDATES="${HW_BAD_UPDATES:-bad-api bad-wifi}"
 for bad in $BAD_UPDATES; do
     make_bundle "$bad" "v0.3.0-$bad" "$bad" || exit 1
 done
@@ -67,6 +67,7 @@ check "runs the new version" "$(remote cat /etc/kds-version)" "$GOOD"
 check "new slot was marked good" "$(remote systemctl is-active rauc-mark-good)" active
 check "services are healthy" "$(remote systemctl is-system-running)" running
 check "API answers" "$(remote curl -s -m 5 -o /dev/null -w '%{http_code}' http://localhost:8080/health)" 200
+check "boot partition was updated from the new slot" "$(remote cat /boot/firmware/kds-boot.version)" "$GOOD"
 check "machine-id is unique to the device" "$(remote "grep -c 1278cb00626849cb8a226e307f448a55 /etc/machine-id")" 0
 GOOD_SLOT=$OTHER
 

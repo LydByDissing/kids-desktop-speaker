@@ -15,7 +15,7 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "image has four partitions" "[ \$(sfdisk -d /sd.img | grep -c start=) = 4 ]"
     ok "fits an 8 GB card" "[ \$(stat -c%s /sd.img) -lt 7500000000 ]"
     ok "boot partition is bootable FAT" "sfdisk -d /sd.img | grep -E \"sd.img1 .*type=c, bootable\""
-    for f in bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin config.txt boot.scr bcm2708-rpi-zero-w.dtb; do
+    for f in bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin config.txt boot.scr bcm2708-rpi-zero-w.dtb kds-boot.version; do
         ok "boot has $f" "mdir -i /p1 ::/$f"
     done
     mcopy -i /p1 ::/boot.scr /boot.scr; mcopy -i /p1 ::/config.txt /config.txt
@@ -44,6 +44,8 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "slot A has no stored D-Bus machine-id" "dbg \"stat /var/lib/dbus/machine-id\" | grep -qE \"symlink|File not found\" || ! dbg \"stat /var/lib/dbus/machine-id\" | grep -q Inode"
     ok "slot A uses MAC-based DHCP" "dbg \"cat /etc/systemd/network/25-wifi.network\" | grep -q ClientIdentifier=mac"
     ok "slot A does not start dnsmasq" "! dbg \"ls /etc/systemd/system/multi-user.target.wants\" | grep -q dnsmasq"
+    ok "slot A carries the boot files for updates" "dbg \"ls /usr/lib/kds-boot\" | grep -q update-boot.sh"
+    ok "slot A has the health check" "dbg \"stat /usr/local/bin/kds-health-check.sh\" | grep -q Inode"
     ok "root account is locked" "dbg \"cat /etc/shadow\" | grep -qE \"^root:[!*]\""
     ok "data partition is ext4" "dumpe2fs -h /p4 | grep -q \"volume name:.*data\""
     exit $fail

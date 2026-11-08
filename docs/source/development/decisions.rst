@@ -2178,3 +2178,33 @@ the VM.
   doesn't update the boot partition. KDS-kk5 tracks updating it.
 - Every device shares the same disk ID. That's harmless, since only one SD card
   is in a device.
+
+DEC-029 — Boot Partition Updates and Network-Aware Health Check
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_029
+   :status: resolved
+   :date: 2026-11-08
+   :tags: ota, boot, rauc, networking
+
+**Decision 1 — boot partition updates (KDS-kk5).** Each release carries its boot
+files in ``/usr/lib/kds-boot/`` in the rootfs. The bundle's post-install hook runs
+``update-boot.sh`` from the newly written slot, which copies changed files to the
+boot partition: each is written beside the original and renamed into place,
+firmware and U-Boot first, the boot script last. It refuses a boot script without
+a valid U-Boot image header, and fails the install, so the new slot is never
+activated. ``kds-boot.version`` records which release's boot files are installed.
+
+**Context.** The boot partition is shared by both slots, so a broken boot script
+can't be rolled back by switching slots. The boot script is therefore kept
+generic and stable, tested in the QEMU A/B test before every release, and only
+replaced when its content changes. Devices flashed before v0.1.0-rc.4 use the
+older boot design and must be reflashed.
+
+**Decision 2 — network-aware health check (KDS-j1o).** ``rauc-mark-good`` runs
+``kds-health-check.sh``: the API must answer, and when Wi-Fi is configured the
+device must get an IPv4 address within two minutes. Otherwise, a configured
+network that is visible in a scan means the update broke the connection, which
+fails the check and leads to a rollback. A network that isn't visible is treated
+as the router being off, which passes, so an outage doesn't cause reboot loops.
