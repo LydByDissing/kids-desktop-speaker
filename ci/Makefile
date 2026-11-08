@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test vm-ab-test release sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -100,6 +100,10 @@ vm-ab-test: export-rootfs
 ## release — Tag a release once main is green and verify it: make release TAG=v0.1.0-rc.5
 release:
 	@bash scripts/release.sh $(TAG)
+
+## setup-sd — Add Wi-Fi and your SSH key to a freshly flashed SD card
+setup-sd:
+	@bash scripts/setup-sd.sh
 
 ## export-rootfs — Export the built image's root filesystem to a tar for bundling
 export-rootfs:
