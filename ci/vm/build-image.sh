@@ -9,7 +9,7 @@ INITRD_OUT="$SCRIPT_DIR/initrd.img"
 # We install linux-image-armmp-lpae inside arm32v7/debian:bookworm-slim. This
 # ARMv7 kernel only boots the emulated VM (Cortex-A15); it never ships to a device.
 # and copy the kernel/initrd out to the host.
-if [ ! -f "$KERNEL_OUT" ]; then
+if [ ! -f "$KERNEL_OUT" ] || [ ! -f "$SCRIPT_DIR/modules.tar" ]; then
     echo "==> Extracting ARM kernel..."
     docker run --rm --platform linux/arm/v7 \
         -v "$SCRIPT_DIR:/out" \
@@ -18,6 +18,10 @@ if [ ! -f "$KERNEL_OUT" ]; then
             apt-get update -qq && apt-get install -y -q --no-install-recommends zstd linux-image-armmp-lpae
             cp /boot/vmlinuz-*-armmp-lpae /out/vmlinuz
             cp /boot/initrd.img-*-armmp-lpae /out/initrd.img
+            # Modules too: the A/B VM mounts the FAT boot partition, and this
+            # kernel builds vfat as a module (ab-vm.sh).
+            tar -C / -cf /out/modules.tar $(cd / && ls -d lib/modules/*-armmp-lpae)
+            chmod a+r /out/vmlinuz /out/initrd.img /out/modules.tar
         '
 fi
 

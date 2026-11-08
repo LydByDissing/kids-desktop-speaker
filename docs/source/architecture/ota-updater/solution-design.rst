@@ -176,68 +176,47 @@ Reboots are disruptive. The OTA Updater follows these rules:
 
 1. **Maintenance window**: User-configured time range (default: 03:00–05:00).
    Only reboot within this window.
-2. **Activity check**: Query API Server for playback state. Don't reboot
-   while audio is playing (unless the user explicitly overrides).
-3. **Grace period**: After scheduling a reboot, wait 5 minutes and notify
-   all WebSocket clients. The Web UI shows a countdown.
+2. **Activity check**: Ask the Audio Player whether a source is active. Don't
+   reboot while audio is playing (unless the user explicitly overrides). If the
+   Audio Player can't be reached, nothing is playing.
+3. **Grace period**: After scheduling a reboot, wait 5 minutes, then check
+   activity again. Notifying WebSocket clients for a Web UI countdown is not
+   built yet.
 4. **Force reboot**: User can trigger an immediate reboot from the Web UI
    (bypasses maintenance window).
 
 IPC Protocol — OTA Updater ↔ API Server
 -----------------------------------------
 
-Communication via Unix domain socket at
-``/run/kids-desktop-speaker/ota-updater.sock``.
-
-Length-prefixed JSON (same as other services).
-
-**API Server → OTA Updater (commands)**:
+The OTA Updater serves ``/run/kds/ota.sock`` using the shared
+:doc:`IPC protocol <../ipc/index>`: newline-delimited JSON, one request and one
+response per connection.
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 20 40 40
 
    * - Command
-     - Payload
-   * - ``check_now``
-     - ``{}`` (trigger immediate update check)
-   * - ``apply_update``
-     - ``{"force?": false}`` (download + install + schedule reboot)
-   * - ``dismiss_update``
-     - ``{}`` (dismiss available update notification)
-   * - ``rollback``
-     - ``{}`` (mark current slot bad, schedule reboot)
-   * - ``set_maintenance_window``
-     - ``{"start": "03:00", "end": "05:00"}``
-   * - ``get_status``
-     - ``{}`` (return current state, version, slot info)
+     - Effect
+     - Response fields
+   * - ``status``
+     - None
+     - ``state`` (idle, downloading, installing, done, error), ``detail``,
+       ``version`` (running), ``pending`` (installed, waiting for a reboot)
+   * - ``check``
+     - Checks for an update now
+     - None
+   * - ``install``
+     - Downloads and installs ``url``, verifying ``sha256``. Refused while an
+       install is running
+     - None
+   * - ``reboot``
+     - Reboots now, skipping the maintenance window
+     - None
 
-**OTA Updater → API Server (events)**:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Event
-     - Payload
-   * - ``update_available``
-     - ``{"version": "v0.2.0", "release_notes": "..."}``
-   * - ``download_progress``
-     - ``{"percent": u32, "bytes_downloaded": u64, "total_bytes": u64}``
-   * - ``download_complete``
-     - ``{"version": "v0.2.0", "bundle_path": "..."}``
-   * - ``install_complete``
-     - ``{"version": "v0.2.0", "slot": "B"}``
-   * - ``reboot_scheduled``
-     - ``{"at": "2026-05-26T03:00:00Z", "reason": "ota"}``
-   * - ``reboot_imminent``
-     - ``{"seconds_remaining": 300}`` (grace period warning)
-   * - ``update_complete``
-     - ``{"version": "v0.2.0", "previous_version": "v0.1.0"}``
-   * - ``rollback_initiated``
-     - ``{"from_version": "v0.2.0", "to_version": "v0.1.0"}``
-   * - ``error``
-     - ``{"code": "...", "message": "..."}``
+The API Server exposes these as ``GET /api/ota/status``, ``POST /api/ota/check``
+and ``POST /api/ota/reboot``. Pushed events, and the Web UI countdown during the
+grace period, wait for the WebSocket work in KDS-izr.
 
 Systemd Integration
 -------------------

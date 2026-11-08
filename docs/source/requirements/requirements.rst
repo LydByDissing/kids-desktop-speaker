@@ -283,6 +283,24 @@ Software — Networking
    ``/etc/kds-version`` (derived from the release tag). The OTA Updater shall
    read this file as the current version for update comparison.
 
+.. req:: OTA_REQ_006
+   :id: OTA_REQ_006
+   :status: open
+   :tags: software, ota
+
+   After installing an update, the OTA Updater shall reboot the device to
+   activate it only inside a configurable maintenance window (default
+   03:00–05:00 local time), only while no audio is playing, and only after a
+   grace period of 5 minutes during which activity is checked again.
+
+.. req:: OTA_REQ_007
+   :id: OTA_REQ_007
+   :status: open
+   :tags: software, ota, api
+
+   The API Server shall let a user check for an update immediately and reboot
+   immediately, the latter skipping the maintenance window.
+
 .. req:: CI_REQ_001
    :id: CI_REQ_001
    :status: open
@@ -410,6 +428,45 @@ Software — Accessibility
 
    The system shall support multiple languages in the user interface and voice
    feedback.
+
+Software — Internal Communication
+---------------------------------
+
+.. req:: IPC_REQ_001
+   :id: IPC_REQ_001
+   :status: open
+   :tags: software, ipc
+
+   Services shall communicate over Unix domain sockets in ``/run/kds`` using
+   newline-delimited JSON, with one request and one response per connection
+   (ref DEC-027).
+
+.. req:: IPC_REQ_002
+   :id: IPC_REQ_002
+   :status: open
+   :tags: software, ipc
+
+   Every response shall contain ``ok``. A failed request shall receive
+   ``ok: false`` and an ``error`` message, including for malformed, oversized
+   or unknown requests, rather than a closed connection.
+
+.. req:: IPC_REQ_003
+   :id: IPC_REQ_003
+   :status: open
+   :tags: software, ipc, reliability
+
+   A server shall create ``/run/kds`` if missing and replace a stale socket, so
+   services work regardless of start order. Messages over 64 KiB shall be
+   rejected.
+
+.. req:: IPC_REQ_004
+   :id: IPC_REQ_004
+   :status: open
+   :tags: software, ipc, api
+
+   The API Server shall report live service state by querying the services'
+   sockets, and shall answer ``503 Service Unavailable`` when a service can't be
+   reached within its timeout.
 
 Software — Diagnostics
 ----------------------

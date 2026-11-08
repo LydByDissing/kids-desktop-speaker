@@ -2118,3 +2118,63 @@ the binaries, and the release fails if any of it can't be fetched.
   reflashable SD card probably satisfies.
 
 These should be reviewed by a lawyer before devices are sold.
+
+DEC-027 — IPC: Newline-Delimited JSON over Unix Sockets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_027
+   :status: resolved
+   :date: 2026-11-06
+   :tags: ipc, architecture
+
+**Decision**: Services exchange newline-delimited JSON over Unix sockets, one
+request and one response per connection, as specified in the IPC protocol page.
+This replaces the length-prefixed framing first proposed in KDS-31u.
+
+**Context**
+
+Three services already used newline-delimited JSON. JSON escapes newlines inside
+strings, so a newline reliably ends a message, and a length prefix adds nothing
+for small messages. The text form can be tested by hand with ``socat`` on a
+device. Socket names follow the deployed services, not the earlier design.
+
+**Consequences**
+
+- A shared ``kds-ipc`` crate implements framing, error responses, size limits,
+  timeouts and socket setup, so services can't drift apart.
+- Pushed events will need a subscription command with a long-lived connection.
+
+DEC-028 — Portable A/B Boot: Own State File and Partition UUIDs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_028
+   :status: resolved
+   :date: 2026-11-06
+   :tags: boot, ota, rauc, ci
+
+**Decision**: The boot script keeps the A/B state (``BOOT_ORDER``,
+``BOOT_A_LEFT``, ``BOOT_B_LEFT``) in its own file, ``kds-ab.env`` on the boot
+partition, which ``fw_setenv`` and RAUC also use. Partitions are found by
+partition UUID, from a fixed disk ID (``4b445300``), in the boot script, ``fstab``
+and RAUC's slot configuration. Refines DEC-025.
+
+**Context**
+
+Automating the A/B test in CI (KDS-in5) needs the same boot script to run in QEMU.
+U-Boot's QEMU build keeps its environment in emulated flash, which Linux can't
+easily write, while the Pi's U-Boot keeps it in ``uboot.env`` on the boot
+partition. Device names also differ: ``/dev/mmcblk0`` on the Pi, ``/dev/vda`` in
+the VM.
+
+**Consequences**
+
+- One boot script and one RAUC configuration serve the Pi and the VM. The VM
+  differs only in its kernel and U-Boot build.
+- U-Boot never loads ``kds-ab.env`` as its whole environment, so the state can't
+  wipe ``bootcmd``, the failure seen when ``uboot.env`` was shipped.
+- Devices flashed before this change keep their old boot script, because RAUC
+  doesn't update the boot partition. KDS-kk5 tracks updating it.
+- Every device shares the same disk ID. That's harmless, since only one SD card
+  is in a device.
