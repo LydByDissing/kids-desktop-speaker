@@ -601,3 +601,21 @@ Assumptions & Open Questions
 * [ ] The ``export-rootfs`` target requires ``sudo`` for the bind mount step —
   evaluate running inside a Docker container with ``--privileged`` instead
   to avoid requiring root on the CI runner
+
+Releasing
+---------
+
+``make -C ci release TAG=v0.1.0-rc.5`` (``ci/scripts/release.sh``) runs a release:
+
+1. Refuses a malformed version or an existing tag.
+2. Waits for ``CI`` and ``Build Pi Image`` to pass on ``origin/main``. It tags only
+   if both succeed.
+3. Pushes the tag and waits for the release pipeline.
+4. Verifies the published release: ``image.raucb``, ``manifest.json``,
+   ``sbom.spdx.json``, ``licenses.tar.gz`` and ``sources.tar`` are present, the
+   manifest names the version, the SBOM is SPDX, and the source archive holds
+   source packages.
+
+``ci/scripts/release.sh <tag> --verify-only`` checks an existing release without
+tagging. Tags with an ``-rc.N`` suffix are published as prereleases, which
+devices ignore (``/releases/latest`` skips them).
