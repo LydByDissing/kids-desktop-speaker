@@ -301,6 +301,27 @@ Software — Networking
    The API Server shall let a user check for an update immediately and reboot
    immediately, the latter skipping the maintenance window.
 
+.. req:: OTA_REQ_008
+   :id: OTA_REQ_008
+   :status: open
+   :tags: software, ota, boot
+
+   An update shall also update the boot partition (firmware, U-Boot, boot script,
+   device tree, ``config.txt``) when its files differ, copying only changed files,
+   replacing each atomically, and writing the boot script last. An invalid boot
+   script shall abort the install before the new slot is activated (ref DEC-029).
+
+.. req:: OTA_REQ_009
+   :id: OTA_REQ_009
+   :status: open
+   :tags: software, ota, networking, reliability
+
+   A slot shall only be marked good once the API answers and, when Wi-Fi is
+   configured, the device has an IPv4 address. A slot whose Wi-Fi interface or
+   supplicant is missing, or which can see its configured network but not join
+   it, shall fail the check. A configured network that isn't visible shall not
+   fail it, so a router outage doesn't cause reboot loops (ref DEC-029).
+
 .. req:: CI_REQ_001
    :id: CI_REQ_001
    :status: open
