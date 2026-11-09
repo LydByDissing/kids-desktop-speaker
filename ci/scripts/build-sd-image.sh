@@ -34,6 +34,7 @@ docker run --rm \
                  bcm2708-rpi-zero-w.dtb config.txt boot.scr kds-boot.version; do
             cp $F/$f $W/boot/
         done
+        mkdir -p $W/boot/overlays && cp $F/overlays/iqaudio-codec.dtbo $W/boot/overlays/
         # Do not ship uboot.env: a valid file replaces all of U-Boot'"'"'s built-in
         # defaults, including bootcmd, and it then waits at a prompt forever. The
         # boot script sets the slot variables and saves the file on first boot.

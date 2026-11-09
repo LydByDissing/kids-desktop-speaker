@@ -1,0 +1,14 @@
+[Unit]
+Description=Kids Desktop Speaker — route the audio HAT to its speaker
+# After ALSA restores saved mixer state, so these settings always win.
+After=sound.target alsa-restore.service
+Before=audio-player.service
+ConditionPathExists=/proc/asound/IQaudIOCODEC
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kds-hat-init.sh
+
+[Install]
+WantedBy=multi-user.target

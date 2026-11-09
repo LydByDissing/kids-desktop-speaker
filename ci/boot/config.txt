@@ -3,4 +3,6 @@ kernel=u-boot.bin
 enable_uart=1
 gpu_mem=16
 dtparam=watchdog=on
+# The IQaudIO Pi-Codec Zero audio HAT (KDS-ayx)
+dtoverlay=iqaudio-codec
 disable_splash=1

@@ -21,6 +21,8 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     mcopy -i /p1 ::/boot.scr /boot.scr; mcopy -i /p1 ::/config.txt /config.txt
     ok "boot script is a valid image" "dumpimage -l /boot.scr | grep -q Script"
     ok "config boots U-Boot" "grep -q ^kernel=u-boot.bin /config.txt"
+    ok "config enables the audio HAT" "grep -q ^dtoverlay=iqaudio-codec /config.txt"
+    ok "boot has the audio HAT overlay" "mdir -i /p1 ::/overlays/iqaudio-codec.dtbo"
     ok "no uboot.env, which would replace the default bootcmd" "! mdir -i /p1 ::/uboot.env"
     ok "gpu_mem=16 has its cut-down firmware" "! grep -q ^gpu_mem=16 /config.txt || mdir -i /p1 ::/start_cd.elf"
     ok "no Wi-Fi details or SSH keys in the boot partition" "! mdir -i /p1 ::/kds"
@@ -45,6 +47,8 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "slot A uses MAC-based DHCP" "dbg \"cat /etc/systemd/network/25-wifi.network\" | grep -q ClientIdentifier=mac"
     ok "slot A does not start dnsmasq" "! dbg \"ls /etc/systemd/system/multi-user.target.wants\" | grep -q dnsmasq"
     ok "slot A carries the boot files for updates" "dbg \"ls /usr/lib/kds-boot\" | grep -q update-boot.sh"
+    ok "slot A enables the audio HAT setup" "dbg \"stat /etc/systemd/system/multi-user.target.wants/kds-hat-init.service\" | grep -q Inode"
+    ok "slot A defaults ALSA to the speaker" "dbg \"cat /etc/asound.conf\" | grep -q \"pcm.!default speaker\""
     ok "slot A has the health check" "dbg \"stat /usr/local/bin/kds-health-check.sh\" | grep -q Inode"
     ok "root account is locked" "dbg \"cat /etc/shadow\" | grep -qE \"^root:[!*]\""
     ok "data partition is ext4" "dumpe2fs -h /p4 | grep -q \"volume name:.*data\""

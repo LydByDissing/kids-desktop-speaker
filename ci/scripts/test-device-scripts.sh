@@ -7,21 +7,22 @@ fail=0
 check() { if eval "$2" >/dev/null 2>&1; then echo "  [PASS] $1"; else echo "  [FAIL] $1"; fail=1; fi; }
 
 echo "update-boot.sh"
-FILES="bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin bcm2708-rpi-zero-w.dtb config.txt boot.scr kds-boot.version"
+FILES="bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin bcm2708-rpi-zero-w.dtb overlays/iqaudio-codec.dtbo config.txt boot.scr kds-boot.version"
 fresh() { # dir version
-    rm -rf "$1"; mkdir -p "$1"
+    rm -rf "$1"; mkdir -p "$1/overlays"
     for f in $FILES; do echo "$f $2" > "$1/$f"; done
     printf '\x27\x05\x19\x56 script %s' "$2" > "$1/boot.scr"
     echo "$2" > "$1/kds-boot.version"
 }
-fresh "$TMP/new" v2; fresh "$TMP/boot" v1
+fresh "$TMP/new" v2; fresh "$TMP/boot" v1; rm -rf "$TMP/boot/overlays"
 mkdir -p "$TMP/boot/kds"; echo key > "$TMP/boot/kds/authorized_keys"; echo env > "$TMP/boot/kds-ab.env"
 out=$("$DEV/update-boot.sh" "$TMP/new" "$TMP/boot")
 check "copies every changed file" "for f in $FILES; do cmp $TMP/new/\$f $TMP/boot/\$f || exit 1; done"
 check "writes the boot script last, before the version" "echo \"\$out\" | grep '^update-boot: updated ' | tail -2 | head -1 | grep -q boot.scr"
 check "records the new version" "grep -qx v2 $TMP/boot/kds-boot.version"
 check "leaves device settings alone" "grep -qx key $TMP/boot/kds/authorized_keys && grep -qx env $TMP/boot/kds-ab.env"
-check "leaves no temporary files" "! ls -a $TMP/boot | grep -q '\.new$'"
+check "leaves no temporary files" "! find $TMP/boot -name '*.new' | grep -q ."
+check "creates the overlays folder on an older boot partition" "[ -f $TMP/boot/overlays/iqaudio-codec.dtbo ]"
 out=$("$DEV/update-boot.sh" "$TMP/new" "$TMP/boot")
 check "changes nothing when files match" "echo \"\$out\" | grep -q '0 file(s) updated'"
 fresh "$TMP/bad" v3; echo "not a script" > "$TMP/bad/boot.scr"

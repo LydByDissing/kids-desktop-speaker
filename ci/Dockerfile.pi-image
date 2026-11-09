@@ -123,6 +123,12 @@ COPY ci/rauc/rauc-mark-good.service /etc/systemd/system/rauc-mark-good.service
 COPY ci/device/kds-health-check.sh /usr/local/bin/kds-health-check.sh
 RUN chmod +x /usr/local/bin/kds-health-check.sh
 
+# The audio HAT: speaker routing at boot, and a 48 kHz default output (KDS-ayx)
+COPY ci/device/kds-hat-init.sh /usr/local/bin/kds-hat-init.sh
+COPY ci/device/kds-hat-init.service /etc/systemd/system/kds-hat-init.service
+COPY ci/device/asound.conf /etc/asound.conf
+RUN chmod +x /usr/local/bin/kds-hat-init.sh
+
 # U-Boot's environment file, used by RAUC to switch slots
 # The A/B state file written by the boot script (DEC-028), not U-Boot's own
 # environment. fw_setenv creates it if it's missing.
@@ -168,7 +174,9 @@ COPY ci/boot/boot.cmd ci/boot/config.txt /usr/lib/kds-boot/
 COPY ci/device/update-boot.sh /usr/lib/kds-boot/update-boot.sh
 RUN cd /usr/lib/kds-boot \
     && mkimage -q -A arm -T script -C none -n "KDS A/B boot" -d boot.cmd boot.scr \
-    && cp "$(ls -d /usr/lib/linux-image-*-rpi-v6 | sort -V | tail -1)/bcm2708-rpi-zero-w.dtb" . \
+    && KDIR="$(ls -d /usr/lib/linux-image-*-rpi-v6 | sort -V | tail -1)" \
+    && cp "$KDIR/bcm2708-rpi-zero-w.dtb" . \
+    && mkdir -p overlays && cp "$KDIR/overlays/iqaudio-codec.dtbo" overlays/ \
     && echo "$VERSION" > kds-boot.version \
     && chmod +x update-boot.sh
 
@@ -243,6 +251,7 @@ RUN systemctl enable \
         systemd-timesyncd.service \
         systemd-resolved.service \
         kds-device-config.service \
+        kds-hat-init.service \
         ssh.service \
         wpa_supplicant@wlan0.service \
         rauc-mark-good.service \

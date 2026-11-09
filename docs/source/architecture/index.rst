@@ -155,7 +155,7 @@ Containers
        Container(dsp, "CamillaDSP", "Rust (external) + systemd", "Master volume, EQ profiles, DSP pipeline; 2ch loopback mixer for TTS ducking")
        Container(tts, "TTS Engine", "Piper + piper-tts-rs", "Offline TTS: text → speech on dedicated ALSA ch; queued, multi-voice")
        Container(ota, "OTA Updater", "Rust + RAUC", "Atomic system updates via RAUC A/B partitions; GitHub Releases; auto-rollback")
-       Container(hatdrv, "HAT Audio Driver", "ALSA / Linux kernel", "Kernel driver for IQaudIO Pi-Codec Zero (WM8731 codec)")
+       Container(hatdrv, "HAT Audio Driver", "ALSA / Linux kernel", "Kernel driver for IQaudIO Pi-Codec Zero (DA7213 codec)")
 
    }
 

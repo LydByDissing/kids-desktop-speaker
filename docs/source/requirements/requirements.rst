@@ -59,8 +59,8 @@ Software — Audio Streaming
 
    Only one audio source shall be active at a time. The CPU budget is therefore
    the DSP chain plus the most demanding single source, not all sources at once
-   (see Hardware Measurements). Whether a TTS announcement counts as a source or
-   plays over the active one is open.
+   (see Hardware Measurements). A TTS announcement interrupts the active source
+   (TTS_REQ_002) rather than playing over it.
 
 .. req:: SW_REQ_001
    :id: SW_REQ_001
@@ -154,6 +154,15 @@ Software — Features
    engine and voice, and reused instead of synthesised again. An entry shall be
    removed 90 days after it was last used. Synthesis takes about 2 seconds on the
    Pi Zero W, and the same messages repeat often.
+
+.. req:: TTS_REQ_002
+   :id: TTS_REQ_002
+   :status: open
+   :tags: software, tts, audio
+
+   A TTS announcement shall pause the active source, play a short "in" chime,
+   speak the announcement, play a short "out" chime, then resume the source where
+   it was paused. Nothing else plays during the announcement.
 
 .. req:: FEAT_REQ_002
    :id: FEAT_REQ_002

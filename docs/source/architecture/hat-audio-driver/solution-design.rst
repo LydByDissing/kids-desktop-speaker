@@ -37,13 +37,13 @@ ALSA configuration** managed by systemd. The component consists of:
    * - Piece
      - What It Is
    * - Device tree overlay
-     - Tells the kernel about the WM8731 codec on the I²C bus
+     - Tells the kernel about the DA7213 codec on the I²C bus
    * - Kernel modules
      - ``snd-soc-iqaudio-codec`` (HAT), ``snd-aloop`` (loopback)
    * - ALSA config
      - ``/etc/asound.conf`` — defines PCM devices and mixers
    * - systemd service
-     - ``hat-init.service`` — sets mixer levels at boot
+     - ``kds-hat-init.service`` — routes the codec to the speaker at boot
    * - modprobe config
      - ``/etc/modprobe.d/snd-aloop.conf`` — loopback channel count
 
@@ -67,7 +67,7 @@ Two kernel modules are required:
 
 ``snd-soc-iqaudio-codec``
    Loaded automatically by the device tree overlay. Provides the ALSA PCM
-   device (``hw:0,0``) and mixer controls for the WM8731 codec.
+   device (``hw:0,0``) and mixer controls for the DA7213 codec.
 
 ``snd-aloop``
    Loaded via ``/etc/modules-load.d/snd-aloop.conf`` with 6 channels
@@ -178,53 +178,49 @@ ALSA will convert to the loopback device's rate (48000 Hz).
 Boot Initialization
 -------------------
 
-A systemd oneshot service sets the initial mixer state on the HAT hardware:
+Resolved on real hardware: the DA7213 control names below are the real ones, and
+48 kHz plays correctly, so sources and CamillaDSP use 48 kHz.
 
-.. code-block:: ini
+The DA7213 codec starts with its outputs unrouted, so the HAT is silent until its
+mixer is set. ``kds-hat-init.service`` runs ``/usr/local/bin/kds-hat-init.sh`` at
+boot, after ALSA restores any saved state, so its settings always win. Verified on
+a real Pi-Codec Zero with a speaker on 2026-11-09.
 
-   # /etc/systemd/system/hat-init.service
-   [Unit]
-   Description=Initialize IQaudIO Pi-Codec Zero mixer
-   After=sound.target
-   Before=camilladsp.service
-   ConditionPathExists=/dev/snd/controlC0
+.. list-table::
+   :header-rows: 1
+   :widths: 45 20 35
 
-   [Service]
-   Type=oneshot
-   ExecStart=/usr/local/bin/hat-init.sh
-   RemainAfterExit=yes
+   * - Control
+     - Value
+     - Why
+   * - ``DAC Left/Right Source MUX``
+     - DAI Input Left/Right
+     - Play what the Pi sends over I²S
+   * - ``DAC Mono Switch``
+     - on
+     - One speaker: mix left and right
+   * - ``DAC Volume``
+     - 112
+     - Fixed; volume is handled in software
+   * - ``Mixout Left/Right DAC Switch``
+     - on
+     - Route the DAC to the output mixer
+   * - Other ``Mixout`` inputs (Aux, Mixin)
+     - off
+     - Nothing but the DAC reaches the speaker
+   * - ``Lineout Switch`` / ``Lineout Volume``
+     - on / 48
+     - The line output drives the speaker
+   * - ``Headphone Switch``
+     - off
+     - Unused
 
-   [Install]
-   WantedBy=multi-user.target
+``/etc/asound.conf`` makes ``speaker`` the default ALSA device. It resamples to
+48 kHz, because the codec rejects some rates, such as 22.05 kHz, instead of
+converting them.
 
-The initialization script sets safe default levels:
-
-.. code-block:: bash
-
-   #!/bin/bash
-   # /usr/local/bin/hat-init.sh
-   # Set initial mixer levels for the Pi-Codec Zero.
-   # CamillaDSP takes over volume control after boot.
-
-   # Output volume: 80% (CamillaDSP manages this after startup)
-   amixer -c 0 set 'Speaker' 80% unmute 2>/dev/null || true
-
-   # DAC enabled
-   amixer -c 0 set 'DAC' unmute 2>/dev/null || true
-
-   # Input: not used in v1, but set to safe defaults
-   amixer -c 0 set 'Input Mux' 'Line In' 2>/dev/null || true
-   amixer -c 0 set 'Input' 50% 2>/dev/null || true
-
-   echo "HAT mixer initialized"
-
-.. note::
-
-   The mixer control names (``Speaker``, ``DAC``, ``Input Mux``, etc.) are
-   specific to the WM8731 codec. These should be verified on real hardware
-   and adjusted if needed. The ``2>/dev/null || true`` guards against
-   control names that may differ between kernel versions.
-
+The overlay ``iqaudio-codec.dtbo`` and the ``dtoverlay`` line in ``config.txt`` are
+part of the boot files that updates carry (DEC-029).
 Startup Dependencies
 --------------------
 
@@ -268,13 +264,6 @@ Open Questions
 --------------
 
 .. todo::
-
-   - **Mixer control names**: Verify exact WM8731 control names on real
-     hardware. The names used in ``hat-init.sh`` are typical but may vary.
-
-   - **Sample rate**: Confirm 48000 Hz is optimal for the WM8731 on the
-     Pi-Codec Zero. Some configurations use 44100 Hz. All sources and
-     CamillaDSP must match.
 
    - **Loopback timing**: Test that the ``snd-aloop`` module reliably creates
      all 6 channels on every boot. If not, we may need a systemd service to
