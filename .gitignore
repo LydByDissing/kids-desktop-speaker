@@ -30,3 +30,6 @@ ci/base/*.tar
 
 # Python bytecode
 __pycache__/
+
+# Local secrets for development (see .env.example)
+.env
