@@ -2220,8 +2220,8 @@ DEC-030 — Text-to-Speech Engine: espeak-ng
 
 .. note::
 
-   Superseded by DEC-031: cloud TTS, because the speaker must speak several
-   languages.
+   DEC-031 proposed cloud TTS, then was deferred on 2026-11-09. This decision
+   stands, extended to Danish (the default) and English, which espeak-ng speaks.
 
 **Decision**: The speaker uses **espeak-ng** with its English voice for text-to-
 speech, on the device. Its quality is accepted as adequate rather than good.
@@ -2248,9 +2248,15 @@ DEC-031 — Cloud Text-to-Speech: ElevenLabs and Google Cloud TTS
 
 .. meta::
    :decision-id: DEC_031
-   :status: resolved
+   :status: deferred
    :date: 2026-11-09
    :tags: tts, cloud, i18n, privacy
+
+.. note::
+
+   Deferred on 2026-11-09: more trouble than it's worth for now. The speaker uses
+   espeak-ng on the device (DEC-030) in Danish and English. This design is kept
+   for later; the cache and the ``Synthesizer`` interface already support it.
 
 **Decision**: Synthesise speech with cloud services, ElevenLabs and Google
 Cloud Text-to-Speech, tried in a configured order, and keep the disk cache so the

@@ -217,7 +217,7 @@ Token management:
 Text-to-Speech Configuration
 ----------------------------
 
-**Draft (DEC-031).** Endpoints behind the Web UI's ``/config/tts`` page
+**Deferred with cloud TTS (DEC-031).** Endpoints behind the Web UI's ``/config/tts`` page
 (TTS_REQ_005). Credentials are write-only: no endpoint returns a stored key.
 
 .. list-table::

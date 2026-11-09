@@ -46,7 +46,7 @@ The TTS Engine is a standalone Rust binary that:
        component ["Message Queue\nFIFO, max 10"] as queue
        component ["Synthesis Worker\n(single thread)"] as worker
        component ["Audio Cache\n/data/tts-cache, 90-day TTL"] as cache
-       component ["Synthesis Chain\nElevenLabs, Google (draft)"] as piper
+       component ["Synthesis Backend\nespeak-ng (da, en)"] as piper
        component ["ALSA Writer\nloopback_tts"] as alsa
    }
 
@@ -68,10 +68,13 @@ The TTS Engine is a standalone Rust binary that:
 Synthesis Backend
 -----------------
 
-**Draft (DEC-031).** Speech comes from cloud providers, tried in a configured
-order, because the speaker must speak several languages (TTS_REQ_003,
-TTS_REQ_004). DEC-030's on-device espeak-ng stays only as the last resort, after both
-providers, so an announcement is never silent when the cloud is unreachable.
+**Current: espeak-ng on the device (DEC-030)**, in Danish (``da``, the default)
+and English (``en``), chosen per announcement (TTS_REQ_003). It outputs 22.05 kHz
+WAV, which the default ALSA output resamples to 48 kHz for the HAT.
+
+**Deferred: cloud providers (DEC-031).** The rest of this section describes the
+cloud design, kept for later. It would add ElevenLabs and Google ahead of
+espeak-ng without changing the cache.
 
 .. code-block:: rust
 

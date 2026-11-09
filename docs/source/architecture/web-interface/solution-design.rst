@@ -122,8 +122,8 @@ list view → add/edit form → save/cancel.
 Text-to-speech (``/config/tts``)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Draft (DEC-031).** Where a parent sets up cloud text-to-speech (TTS_REQ_004 to
-TTS_REQ_006):
+**Deferred with cloud TTS (DEC-031).** Where a parent would set up cloud
+text-to-speech (TTS_REQ_004 to TTS_REQ_006):
 
 - **Enable cloud TTS**: off by default. Turning it on shows "Announcements will be
   sent to [provider] to be turned into speech. They leave your home network.

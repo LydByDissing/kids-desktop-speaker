@@ -172,13 +172,13 @@ Software — Features
 
    Each announcement shall carry a language (a BCP 47 tag such as ``da-DK`` or
    ``en-GB``) and be spoken in that language, with a voice configured per language
-   (ref DEC-031). Danish (``da-DK``) and English (``en-GB``) are available, with
+   (ref DEC-030). Danish (``da-DK``) and English (``en-GB``) are available, with
    Danish the default when an announcement names no language. Other languages
    shall be switched on in the config.
 
 .. req:: TTS_REQ_004
    :id: TTS_REQ_004
-   :status: open
+   :status: deferred
    :tags: software, tts, cloud
 
    Speech shall be synthesised by a cloud service: ElevenLabs and Google Cloud
@@ -192,7 +192,7 @@ Software — Features
 
 .. req:: TTS_REQ_005
    :id: TTS_REQ_005
-   :status: open
+   :status: deferred
    :tags: software, tts, security
 
    Provider credentials shall be stored on the data partition, readable only by
@@ -205,7 +205,7 @@ Software — Features
 
 .. req:: TTS_REQ_006
    :id: TTS_REQ_006
-   :status: open
+   :status: deferred
    :tags: software, tts, privacy
 
    Announcement text is sent to the chosen provider, outside the home. Cloud TTS
