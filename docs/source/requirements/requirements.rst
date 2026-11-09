@@ -207,8 +207,9 @@ Software — Features
    :tags: software, tts, privacy
 
    Announcement text is sent to the chosen provider, outside the home. Cloud TTS
-   shall be off until a parent enables it, after being told which provider
-   receives the text.
+   shall be off until a parent enables it, after confirming this notice: "Announcements
+   will be sent to [provider] to be turned into speech. They leave your home
+   network. Messages already spoken are reused without being sent again."
 
 .. req:: FEAT_REQ_002
    :id: FEAT_REQ_002

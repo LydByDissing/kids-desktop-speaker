@@ -2248,11 +2248,11 @@ DEC-031 — Cloud Text-to-Speech: ElevenLabs and Google Cloud TTS
 
 .. meta::
    :decision-id: DEC_031
-   :status: draft
+   :status: resolved
    :date: 2026-11-09
    :tags: tts, cloud, i18n, privacy
 
-**Decision (draft)**: Synthesise speech with cloud services, ElevenLabs and Google
+**Decision**: Synthesise speech with cloud services, ElevenLabs and Google
 Cloud Text-to-Speech, tried in a configured order, and keep the disk cache so the
 same announcement is synthesised once. Supersedes DEC-030.
 
@@ -2283,11 +2283,15 @@ announcements play offline.
   through to the next provider and finally to espeak-ng on the device. Adding
   credentials for a paid account lifts the limit.
 
-**Open questions**
-
-- Google authentication: an API key, if the project allows it for Text-to-Speech,
-  or a service account.
-- The wording of the parental opt-in.
+- Google authentication: an API key, restricted in the Google Cloud console to
+  the Text-to-Speech API, sent in the ``x-goog-api-key`` header so it never
+  appears in a URL. Google's Text-to-Speech authentication page doesn't mention
+  API keys, but independent integrations use them with this API. If a project
+  rejects keys, a service-account option will be added; the settings page's Test
+  button shows at once whether a key works.
+- The opt-in wording: "Announcements will be sent to [provider] to be turned into
+  speech. They leave your home network. Messages already spoken are reused
+  without being sent again."
 
 DEC-032 — Web Security: Self-Signed HTTPS and Admin Tokens
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

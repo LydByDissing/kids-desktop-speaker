@@ -114,8 +114,9 @@ providers, so an announcement is never silent when the cloud is unreachable.
      - Not stated in the API reference
      - 5,000 bytes per request; 1,000 requests per minute per project
    * - Credentials
-     - API key
-     - API key or service account (open question)
+     - API key, header ``xi-api-key``
+     - API key restricted to the Text-to-Speech API, header ``x-goog-api-key``;
+       service account only if a project rejects keys
 
 Both produce 24 kHz WAV files, which the cache stores as they are and the default
 ALSA output resamples to 48 kHz for the HAT.
@@ -137,8 +138,10 @@ Text over a provider's limit is refused before sending.
 **Credentials** (TTS_REQ_005) live in ``/data/tts/credentials``, mode 0600, set
 through the API. They are never logged or returned by the API.
 
-**Privacy** (TTS_REQ_006). Cloud TTS is off until a parent enables it, after being
-told which provider receives the text.
+**Privacy** (TTS_REQ_006). Cloud TTS is off until a parent enables it, after
+confirming: "Announcements will be sent to [provider] to be turned into speech.
+They leave your home network. Messages already spoken are reused without being
+sent again."
 
 Audio Cache
 -----------
