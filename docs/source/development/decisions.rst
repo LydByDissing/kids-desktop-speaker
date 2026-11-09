@@ -2271,14 +2271,43 @@ announcements play offline.
 - Providers charge per character; the cache avoids paying twice for the same text.
 - Provider credentials live on the data partition (TTS_REQ_005).
 
+**Resolved (2026-11-09)**
+
+- espeak-ng stays as the last resort, after both providers, so an announcement
+  is never silent when the cloud is unreachable.
+- Changing credentials requires an admin token (DEC-032).
+- The Web UI and API use HTTPS with a self-signed certificate (DEC-032).
+
 **Open questions**
 
-- Whether espeak-ng stays as a last-resort fallback when no provider is reachable.
 - Google authentication: an API key, if the project allows it for Text-to-Speech,
   or a service account.
 - Which languages and voices to configure first.
 - Whether to cap monthly characters per provider.
-- Whether changing credentials requires an admin token, since all tokens
-  currently have the same rights.
-- HTTPS on the device: certificate approach (self-signed, or local CA), needed
-  before credentials can be entered.
+- The wording of the parental opt-in.
+
+DEC-032 — Web Security: Self-Signed HTTPS and Admin Tokens
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_032
+   :status: resolved
+   :date: 2026-11-09
+   :tags: security, api, web
+
+**Decision 1 — HTTPS with a self-signed certificate.** The Web UI and API are
+served over HTTPS. Each device creates its own certificate on first boot and keeps
+it on the data partition, so it survives updates and is never shared between
+devices. Browsers warn on the first visit; the parent accepts the certificate once.
+A local certificate authority was rejected: every phone and computer would have to
+trust it first.
+
+**Decision 2 — admin tokens.** API tokens gain an ``admin`` flag. Changing
+credentials and other sensitive settings requires an admin token. Other tokens,
+such as one issued to Home Assistant, can control playback and read state but
+can't change credentials. The first token, created during setup, is an admin
+token.
+
+**Context.** Cloud TTS credentials are entered in the Web UI (TTS_REQ_005). Over
+plain HTTP anyone on the home network could read them, and with equal tokens any
+integration could replace them.

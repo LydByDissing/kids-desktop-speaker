@@ -194,7 +194,8 @@ Software — Features
    or through the API. They shall be write-only: the UI and API show whether a
    provider is configured and the last four characters of its key, never the key.
    They shall never be part of the image, the repository or logs. Credentials
-   shall only be accepted over HTTPS, so they don't cross the network in clear.
+   shall only be accepted over HTTPS, so they don't cross the network in clear,
+   and only from an admin token (DEC-032).
 
 .. req:: TTS_REQ_006
    :id: TTS_REQ_006

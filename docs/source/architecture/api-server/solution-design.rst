@@ -187,7 +187,9 @@ Token-based auth with two mechanisms:
 Token management:
 
 - Tokens are stored in ``/data/auth/tokens.json`` (data partition, survives OTA)
-- Each token has: ``id``, ``name``, ``created_at``, ``last_used_at``, ``enabled``
+- Each token has: ``id``, ``name``, ``admin``, ``created_at``, ``last_used_at``,
+  ``enabled``. Admin tokens are required for credentials and other sensitive
+  settings (DEC-032)
 - Tokens are created/revoked via the Web UI (Config → API Tokens)
 - No token expiry in v1 (manual revocation only)
 
@@ -239,11 +241,8 @@ Text-to-Speech Configuration
 The API Server passes credentials to the TTS Engine over IPC; the TTS Engine
 alone stores them, in ``/data/tts/credentials`` (mode 0600).
 
-.. todo::
-
-   All tokens currently have the same rights, so a token issued to Home Assistant
-   could also replace provider keys. Decide whether tokens get an admin flag that
-   credential endpoints require (KDS-37o).
+Credential endpoints require an admin token (DEC-032). Other tokens can read
+``GET /api/tts/config``, which never contains keys.
 
 Auto-Discovery
 --------------

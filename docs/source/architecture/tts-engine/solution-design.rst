@@ -70,8 +70,8 @@ Synthesis Backend
 
 **Draft (DEC-031).** Speech comes from cloud providers, tried in a configured
 order, because the speaker must speak several languages (TTS_REQ_003,
-TTS_REQ_004). DEC-030's on-device espeak-ng is superseded; whether it stays as a
-last-resort fallback is open.
+TTS_REQ_004). DEC-030's on-device espeak-ng stays only as the last resort, after both
+providers, so an announcement is never silent when the cloud is unreachable.
 
 .. code-block:: rust
 
@@ -86,7 +86,8 @@ last-resort fallback is open.
    struct ElevenLabs { api_key: Secret, model: String, voices: HashMap<String, String> }
    struct GoogleTts  { credentials: Secret, voices: HashMap<String, String> }
 
-   /// Tries each provider in order; the first success is cached.
+   /// Tries each provider in order; the first success is cached. espeak-ng is
+   /// always last.
    struct Chain { providers: Vec<Box<dyn Synthesizer>> }
 
 .. list-table::
