@@ -172,7 +172,9 @@ Software — Features
 
    Each announcement shall carry a language (a BCP 47 tag such as ``da-DK`` or
    ``en-GB``) and be spoken in that language, with a voice configured per language
-   (ref DEC-031).
+   (ref DEC-031). Danish (``da-DK``) and English (``en-GB``) are available, with
+   Danish the default when an announcement names no language. Other languages
+   shall be switched on in the config.
 
 .. req:: TTS_REQ_004
    :id: TTS_REQ_004
@@ -180,9 +182,11 @@ Software — Features
    :tags: software, tts, cloud
 
    Speech shall be synthesised by a cloud service: ElevenLabs and Google Cloud
-   Text-to-Speech, tried in a configured order. When a provider fails or is
-   unreachable, the next one shall be tried. A cached announcement shall play
-   without contacting any provider.
+   Text-to-Speech, tried in a configured order, with espeak-ng on the device as
+   the last resort. When a provider fails, is unreachable, or has used up its
+   quota, the next one shall be tried. A provider that reports its quota used up
+   shall be skipped for a period, rather than tried first for every announcement.
+   A cached announcement shall play without contacting any provider.
 
 .. req:: TTS_REQ_005
    :id: TTS_REQ_005

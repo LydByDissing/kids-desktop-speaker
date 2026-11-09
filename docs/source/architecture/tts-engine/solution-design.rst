@@ -120,8 +120,17 @@ providers, so an announcement is never silent when the cloud is unreachable.
 Both produce 24 kHz WAV files, which the cache stores as they are and the default
 ALSA output resamples to 48 kHz for the HAT.
 
+**Languages.** Danish (``da-DK``) is the default and English (``en-GB``) is
+also on; other languages are switched on in the config (TTS_REQ_003). Each
+enabled language needs a voice per provider, and espeak-ng has voices for both.
+
 **Failures.** Each request has a 10 s timeout. Network errors, timeouts, HTTP 429
-and 5xx move on to the next provider. HTTP 401 or 403 means the credentials are
+and 5xx move on to the next provider. A response saying the quota is used up
+(ElevenLabs' quota error, Google's ``RESOURCE_EXHAUSTED``) also marks the provider
+as exhausted: it's skipped for the next hour, then tried again, and the Web UI
+shows it. There is no character cap; when free quota runs out, speech falls back
+to the next provider and finally to espeak-ng, and adding credentials for a paid
+account lifts the limit. HTTP 401 or 403 means the credentials are
 wrong: it moves on too, and is reported through the API so a parent can fix it.
 Text over a provider's limit is refused before sending.
 

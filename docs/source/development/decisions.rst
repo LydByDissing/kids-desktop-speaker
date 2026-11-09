@@ -2277,13 +2277,16 @@ announcements play offline.
   is never silent when the cloud is unreachable.
 - Changing credentials requires an admin token (DEC-032).
 - The Web UI and API use HTTPS with a self-signed certificate (DEC-032).
+- Languages: Danish (``da-DK``, the default) and English (``en-GB``). Other
+  languages are switched on in the config.
+- No character cap. When a provider's free quota runs out, announcements fall
+  through to the next provider and finally to espeak-ng on the device. Adding
+  credentials for a paid account lifts the limit.
 
 **Open questions**
 
 - Google authentication: an API key, if the project allows it for Text-to-Speech,
   or a service account.
-- Which languages and voices to configure first.
-- Whether to cap monthly characters per provider.
 - The wording of the parental opt-in.
 
 DEC-032 — Web Security: Self-Signed HTTPS and Admin Tokens
