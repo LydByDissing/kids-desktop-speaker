@@ -11,11 +11,18 @@ fn main() {
         std::process::exit(2);
     };
     let engine = match engine.as_str() {
-        "flite" => Engine::Flite { voice: voice.clone() },
-        _ => Engine::EspeakNg { voice: voice.clone() },
+        "flite" => Engine::Flite {
+            voice: voice.clone(),
+        },
+        _ => Engine::EspeakNg {
+            voice: voice.clone(),
+        },
     };
     let cache = TtsCache::new(dir, DEFAULT_TTL).expect("cache dir");
-    println!("expired entries removed: {}", cache.evict_expired(SystemTime::now()).unwrap());
+    println!(
+        "expired entries removed: {}",
+        cache.evict_expired(SystemTime::now()).unwrap()
+    );
     for attempt in 1..=2 {
         let start = Instant::now();
         let (path, lookup) = cache.get_or_synthesize(&engine, text).expect("synthesis");
