@@ -46,7 +46,7 @@ The TTS Engine is a standalone Rust binary that:
        component ["Message Queue\nFIFO, max 10"] as queue
        component ["Synthesis Worker\n(single thread)"] as worker
        component ["Audio Cache\n/data/tts-cache, 90-day TTL"] as cache
-       component ["Synthesis Backend\nCLI (engine: KDS-o2d)"] as piper
+       component ["Synthesis Backend\nespeak-ng CLI"] as piper
        component ["ALSA Writer\nloopback_tts"] as alsa
    }
 
@@ -68,9 +68,9 @@ The TTS Engine is a standalone Rust binary that:
 Synthesis Backend
 -----------------
 
-The engine is open (KDS-o2d). Piper, the original choice, can't run on the Pi
-Zero W: it has no ARMv6 build (see Hardware Measurements). The backend runs a
-command-line engine, such as ``espeak-ng`` or ``flite``, that writes a WAV file:
+The engine is **espeak-ng** with its English voice (DEC-030). Piper, the original
+choice, can't run on the Pi Zero W: it has no ARMv6 build (see Hardware
+Measurements). The backend runs a command-line engine that writes a WAV file:
 
 .. code-block:: rust
 

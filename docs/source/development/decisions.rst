@@ -2208,3 +2208,32 @@ device must get an IPv4 address within two minutes. Otherwise, a configured
 network that is visible in a scan means the update broke the connection, which
 fails the check and leads to a rollback. A network that isn't visible is treated
 as the router being off, which passes, so an outage doesn't cause reboot loops.
+
+DEC-030 — Text-to-Speech Engine: espeak-ng
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_030
+   :status: resolved
+   :date: 2026-11-09
+   :tags: tts, audio
+
+**Decision**: The speaker uses **espeak-ng** with its English voice for text-to-
+speech, on the device. Its quality is accepted as adequate rather than good.
+
+**Context**
+
+Piper, the original choice, can't run on the Pi Zero W (no ARMv6 build). Of the
+engines that do run, a listening test on the real speaker found espeak-ng's English
+voice the best, ahead of flite's 16 kHz voices. espeak-ng is also the fastest:
+about 0.7 s for 6 s of speech (see Hardware Measurements), and the TTS cache
+(TTS_REQ_001) avoids repeating even that.
+
+**Consequences**
+
+- Text-to-speech works offline, with no other machine or service.
+- espeak-ng outputs 22.05 kHz, which the audio HAT rejects directly; the default
+  ALSA output resamples to 48 kHz.
+- Better voices are possible later: espeak-ng voice variants and speed or pitch
+  settings, or Piper on another machine at home with the speaker caching its
+  audio. The ``Synthesizer`` interface allows either without changing the cache.
