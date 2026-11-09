@@ -77,6 +77,7 @@ require_file /etc/rauc/system.conf
 require_file /etc/rauc/keyring.pem
 require_file /etc/fw_env.config
 require_file /etc/asound.conf
+require_file /etc/udev/rules.d/90-kds-hat.rules
 require_file /etc/systemd/system/kds-hat-init.service
 require_file /usr/lib/kds-boot/overlays/iqaudio-codec.dtbo
 require_file /etc/udev/rules.d/80-kds-wifi-powersave.rules

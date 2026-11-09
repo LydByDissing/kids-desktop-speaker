@@ -182,8 +182,10 @@ Resolved on real hardware: the DA7213 control names below are the real ones, and
 48 kHz plays correctly, so sources and CamillaDSP use 48 kHz.
 
 The DA7213 codec starts with its outputs unrouted, so the HAT is silent until its
-mixer is set. ``kds-hat-init.service`` runs ``/usr/local/bin/kds-hat-init.sh`` at
-boot, after ALSA restores any saved state, so its settings always win. Verified on
+mixer is set. ``kds-hat-init.service`` runs ``/usr/local/bin/kds-hat-init.sh``,
+started by a udev rule when the HAT's sound card appears, because the card is
+probed late in boot. ALSA's own mixer save and restore is disabled: on a real
+boot it restored a stale state after the script ran and silenced the speaker. Verified on
 a real Pi-Codec Zero with a speaker on 2026-11-09.
 
 .. list-table::

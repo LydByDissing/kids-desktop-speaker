@@ -48,6 +48,8 @@ docker run --rm -v "$IMAGE:/in.xz:ro" debian:bookworm-slim bash -uc '
     ok "slot A does not start dnsmasq" "! dbg \"ls /etc/systemd/system/multi-user.target.wants\" | grep -q dnsmasq"
     ok "slot A carries the boot files for updates" "dbg \"ls /usr/lib/kds-boot\" | grep -q update-boot.sh"
     ok "slot A enables the audio HAT setup" "dbg \"stat /etc/systemd/system/multi-user.target.wants/kds-hat-init.service\" | grep -q Inode"
+    ok "slot A starts the HAT setup when its card appears" "dbg \"cat /etc/udev/rules.d/90-kds-hat.rules\" | grep -q kds-hat-init"
+    ok "slot A disables ALSA state restore" "dbg \"stat /etc/systemd/system/alsa-restore.service\" | grep -q symlink"
     ok "slot A defaults ALSA to the speaker" "dbg \"cat /etc/asound.conf\" | grep -q \"pcm.!default speaker\""
     ok "slot A has the health check" "dbg \"stat /usr/local/bin/kds-health-check.sh\" | grep -q Inode"
     ok "root account is locked" "dbg \"cat /etc/shadow\" | grep -qE \"^root:[!*]\""

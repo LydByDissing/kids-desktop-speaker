@@ -1,0 +1,4 @@
+# Start the HAT's speaker routing when its sound card appears (KDS-ayx). The card
+# is probed late in boot, after kds-hat-init.service's start condition would
+# otherwise have been checked and failed.
+ACTION=="add", SUBSYSTEM=="sound", KERNEL=="card*", ATTR{id}=="IQaudIOCODEC", TAG+="systemd", ENV{SYSTEMD_WANTS}+="kds-hat-init.service"

@@ -1,7 +1,9 @@
 [Unit]
 Description=Kids Desktop Speaker — route the audio HAT to its speaker
-# After ALSA restores saved mixer state, so these settings always win.
-After=sound.target alsa-restore.service
+# Started by udev when the HAT's card appears (90-kds-hat.rules), since the card
+# is probed after this condition would otherwise be checked. ALSA's own state
+# restore is disabled in the image, so nothing overwrites these settings.
+After=sound.target
 Before=audio-player.service
 ConditionPathExists=/proc/asound/IQaudIOCODEC
 
