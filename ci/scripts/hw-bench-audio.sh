@@ -26,7 +26,9 @@ echo "=== Setup"
 apt-get update -qq >/dev/null 2>&1
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
     mpv gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-ugly espeak-ng flite alsa-utils >/dev/null 2>&1 && echo "packages installed"
+    gstreamer1.0-plugins-ugly espeak-ng flite alsa-utils mpd mpc >/dev/null 2>&1 && echo "packages installed"
+# The packaged MPD service isn't wanted; the benchmark runs its own instance.
+systemctl disable --now mpd.service mpd.socket >/dev/null 2>&1
 [ -x camilladsp ] || curl -fsSL "$CAMILLA_URL" | tar -xz
 [ -d piper ] || curl -fsSL "$PIPER_URL" | tar -xz
 modprobe snd-aloop && echo "snd-aloop loaded"
@@ -100,6 +102,22 @@ grep -iE "error|underrun|overrun" camilladsp*.log 2>/dev/null | head -3
 echo "=== Internet radio ($RADIO_URL)"
 measure "mpv MP3 stream" $RUN mpv --no-video --ao=null --really-quiet "$RADIO_URL"
 measure "gstreamer MP3 stream" $RUN gst-launch-1.0 -q souphttpsrc location="$RADIO_URL" ! decodebin ! audioconvert ! audioresample ! fakesink sync=true
+mkdir -p $W/mpd
+cat > $W/mpd.conf <<MPD
+db_file "$W/mpd/db"
+state_file "$W/mpd/state"
+pid_file "$W/mpd/pid"
+bind_to_address "127.0.0.1"
+port "6601"
+audio_output {
+    type "null"
+    name "null"
+}
+MPD
+mpd_play() { mpd --no-daemon $W/mpd.conf & local m=$!; sleep 3; mpc -p 6601 -q clear; mpc -p 6601 -q add "$RADIO_URL"; mpc -p 6601 -q play; wait $m; }
+measure "mpd MP3 stream" $RUN mpd_play
+mpc -p 6601 -q stop 2>/dev/null; pkill -f "[m]pd --no-daemon $W/mpd.conf"
+mpc -p 6601 -q status >/dev/null 2>&1 || echo "mpd stopped"
 
 echo "=== Text-to-speech (100 characters)"
 TEXT="Good morning! It is seven o'clock, time to get up. Breakfast is ready in the kitchen downstairs now."
