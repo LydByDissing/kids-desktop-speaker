@@ -2278,3 +2278,7 @@ announcements play offline.
   or a service account.
 - Which languages and voices to configure first.
 - Whether to cap monthly characters per provider.
+- Whether changing credentials requires an admin token, since all tokens
+  currently have the same rights.
+- HTTPS on the device: certificate approach (self-signed, or local CA), needed
+  before credentials can be entered.

@@ -190,8 +190,11 @@ Software — Features
    :tags: software, tts, security
 
    Provider credentials shall be stored on the data partition, readable only by
-   the TTS Engine, and set through the API. They shall never be part of the image,
-   the repository, logs or API responses.
+   the TTS Engine, and entered by a parent in the Web UI (Config → Text-to-speech)
+   or through the API. They shall be write-only: the UI and API show whether a
+   provider is configured and the last four characters of its key, never the key.
+   They shall never be part of the image, the repository or logs. Credentials
+   shall only be accepted over HTTPS, so they don't cross the network in clear.
 
 .. req:: TTS_REQ_006
    :id: TTS_REQ_006

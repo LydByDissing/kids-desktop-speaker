@@ -212,6 +212,39 @@ Token management:
    Tokens are stored as SHA-256 hashes. The full token is only shown once
    (at creation time) and never stored in plaintext.
 
+Text-to-Speech Configuration
+----------------------------
+
+**Draft (DEC-031).** Endpoints behind the Web UI's ``/config/tts`` page
+(TTS_REQ_005). Credentials are write-only: no endpoint returns a stored key.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Endpoint
+     - Purpose
+   * - ``GET /api/tts/config``
+     - Enabled, provider order, voices per language, and per provider whether a
+       key is set plus its last four characters
+   * - ``PUT /api/tts/config``
+     - Enable or disable cloud TTS, set provider order and voices
+   * - ``PUT /api/tts/credentials/{provider}``
+     - Store a provider's key. Rejected unless the request arrived over HTTPS
+   * - ``DELETE /api/tts/credentials/{provider}``
+     - Remove a provider's key
+   * - ``POST /api/tts/test/{provider}``
+     - Synthesise a short phrase with that provider only, without caching
+
+The API Server passes credentials to the TTS Engine over IPC; the TTS Engine
+alone stores them, in ``/data/tts/credentials`` (mode 0600).
+
+.. todo::
+
+   All tokens currently have the same rights, so a token issued to Home Assistant
+   could also replace provider keys. Decide whether tokens get an admin flag that
+   credential endpoints require (KDS-37o).
+
 Auto-Discovery
 --------------
 
