@@ -2218,6 +2218,11 @@ DEC-030 — Text-to-Speech Engine: espeak-ng
    :date: 2026-11-09
    :tags: tts, audio
 
+.. note::
+
+   Superseded by DEC-031: cloud TTS, because the speaker must speak several
+   languages.
+
 **Decision**: The speaker uses **espeak-ng** with its English voice for text-to-
 speech, on the device. Its quality is accepted as adequate rather than good.
 
@@ -2237,3 +2242,39 @@ about 0.7 s for 6 s of speech (see Hardware Measurements), and the TTS cache
 - Better voices are possible later: espeak-ng voice variants and speed or pitch
   settings, or Piper on another machine at home with the speaker caching its
   audio. The ``Synthesizer`` interface allows either without changing the cache.
+
+DEC-031 — Cloud Text-to-Speech: ElevenLabs and Google Cloud TTS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_031
+   :status: draft
+   :date: 2026-11-09
+   :tags: tts, cloud, i18n, privacy
+
+**Decision (draft)**: Synthesise speech with cloud services, ElevenLabs and Google
+Cloud Text-to-Speech, tried in a configured order, and keep the disk cache so the
+same announcement is synthesised once. Supersedes DEC-030.
+
+**Context**
+
+The speaker must speak several languages. The on-device engines that run on the
+Pi Zero W sound poor even in English and worse in other languages, and neural
+engines need at least a Pi 4. Both providers handle many languages with natural
+voices. The cache (TTS_REQ_001) keeps cost and latency down, and lets cached
+announcements play offline.
+
+**Consequences**
+
+- Announcement text leaves the home, so cloud TTS is opt-in (TTS_REQ_006).
+- Uncached announcements need internet access and a provider account.
+- Providers charge per character; the cache avoids paying twice for the same text.
+- Provider credentials live on the data partition (TTS_REQ_005).
+
+**Open questions**
+
+- Whether espeak-ng stays as a last-resort fallback when no provider is reachable.
+- Google authentication: an API key, if the project allows it for Text-to-Speech,
+  or a service account.
+- Which languages and voices to configure first.
+- Whether to cap monthly characters per provider.

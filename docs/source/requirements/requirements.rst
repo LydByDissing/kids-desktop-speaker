@@ -151,7 +151,8 @@ Software — Features
    :tags: software, tts, performance
 
    Synthesised speech shall be cached on the data partition, keyed by the text,
-   engine and voice, and reused instead of synthesised again. An entry shall be
+   language, provider, model, voice and audio format, and reused instead of
+   synthesised again. An entry shall be
    removed 90 days after it was last used. Synthesis takes about 2 seconds on the
    Pi Zero W, and the same messages repeat often.
 
@@ -163,6 +164,43 @@ Software — Features
    A TTS announcement shall pause the active source, play a short "in" chime,
    speak the announcement, play a short "out" chime, then resume the source where
    it was paused. Nothing else plays during the announcement.
+
+.. req:: TTS_REQ_003
+   :id: TTS_REQ_003
+   :status: open
+   :tags: software, tts, i18n
+
+   Each announcement shall carry a language (a BCP 47 tag such as ``da-DK`` or
+   ``en-GB``) and be spoken in that language, with a voice configured per language
+   (ref DEC-031).
+
+.. req:: TTS_REQ_004
+   :id: TTS_REQ_004
+   :status: open
+   :tags: software, tts, cloud
+
+   Speech shall be synthesised by a cloud service: ElevenLabs and Google Cloud
+   Text-to-Speech, tried in a configured order. When a provider fails or is
+   unreachable, the next one shall be tried. A cached announcement shall play
+   without contacting any provider.
+
+.. req:: TTS_REQ_005
+   :id: TTS_REQ_005
+   :status: open
+   :tags: software, tts, security
+
+   Provider credentials shall be stored on the data partition, readable only by
+   the TTS Engine, and set through the API. They shall never be part of the image,
+   the repository, logs or API responses.
+
+.. req:: TTS_REQ_006
+   :id: TTS_REQ_006
+   :status: open
+   :tags: software, tts, privacy
+
+   Announcement text is sent to the chosen provider, outside the home. Cloud TTS
+   shall be off until a parent enables it, after being told which provider
+   receives the text.
 
 .. req:: FEAT_REQ_002
    :id: FEAT_REQ_002

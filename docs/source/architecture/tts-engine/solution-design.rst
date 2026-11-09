@@ -46,7 +46,7 @@ The TTS Engine is a standalone Rust binary that:
        component ["Message Queue\nFIFO, max 10"] as queue
        component ["Synthesis Worker\n(single thread)"] as worker
        component ["Audio Cache\n/data/tts-cache, 90-day TTL"] as cache
-       component ["Synthesis Backend\nespeak-ng CLI"] as piper
+       component ["Synthesis Chain\nElevenLabs, Google (draft)"] as piper
        component ["ALSA Writer\nloopback_tts"] as alsa
    }
 
@@ -68,19 +68,67 @@ The TTS Engine is a standalone Rust binary that:
 Synthesis Backend
 -----------------
 
-The engine is **espeak-ng** with its English voice (DEC-030). Piper, the original
-choice, can't run on the Pi Zero W: it has no ARMv6 build (see Hardware
-Measurements). The backend runs a command-line engine that writes a WAV file:
+**Draft (DEC-031).** Speech comes from cloud providers, tried in a configured
+order, because the speaker must speak several languages (TTS_REQ_003,
+TTS_REQ_004). DEC-030's on-device espeak-ng is superseded; whether it stays as a
+last-resort fallback is open.
 
 .. code-block:: rust
 
    trait Synthesizer: Send + Sync {
-       /// Identifies the engine and voice, so the cache never mixes their output.
-       fn id(&self) -> String;
-       fn synthesize(&self, text: &str, output: &Path) -> Result<(), TtsError>;
+       /// Provider, model, voice and audio format: everything that changes the
+       /// audio for the same text, so the cache never mixes their output.
+       fn id(&self, language: &str) -> String;
+       fn synthesize(&self, text: &str, language: &str, output: &Path)
+           -> Result<(), TtsError>;
    }
 
-   struct CommandSynthesizer { program: String, args: Vec<String>, voice: String }
+   struct ElevenLabs { api_key: Secret, model: String, voices: HashMap<String, String> }
+   struct GoogleTts  { credentials: Secret, voices: HashMap<String, String> }
+
+   /// Tries each provider in order; the first success is cached.
+   struct Chain { providers: Vec<Box<dyn Synthesizer>> }
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 39 39
+
+   * -
+     - ElevenLabs
+     - Google Cloud TTS
+   * - Request
+     - ``POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}``, header
+       ``xi-api-key``, JSON ``{"text", "model_id"}``
+     - ``POST https://texttospeech.googleapis.com/v1/text:synthesize``, JSON
+       ``{"input": {"text"}, "voice": {"languageCode", "name"}, "audioConfig"}``
+   * - Language
+     - Model ``eleven_multilingual_v2`` (the default) detects the language; the
+       voice is chosen per language
+     - ``voice.languageCode``, with a voice name per language
+   * - Audio requested
+     - ``output_format=wav_24000`` (44.1 kHz and above needs the Pro tier)
+     - ``LINEAR16`` at ``sampleRateHertz: 24000``; returned base64, with a WAV
+       header
+   * - Limits
+     - Not stated in the API reference
+     - 5,000 bytes per request; 1,000 requests per minute per project
+   * - Credentials
+     - API key
+     - API key or service account (open question)
+
+Both produce 24 kHz WAV files, which the cache stores as they are and the default
+ALSA output resamples to 48 kHz for the HAT.
+
+**Failures.** Each request has a 10 s timeout. Network errors, timeouts, HTTP 429
+and 5xx move on to the next provider. HTTP 401 or 403 means the credentials are
+wrong: it moves on too, and is reported through the API so a parent can fix it.
+Text over a provider's limit is refused before sending.
+
+**Credentials** (TTS_REQ_005) live in ``/data/tts/credentials``, mode 0600, set
+through the API. They are never logged or returned by the API.
+
+**Privacy** (TTS_REQ_006). Cloud TTS is off until a parent enables it, after being
+told which provider receives the text.
 
 Audio Cache
 -----------
@@ -88,8 +136,9 @@ Audio Cache
 Synthesis takes about 2 seconds on the device, and the same messages repeat, so
 results are cached (TTS_REQ_001):
 
-- **Key**: SHA-256 of the engine and voice ID plus the text, with whitespace
-  collapsed. Different voices never share an entry.
+- **Key**: SHA-256 of the synthesizer ID for the language (provider, model,
+  voice, audio format), the language and the text, with whitespace collapsed.
+  Different providers, voices and languages never share an entry.
 - **Storage**: ``/data/tts-cache/<key>.wav`` on the data partition, so the cache
   survives updates. Files are written beside their final name and renamed into
   place, so a crash never leaves a partial entry.
