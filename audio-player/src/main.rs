@@ -1,7 +1,9 @@
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc;
-use audio_player::manager::Manager;
+use audio_player::manager::{Manager, Supervision};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::Mutex;
 
 #[tokio::main]
@@ -38,8 +40,20 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Wait for Ctrl+C
-    tokio::signal::ctrl_c().await?;
+    // Restart a source that exits on its own (AUD_REQ_002) until asked to stop.
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut tick = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {
+                for manager in [&mut airplay_manager, &mut spotify_manager] {
+                    report(manager.name(), manager.supervise().await);
+                }
+            }
+            _ = tokio::signal::ctrl_c() => break,
+            _ = sigterm.recv() => break,
+        }
+    }
 
     println!("audio-player: shutting down");
 
@@ -53,4 +67,17 @@ async fn main() -> anyhow::Result<()> {
     println!("audio-player: stopped");
 
     Ok(())
+}
+
+fn report(name: &str, event: Supervision) {
+    match event {
+        Supervision::Idle => {}
+        Supervision::Exited { status, restart_in } => {
+            eprintln!("audio-player: {name} exited ({status}); restarting in {restart_in:?}")
+        }
+        Supervision::Restarted => println!("audio-player: {name} restarted"),
+        Supervision::RestartFailed { error, retry_in } => {
+            eprintln!("audio-player: {error}; retrying in {retry_in:?}")
+        }
+    }
 }

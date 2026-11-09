@@ -98,6 +98,22 @@ require_cmd amixer
 ok "ALSA utilities installed"
 
 echo ""
+echo "--- AirPlay (shairport-sync, started by audio-player) ---"
+require_executable /usr/bin/shairport-sync
+require_file /etc/shairport-sync.conf
+if grep -q 'output_device = "speaker"' /etc/shairport-sync.conf; then
+    ok "shairport-sync plays through the speaker device"
+else
+    fail "shairport-sync.conf does not use the speaker device"
+fi
+# audio-player owns the process; the package's own service would race it for the port.
+if [ -e /etc/systemd/system/multi-user.target.wants/shairport-sync.service ]; then
+    fail "the package's shairport-sync.service is enabled"
+else
+    ok "the package's shairport-sync.service is disabled"
+fi
+
+echo ""
 echo "--- Bluetooth ---"
 require_cmd bluetoothctl
 ok "BlueZ installed"

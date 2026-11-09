@@ -62,6 +62,17 @@ Software — Audio Streaming
    (see Hardware Measurements). A TTS announcement interrupts the active source
    (TTS_REQ_002) rather than playing over it.
 
+.. req:: AUD_REQ_002
+   :id: AUD_REQ_002
+   :status: open
+   :tags: software, audio
+
+   The Audio Player shall reap a streaming source process (shairport-sync,
+   librespot) that exits on its own and restart it, waiting longer after each
+   quick failure (1 s doubling to at most 60 s, reset once the source has run
+   for a minute). A source that was never installed is not retried. The
+   source's own log output shall reach the journal.
+
 .. req:: SW_REQ_001
    :id: SW_REQ_001
    :status: open

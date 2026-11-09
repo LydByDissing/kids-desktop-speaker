@@ -42,6 +42,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     # Audio
     alsa-utils \
     libasound2 \
+    # AirPlay receiver, started by audio-player (DEC_004)
+    shairport-sync \
     # Bluetooth
     bluez \
     # RAUC
@@ -127,6 +129,7 @@ RUN chmod +x /usr/local/bin/kds-health-check.sh
 COPY ci/device/kds-hat-init.sh /usr/local/bin/kds-hat-init.sh
 COPY ci/device/kds-hat-init.service /etc/systemd/system/kds-hat-init.service
 COPY ci/device/asound.conf /etc/asound.conf
+COPY ci/device/shairport-sync.conf /etc/shairport-sync.conf
 # The HAT is probed late in boot, so the routing starts when its card appears.
 COPY ci/device/90-kds-hat.rules /etc/udev/rules.d/90-kds-hat.rules
 # kds-hat-init sets every control the speaker needs, so ALSA's own save and
@@ -268,7 +271,7 @@ RUN systemctl enable \
         audio-player.service \
         ota-updater.service \
         bluetooth-service.service && \
-    systemctl disable dnsmasq.service hostapd.service && \
+    systemctl disable dnsmasq.service hostapd.service shairport-sync.service && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 
