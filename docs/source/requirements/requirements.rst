@@ -52,6 +52,16 @@ Hardware
 Software — Audio Streaming
 --------------------------
 
+.. req:: AUD_REQ_001
+   :id: AUD_REQ_001
+   :status: open
+   :tags: software, audio
+
+   Only one audio source shall be active at a time. The CPU budget is therefore
+   the DSP chain plus the most demanding single source, not all sources at once
+   (see Hardware Measurements). Whether a TTS announcement counts as a source or
+   plays over the active one is open.
+
 .. req:: SW_REQ_001
    :id: SW_REQ_001
    :status: open
@@ -132,7 +142,18 @@ Software — Features
    The system shall support sending custom text messages that are read aloud
    using a text-to-speech engine.
 
-   Note: deferred per DEC-015.
+   Note: deferred per DEC-015. Work on the TTS audio cache (TTS_REQ_001) started
+   on 2026-11-09 at the product owner's request; the engine choice is KDS-o2d.
+
+.. req:: TTS_REQ_001
+   :id: TTS_REQ_001
+   :status: open
+   :tags: software, tts, performance
+
+   Synthesised speech shall be cached on the data partition, keyed by the text,
+   engine and voice, and reused instead of synthesised again. An entry shall be
+   removed 90 days after it was last used. Synthesis takes about 2 seconds on the
+   Pi Zero W, and the same messages repeat often.
 
 .. req:: FEAT_REQ_002
    :id: FEAT_REQ_002

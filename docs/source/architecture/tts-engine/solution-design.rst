@@ -45,7 +45,8 @@ The TTS Engine is a standalone Rust binary that:
    package "TTS Engine Process" as tts {
        component ["Message Queue\nFIFO, max 10"] as queue
        component ["Synthesis Worker\n(single thread)"] as worker
-       component ["Piper Backend\nFFI or CLI"] as piper
+       component ["Audio Cache\n/data/tts-cache, 90-day TTL"] as cache
+       component ["Synthesis Backend\nCLI (engine: KDS-o2d)"] as piper
        component ["ALSA Writer\nloopback_tts"] as alsa
    }
 
@@ -54,42 +55,46 @@ The TTS Engine is a standalone Rust binary that:
 
    api --> queue : enqueue(text, voice)
    queue --> worker : dequeue
-   worker --> piper : synthesize(text, voice)
-   piper --> worker : PCM frames
+   worker --> cache : lookup(text, engine, voice)
+   cache --> piper : synthesize on a miss
+   piper --> cache : WAV
+   cache --> worker : WAV
    worker --> alsa : write PCM
    alsa --> loopback : write
    worker --> api : started/finished events
 
    @enduml
 
-Piper Integration
+Synthesis Backend
 -----------------
 
-Piper is integrated as a **CLI subprocess** for v1.
-
-**Rationale**: The ``piper-tts-rs`` crate (v0.1.4, 202 downloads) is
-early-stage and adds FFI complexity. The Piper CLI is stable, well-tested,
-and produces identical output. The subprocess overhead is negligible
-(synthesis takes seconds; process startup is ~50ms).
-
-**Fallback**: If the CLI approach proves too slow for rapid sequential
-messages, we can switch to ``piper-tts-rs`` or a long-running Piper daemon
-later. The trait-based backend abstraction makes this a drop-in replacement.
+The engine is open (KDS-o2d). Piper, the original choice, can't run on the Pi
+Zero W: it has no ARMv6 build (see Hardware Measurements). The backend runs a
+command-line engine, such as ``espeak-ng`` or ``flite``, that writes a WAV file:
 
 .. code-block:: rust
 
-   trait TtsBackend: Send {
-       fn synthesize(&self, text: &str, voice: &str) -> Result<Vec<i16>, TtsError>;
+   trait Synthesizer: Send + Sync {
+       /// Identifies the engine and voice, so the cache never mixes their output.
+       fn id(&self) -> String;
+       fn synthesize(&self, text: &str, output: &Path) -> Result<(), TtsError>;
    }
 
-   // v1 implementation
-   struct PiperCliBackend {
-       piper_path: PathBuf,
-       model_dir: PathBuf,
-   }
+   struct CommandSynthesizer { program: String, args: Vec<String>, voice: String }
 
-   // future implementation
-   struct PiperFfiBackend { ... }
+Audio Cache
+-----------
+
+Synthesis takes about 2 seconds on the device, and the same messages repeat, so
+results are cached (TTS_REQ_001):
+
+- **Key**: SHA-256 of the engine and voice ID plus the text, with whitespace
+  collapsed. Different voices never share an entry.
+- **Storage**: ``/data/tts-cache/<key>.wav`` on the data partition, so the cache
+  survives updates. Files are written beside their final name and renamed into
+  place, so a crash never leaves a partial entry.
+- **Last use**: each hit sets the file's modification time to now.
+- **Expiry**: entries unused for 90 days are deleted, at startup and once a day.
 
 Voice Models
 ~~~~~~~~~~~~
