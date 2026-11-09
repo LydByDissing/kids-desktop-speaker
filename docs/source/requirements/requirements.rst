@@ -182,8 +182,10 @@ Software — Features
    :tags: software, tts, cloud
 
    Speech shall be synthesised by a cloud service: ElevenLabs and Google Cloud
-   Text-to-Speech, tried in a configured order, with espeak-ng on the device as
-   the last resort. When a provider fails, is unreachable, or has used up its
+   Text-to-Speech, ranked by quality tier, with espeak-ng on the device as the
+   last resort. Each announcement shall go to the highest-ranked provider that
+   supports its language and is usable: credentials set, a voice configured for
+   the language, and quota left. When a provider fails, is unreachable, or has used up its
    quota, the next one shall be tried. A provider that reports its quota used up
    shall be skipped for a period, rather than tried first for every announcement.
    A cached announcement shall play without contacting any provider.

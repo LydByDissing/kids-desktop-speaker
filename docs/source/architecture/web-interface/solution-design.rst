@@ -138,6 +138,8 @@ TTS_REQ_006):
   provider alone, reporting success or the provider's error, such as a rejected
   key. For Google, this is where a project that doesn't accept API keys shows up.
 - **Voices**: a voice per language per provider, chosen from the provider's list.
+  A provider whose model doesn't support an enabled language shows that, and is
+  skipped for that language.
 
 The page refuses to submit credentials unless the page itself was loaded over
 HTTPS.

@@ -86,8 +86,9 @@ providers, so an announcement is never silent when the cloud is unreachable.
    struct ElevenLabs { api_key: Secret, model: String, voices: HashMap<String, String> }
    struct GoogleTts  { credentials: Secret, voices: HashMap<String, String> }
 
-   /// Tries each provider in order; the first success is cached. espeak-ng is
-   /// always last.
+   /// Providers ranked by quality tier. For each announcement, tries only those
+   /// that support its language and are usable, best first; the first success is
+   /// cached. espeak-ng is always last.
    struct Chain { providers: Vec<Box<dyn Synthesizer>> }
 
 .. list-table::
@@ -122,8 +123,24 @@ Both produce 24 kHz WAV files, which the cache stores as they are and the defaul
 ALSA output resamples to 48 kHz for the HAT.
 
 **Languages.** Danish (``da-DK``) is the default and English (``en-GB``) is
-also on; other languages are switched on in the config (TTS_REQ_003). Each
-enabled language needs a voice per provider, and espeak-ng has voices for both.
+also on; other languages are switched on in the config (TTS_REQ_003). espeak-ng
+has voices for both.
+
+**Choosing a provider per language.** Providers are ranked by quality tier, by
+default ElevenLabs, then Google, then espeak-ng. For each announcement the chain
+skips any provider that:
+
+- doesn't support the announcement's language with the configured model,
+- has no credentials or no voice configured for that language, or
+- is marked exhausted after a quota error.
+
+The rest are tried best first. Supported languages come from the providers'
+APIs when the settings page loads them (ElevenLabs ``GET /v1/models``, each
+model's language list; Google ``GET /v1/voices?languageCode=...``), so a model
+or account that can't speak a language is skipped for it automatically. At
+the time of writing, ElevenLabs' multilingual models (``eleven_multilingual_v2``,
+``eleven_flash_v2_5``, ``eleven_v3``) list Danish; ``eleven_flash_v2`` and
+``eleven_turbo_v2`` are English only.
 
 **Failures.** Each request has a 10 s timeout. Network errors, timeouts, HTTP 429
 and 5xx move on to the next provider. A response saying the quota is used up
