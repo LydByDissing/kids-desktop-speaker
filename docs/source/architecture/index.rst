@@ -233,7 +233,7 @@ Zero W:
        windows. User data persisted on separate data partition.
    * - HAT Audio Driver
      - ALSA / Linux kernel / systemd
-     - Kernel driver for the IQaudIO Pi-Codec Zero HAT (Cirrus Logic WM8731
+     - Kernel driver for the IQaudIO Pi-Codec Zero HAT (Dialog DA7213
        codec). Configured via Raspberry Pi OS device tree overlay and systemd.
        Provides ALSA PCM device, mixer controls, and loopback channels.
 
