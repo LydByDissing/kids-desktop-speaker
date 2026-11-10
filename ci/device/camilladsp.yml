@@ -14,6 +14,11 @@ devices:
   chunksize: 1024
   queuelimit: 4
   enable_rate_adjust: true
+  # The defaults (a buffer of one chunk, corrected every 10 s) let the HAT run
+  # dry every 30-50 s on the single-core Pi Zero: 15 underruns in 10 minutes
+  # of radio. Two chunks (43 ms) corrected every 3 s gave none.
+  target_level: 2048
+  adjust_period: 3
   capture: {type: Alsa, channels: 2, device: "hw:Loopback,1,0", format: S16_LE}
   playback: {type: Alsa, channels: 2, device: "hw:IQaudIOCODEC,0", format: S32_LE}
 filters:

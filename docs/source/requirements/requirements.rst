@@ -142,6 +142,47 @@ Software — Audio Streaming
    with DR P1, P2 and P3. An announcement pauses the radio and resumes it
    afterwards (TTS_REQ_002).
 
+.. req:: WEB_REQ_001
+   :id: WEB_REQ_001
+   :status: open
+   :tags: software, security, api
+
+   The API and Web UI shall be served over HTTPS on port 443 with a self-signed
+   certificate that each device creates on first boot, names the device by its
+   hostname (``<hostname>.local``) and keeps on the data partition, so it
+   survives updates (ref DEC-032). Endpoints that receive credentials or other
+   secrets shall reject requests that arrive over plain HTTP. Plain HTTP on port
+   8080 remains for health checks and tests.
+
+.. req:: MSG_REQ_001
+   :id: MSG_REQ_001
+   :status: open
+   :tags: software, audio, messages
+
+   A parent shall be able to send a recorded voice message of at most 30 seconds
+   (a PCM WAV file) to the speaker. It is played like an announcement: the active
+   source pauses, the "in" chime, the recording, the "out" chime, then the source
+   resumes (TTS_REQ_002). A new message plays when it is sent unless the sender
+   asks it not to (ref DEC-037).
+
+.. req:: MSG_REQ_002
+   :id: MSG_REQ_002
+   :status: open
+   :tags: software, audio, messages
+
+   Recorded messages shall be kept on the data partition and listed newest first
+   with the time they were recorded, their duration and an optional name. A
+   message can be named or renamed, played again and deleted. There is no speech
+   to text.
+
+.. req:: MSG_REQ_003
+   :id: MSG_REQ_003
+   :status: open
+   :tags: software, audio, messages
+
+   A named message shall be kept until it is deleted. An unnamed message shall be
+   removed 90 days after it was last played (or recorded, if never replayed).
+
 Software — DSP
 --------------
 

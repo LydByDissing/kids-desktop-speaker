@@ -2480,6 +2480,11 @@ pinned v4.1.3 release archive (SHA-256 checked) with our own ``Cargo.lock``
 ALSA cross image. Each release's ``sources.tar`` contains that archive and lock
 file, the exact source of the binary; ``licenses.tar.gz`` lists its crates.
 
+**Buffering**: CamillaDSP's defaults (a target of one 1024-frame chunk,
+corrected every 10 s) let the HAT run dry every 30-50 s on the single-core Pi
+Zero: a 10-minute radio soak had 15 underruns. A target of 2048 frames (43 ms,
+about 20 ms more latency) corrected every 3 s had none over 15 minutes.
+
 **Measured on the Pi Zero W (2026-11-10)**: 8 % CPU and 6.5 MB. A -6 dBFS tone
 passes at -6.00 dB; a full-scale tone leaves at -1.00 dBFS with no clipped
 samples; the loopback's rate settles within 0.01 % of the HAT's. Over AirPlay,
@@ -2492,3 +2497,37 @@ stream stops, the loopback's capture stalls and CamillaDSP pauses; it logs one
 playback underrun each time, into silence, which is expected. Its websocket listens on
 localhost only. ``make -C ci hw-dsp-test`` checks levels, clipping, timing and,
 optionally, the sender's volume over AirPlay.
+
+DEC-037 — Recorded Voice Messages
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_037
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, messages, api
+
+**Context**: espeak-ng sounds robotic (DEC-030), so parents can record short
+voice messages instead (MSG_REQ_001-003). Decided with the user: a new message
+plays at once; named messages are kept, unnamed ones expire 90 days after they
+were last played.
+
+**Decision 1: the browser sends WAV.** The Web UI records with MediaRecorder,
+decodes with Web Audio and uploads 16-bit PCM WAV (24 kHz mono is about 1.4 MB
+for 30 s), so the Pi needs no Opus or AAC decoder. The API Server accepts PCM
+WAV of 8-48 kHz, mono or stereo, 16-bit, at most 30 s (a little slack for
+headers) and at most 6 MB.
+
+**Decision 2: the API Server owns the messages; the Audio Player plays them.**
+IPC messages are limited to 64 KiB, so recordings don't travel over IPC. The
+API Server stores each message in ``/data/messages`` as ``<id>.wav`` plus
+``<id>.json`` (recorded time, name, duration, last played) and expires unnamed
+ones. To play one it sends ``play_message {id}`` to the Audio Player, which
+reads ``/data/messages/<id>.wav`` (ids are checked, so no other file can be
+named) and queues it with the announcements: pause, in chime, the recording,
+out chime, resume.
+
+**Decision 3: recording needs HTTPS, the API doesn't require it.** Browsers
+only allow the microphone on secure pages, so the Web UI is served over HTTPS
+(WEB_REQ_001). A message is not a credential, so the API accepts it on either
+listener.

@@ -15,6 +15,8 @@ use tts_engine::{TtsCache, DEFAULT_TTL};
 const TTS_CACHE_DIR: &str = "/data/tts-cache";
 /// The chimes are regenerated at every start, so they live in /run.
 const CHIME_DIR: &str = "/run/kds/chimes";
+/// Recorded voice messages, written by the API Server (DEC-037).
+const MESSAGES_DIR: &str = "/data/messages";
 /// MPD listens on localhost only (/etc/mpd.conf).
 const MPD_ADDR: &str = "127.0.0.1:6600";
 /// The shared output in /etc/asound.conf (DEC-033).
@@ -90,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         let services = Services {
             announcements: Some(queue),
             radio: Some(radio),
+            messages_dir: Some(MESSAGES_DIR.into()),
         };
         if let Err(e) = ipc::serve("/run/kds/audio.sock", arb_clone, services).await {
             eprintln!("IPC server error: {}", e);

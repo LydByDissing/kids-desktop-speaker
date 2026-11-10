@@ -271,3 +271,56 @@ fn ding_does_not_clip_and_starts_softly() {
     assert!(samples[0].abs() < 100, "starts with a click");
     assert!(samples.last().unwrap().abs() < 300, "ends abruptly");
 }
+
+#[tokio::test]
+async fn a_recording_plays_between_the_chimes_with_the_sources_paused() {
+    let (a, log) = announcer("recording", &["librespot"], None, false);
+    let dir = temp_dir("recording-file");
+    let wav = dir.join("message.wav");
+    std::fs::write(&wav, b"RIFF").unwrap();
+    a.play_recording(&wav).await.unwrap();
+    assert_eq!(
+        entries(&log),
+        vec![
+            "pause [\"librespot\"]",
+            "play chime-in.wav",
+            "play speech",
+            "play chime-out.wav",
+            "resume [\"librespot\"]",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_missing_recording_pauses_nothing() {
+    let (a, log) = announcer("recording-missing", &["librespot"], None, false);
+    let err = a
+        .play_recording(std::path::Path::new("/nonexistent/m.wav"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, AnnounceError::Playback(_)), "{err}");
+    assert!(entries(&log).is_empty());
+}
+
+#[tokio::test]
+async fn run_plays_speech_and_recordings_in_queue_order() {
+    let (a, log) = announcer("run-mixed", &[], None, false);
+    let dir = temp_dir("run-mixed-file");
+    let wav = dir.join("m.wav");
+    std::fs::write(&wav, b"RIFF").unwrap();
+    let (queue, rx) = AnnounceQueue::new();
+    queue
+        .submit(Announcement::new("first", None).unwrap())
+        .unwrap();
+    queue.submit_recording(wav).unwrap();
+    drop(queue);
+    a.run(rx).await;
+    let e = entries(&log);
+    assert_eq!(e[0], "synthesize first");
+    assert_eq!(
+        e.iter()
+            .filter(|x| x.as_str() == "play chime-in.wav")
+            .count(),
+        2
+    );
+}

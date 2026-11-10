@@ -224,50 +224,91 @@ impl<O: Output, S: Sources> Announcer<O, S> {
                 .await
                 .map_err(|e| AnnounceError::Task(e.to_string()))??;
 
+        self.between_chimes(&speech).await?;
+        Ok(lookup)
+    }
+
+    /// Plays a recorded voice message the same way (MSG_REQ_001, DEC-037).
+    pub async fn play_recording(&self, path: &Path) -> Result<(), AnnounceError> {
+        if !path.is_file() {
+            return Err(AnnounceError::Playback(format!(
+                "{} is missing",
+                path.display()
+            )));
+        }
+        self.between_chimes(path).await
+    }
+
+    /// Pauses the sources, plays the in chime, `clip` and the out chime, and
+    /// resumes the sources even if playback fails.
+    async fn between_chimes(&self, clip: &Path) -> Result<(), AnnounceError> {
         let mut sources = self.sources.lock().await;
         let paused = sources.pause_all().await;
         let played = async {
             self.output.play(&self.chimes.enter).await?;
-            self.output.play(&speech).await?;
+            self.output.play(clip).await?;
             self.output.play(&self.chimes.exit).await
         }
         .await;
         sources.resume(&paused).await;
-        played.map_err(AnnounceError::Playback)?;
-        Ok(lookup)
+        played.map_err(AnnounceError::Playback)
     }
 
-    /// Speaks queued announcements one at a time until the queue closes.
-    pub async fn run(self, mut queue: mpsc::Receiver<Announcement>) {
-        while let Some(announcement) = queue.recv().await {
-            match self.speak(&announcement).await {
-                Ok(lookup) => println!(
-                    "audio-player: announced ({:?}, {} chars, cache {:?})",
-                    announcement.lang,
-                    announcement.text.chars().count(),
-                    lookup
-                ),
-                Err(e) => eprintln!("audio-player: announcement failed: {e}"),
+    /// Plays queued announcements and messages one at a time until the queue
+    /// closes.
+    pub async fn run(self, mut queue: mpsc::Receiver<Item>) {
+        while let Some(item) = queue.recv().await {
+            match item {
+                Item::Speech(announcement) => match self.speak(&announcement).await {
+                    Ok(lookup) => println!(
+                        "audio-player: announced ({:?}, {} chars, cache {:?})",
+                        announcement.lang,
+                        announcement.text.chars().count(),
+                        lookup
+                    ),
+                    Err(e) => eprintln!("audio-player: announcement failed: {e}"),
+                },
+                Item::Recording(path) => match self.play_recording(&path).await {
+                    Ok(()) => println!("audio-player: played message {}", path.display()),
+                    Err(e) => eprintln!("audio-player: message failed: {e}"),
+                },
             }
         }
     }
 }
 
+/// What the announcement queue carries: speech to synthesise, or a recorded
+/// voice message to play (DEC-037).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Item {
+    Speech(Announcement),
+    Recording(PathBuf),
+}
+
 /// The sending side of the announcement queue, used by the IPC server.
 #[derive(Clone)]
 pub struct AnnounceQueue {
-    tx: mpsc::Sender<Announcement>,
+    tx: mpsc::Sender<Item>,
 }
 
 impl AnnounceQueue {
-    pub fn new() -> (AnnounceQueue, mpsc::Receiver<Announcement>) {
+    pub fn new() -> (AnnounceQueue, mpsc::Receiver<Item>) {
         let (tx, rx) = mpsc::channel(QUEUE_MAX);
         (AnnounceQueue { tx }, rx)
     }
 
     /// Queues an announcement and returns its position (1 = next).
     pub fn submit(&self, announcement: Announcement) -> Result<usize, String> {
-        self.tx.try_send(announcement).map_err(|e| match e {
+        self.submit_item(Item::Speech(announcement))
+    }
+
+    /// Queues a recorded voice message and returns its position.
+    pub fn submit_recording(&self, path: PathBuf) -> Result<usize, String> {
+        self.submit_item(Item::Recording(path))
+    }
+
+    fn submit_item(&self, item: Item) -> Result<usize, String> {
+        self.tx.try_send(item).map_err(|e| match e {
             mpsc::error::TrySendError::Full(_) => format!("announcement queue full ({QUEUE_MAX})"),
             mpsc::error::TrySendError::Closed(_) => "announcements unavailable".to_string(),
         })?;

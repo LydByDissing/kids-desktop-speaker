@@ -113,6 +113,19 @@ Config & Automation
      - Delete an alarm
    * - ``POST /api/tts``
      - Submit text message for TTS announcement
+   * - ``GET /api/messages``, ``POST /api/messages``
+     - List recorded voice messages; upload one (WAV, at most 30 s; plays at once
+       unless ``?play=false``) (MSG_REQ_001-003, DEC-037)
+   * - ``PATCH /api/messages/{id}``, ``DELETE /api/messages/{id}``
+     - Name or rename a message; delete it
+   * - ``POST /api/messages/{id}/play``, ``GET /api/messages/{id}/audio``
+     - Play a message again; download the recording
+   * - ``GET /api/radio/stations``, ``POST /api/radio/stations``,
+       ``DELETE /api/radio/stations/{id}``, ``POST /api/radio/play``,
+       ``POST /api/radio/stop``
+     - Internet radio stations and playback (RAD_REQ_001)
+   * - ``POST /api/bluetooth/pair``
+     - Open a 3-minute Bluetooth pairing window (BT_REQ_002)
    * - ``GET /api/tokens``
      - List API tokens (metadata only, no secrets)
    * - ``POST /api/tokens``

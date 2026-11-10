@@ -1,5 +1,8 @@
+pub mod messages;
 pub mod routes;
 pub mod state;
+pub mod tls;
+pub mod transport;
 
 use axum::{
     routing::{get, post},
@@ -21,6 +24,18 @@ pub fn app(state: AppState) -> Router {
             "/api/radio/stations/:id",
             axum::routing::delete(routes::radio::remove_station),
         )
+        .route(
+            "/api/messages",
+            get(routes::messages::list)
+                .post(routes::messages::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(messages::MAX_BYTES)),
+        )
+        .route(
+            "/api/messages/:id",
+            axum::routing::patch(routes::messages::rename).delete(routes::messages::delete),
+        )
+        .route("/api/messages/:id/audio", get(routes::messages::audio))
+        .route("/api/messages/:id/play", post(routes::messages::replay))
         .route("/api/radio/play", post(routes::radio::play))
         .route("/api/radio/stop", post(routes::radio::stop))
         .route("/api/ota/status", get(routes::services::get_ota_status))

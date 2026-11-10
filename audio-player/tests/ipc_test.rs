@@ -68,7 +68,9 @@ mod announce {
         )
         .await;
         assert_eq!(r, json!({"ok": true, "position": 1}));
-        let queued = rx.recv().await.unwrap();
+        let Some(audio_player::announcer::Item::Speech(queued)) = rx.recv().await else {
+            panic!("expected speech");
+        };
         assert_eq!(queued.text, "Hello");
         assert_eq!(queued.lang, audio_player::announcer::Lang::En);
     }
@@ -107,5 +109,82 @@ mod announce {
             r,
             json!({"ok": false, "error": "announcements unavailable"})
         );
+    }
+}
+
+mod play_message {
+    use audio_player::announcer::{AnnounceQueue, Item};
+    use audio_player::arbitrator::Arbitrator;
+    use audio_player::ipc::{handle_full, valid_message_id, Services};
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    fn messages_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("kds-msgs-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn message_ids_cannot_reach_other_files() {
+        assert!(valid_message_id("20261110-224500-ab12"));
+        for bad in ["", "../etc/passwd", "a/b", "x.wav", "a b", &"x".repeat(65)] {
+            assert!(!valid_message_id(bad), "{bad}");
+        }
+    }
+
+    #[tokio::test]
+    async fn play_message_queues_the_recording() {
+        let dir = messages_dir("ok");
+        std::fs::write(dir.join("m1.wav"), b"RIFF").unwrap();
+        let (queue, mut rx) = AnnounceQueue::new();
+        let services = Services {
+            announcements: Some(queue),
+            messages_dir: Some(dir.clone()),
+            ..Services::default()
+        };
+        let arb = Arc::new(Mutex::new(Arbitrator::new()));
+        let r = handle_full(json!({"cmd": "play_message", "id": "m1"}), arb, &services).await;
+        assert_eq!(r, json!({"ok": true, "position": 1}));
+        assert_eq!(rx.recv().await, Some(Item::Recording(dir.join("m1.wav"))));
+    }
+
+    #[tokio::test]
+    async fn play_message_rejects_bad_and_missing_ids() {
+        let dir = messages_dir("bad");
+        let (queue, _rx) = AnnounceQueue::new();
+        let services = Services {
+            announcements: Some(queue),
+            messages_dir: Some(dir),
+            ..Services::default()
+        };
+        for (request, message) in [
+            (
+                json!({"cmd": "play_message", "id": "../../etc/passwd"}),
+                "invalid message id",
+            ),
+            (
+                json!({"cmd": "play_message", "id": "nope"}),
+                "no message nope",
+            ),
+            (json!({"cmd": "play_message"}), "missing id"),
+        ] {
+            let arb = Arc::new(Mutex::new(Arbitrator::new()));
+            assert_eq!(
+                handle_full(request.clone(), arb, &services).await,
+                json!({"ok": false, "error": message}),
+                "{request}"
+            );
+        }
+        let arb = Arc::new(Mutex::new(Arbitrator::new()));
+        let r = handle_full(
+            json!({"cmd": "play_message", "id": "x"}),
+            arb,
+            &Services::default(),
+        )
+        .await;
+        assert_eq!(r, json!({"ok": false, "error": "messages unavailable"}));
     }
 }

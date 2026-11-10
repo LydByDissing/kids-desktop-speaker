@@ -10,7 +10,8 @@
 #   - a full-scale tone leaves at the -1 dBFS limit, with no clipped samples
 #   - the loopback's rate follows the HAT, and CamillaDSP keeps up
 # With KDS_AIRPLAY_SINK set (this host streams AirPlay through PipeWire), it
-# also checks that the sender's volume changes the level on the Pi.
+# also checks that the sender's volume changes the level on the Pi. With
+# KDS_DSP_SOAK_MIN=<minutes> it plays DR P3 that long and counts underruns.
 # The speaker is muted unless KDS_HW_AUDIBLE=1.
 
 set -uo pipefail
@@ -103,6 +104,18 @@ if [ -n "${KDS_AIRPLAY_SINK:-}" ]; then
     log "  capture peak at volume 1.0: $loud dB, at 0.5: $quiet dB"
     check "full sender volume arrives at -6 dB" "$(near "$loud" -6 0.5)" yes
     check "halving the sender's volume lowers the level by at least 6 dB" "$(atmost "$quiet" "$loud - 6")" yes
+fi
+
+if [ -n "${KDS_DSP_SOAK_MIN:-}" ]; then
+    log "=== Soak: ${KDS_DSP_SOAK_MIN} min of radio"
+    remote "curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{\"id\": \"dr-p3\"}' http://127.0.0.1:8080/api/radio/play"
+    sleep 15
+    from=$(remote date +%s)
+    sleep $((KDS_DSP_SOAK_MIN * 60))
+    to=$(remote date +%s)
+    remote "curl -s -o /dev/null -X POST http://127.0.0.1:8080/api/radio/stop"
+    check "no underruns during ${KDS_DSP_SOAK_MIN} min of radio" \
+        "$(remote "journalctl -u camilladsp --since @$from --until @$to -o cat --no-pager" | grep -ciE 'underrun|overrun')" 0
 fi
 
 if [ "$fail" = 0 ]; then log "All DSP tests passed."; else log "Some DSP tests FAILED."; fi

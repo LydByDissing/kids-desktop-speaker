@@ -406,18 +406,33 @@ Open Questions
 
 .. todo::
 
-   - **HTTPS certificates**: The API Server uses HTTPS, but on a local
-     network with no domain name, we need self-signed certs. Options:
-     (a) generate a self-signed cert on first boot, (b) use a pre-generated
-     cert in the RAUC bundle, (c) use HTTP for local network (simpler but
-     less secure). For v1, option (a) — generate on first boot, store on
-     data partition.
+   - **HTTPS certificates**: Resolved by DEC-032, implemented in KDS-cmt
+     (WEB_REQ_001): a self-signed certificate made on first boot and kept on
+     the data partition. See "HTTPS" below.
 
    - **Home Assistant protocol**: What specific integration point does Home
      Assistant use? REST API calls? WebSocket? MQTT? This needs to be
      defined before implementation. For now, we expose a standard REST
      API and mDNS — HA can use the ``rest`` integration.
 
-   - **Port configuration**: What port does the API Server listen on?
-     Default: 443 (HTTPS) or 8443 (HTTPS alt). Should be configurable
-     in ``/data/config/api-server.json``.
+   - **Port configuration**: Resolved: HTTPS on 443 for the Web UI and API,
+     plain HTTP on 8080 for health checks and tests (WEB_REQ_001).
+
+HTTPS
+-----
+
+Implemented 2026-11-10 (KDS-cmt, WEB_REQ_001, DEC-032).
+
+- On first start the API Server creates a self-signed certificate for
+  ``<hostname>.local``, ``<hostname>`` and ``localhost`` (valid 20 years, made
+  with ``rcgen``) and keeps it in ``/data/tls`` (key mode 600), so browsers that
+  accepted it once keep trusting it across updates. A new hostname gets a new
+  certificate.
+- HTTPS listens on 443 (``axum-server`` with rustls and ring); plain HTTP stays on
+  8080 for the health check, the VM tests and the hardware tests.
+- Each listener marks its requests with a ``Transport``. Routes that receive
+  credentials or other secrets add the ``require_https`` guard, which answers 403
+  over plain HTTP, and also when no marker is present, so a missing layer fails
+  safe.
+- ``make -C ci hw-https-test`` checks it on a real Pi, connecting by the device's
+  ``.local`` name and trusting only the certificate fetched from it.

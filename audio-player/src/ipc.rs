@@ -23,6 +23,14 @@ pub struct Radio {
 pub struct Services {
     pub announcements: Option<AnnounceQueue>,
     pub radio: Option<Arc<Radio>>,
+    /// Where the API Server keeps recorded voice messages (DEC-037).
+    pub messages_dir: Option<std::path::PathBuf>,
+}
+
+/// A message id names a file in the messages directory, so it may only hold
+/// letters, digits and dashes: nothing that can reach another file.
+pub fn valid_message_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 pub async fn serve(
@@ -56,7 +64,7 @@ pub async fn handle_with(
 ) -> Value {
     let services = Services {
         announcements: announcements.cloned(),
-        radio: None,
+        ..Services::default()
     };
     handle_full(request, arb, &services).await
 }
@@ -179,6 +187,24 @@ pub async fn handle_full(
                 Some(_) => return error("lang must be a string"),
             };
             match Announcement::new(text, lang).and_then(|a| queue.submit(a)) {
+                Ok(position) => ok(json!({ "position": position })),
+                Err(e) => error(e),
+            }
+        }
+        Some("play_message") => {
+            let (Some(queue), Some(dir)) = (announcements, &services.messages_dir) else {
+                return error("messages unavailable");
+            };
+            let id = match str_arg(&request, "id") {
+                Ok(id) if valid_message_id(id) => id,
+                Ok(_) => return error("invalid message id"),
+                Err(e) => return error(e),
+            };
+            let path = dir.join(format!("{id}.wav"));
+            if !path.is_file() {
+                return error(format!("no message {id}"));
+            }
+            match queue.submit_recording(path) {
                 Ok(position) => ok(json!({ "position": position })),
                 Err(e) => error(e),
             }

@@ -1,6 +1,7 @@
 [Unit]
 Description=Kids Desktop Speaker — API Server
-After=network.target
+# The certificate names the device by hostname and lives on /data (WEB_REQ_001).
+After=network.target kds-hostname.service kds-device-config.service
 Wants=network.target
 
 [Service]
