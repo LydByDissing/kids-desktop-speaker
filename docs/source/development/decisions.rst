@@ -2405,3 +2405,39 @@ speaker stays linked across updates, and caches no audio, to spare the SD card.
 the build script. Like ring in the OTA Updater, the binary carries an ARMv7 ELF
 tag from ring's assembly, which chooses instructions at run time; the ARM1176
 emulation test and real playback on the Pi are what prove it runs.
+
+DEC-035 — Bluetooth Audio with BlueALSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_035
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, bluetooth
+
+**Decision**: Bluetooth audio from a phone or tablet (A2DP sink) uses BlueALSA
+(Debian ``bluez-alsa-utils`` 4.0.0): ``bluealsa`` registers the A2DP sink with
+BlueZ and ``bluealsa-aplay`` plays the stream into the ``speaker`` device
+(DEC-033). PulseAudio and PipeWire were not considered: a sound server is too
+heavy for the Pi Zero W and would duplicate the ALSA setup.
+
+**Measured on the Pi Zero W (2026-11-10)**, an iPad playing over SBC:
+bluetoothd, bluealsa and bluealsa-aplay together use 15 % CPU and about 15 MB.
+
+**Findings from the test**
+
+- The adapter must report the loudspeaker device class
+  (``Class = 0x240414`` in ``/etc/bluetooth/main.conf``), or iOS won't offer it
+  as a speaker.
+- ``bluealsa`` must run with ``-p a2dp-sink`` only; the packaged service also
+  offers ``a2dp-source``.
+- The pairing agent must trust and authorise the device during pairing. When
+  authorisation of AVRCP (remote control) was refused because the device was
+  not yet trusted, iOS dropped the audio link after 10 seconds.
+- ``bluealsa-aplay`` must be a source managed by the Audio Player, so that an
+  announcement pauses it like AirPlay and Spotify (TTS_REQ_002); unmanaged, the
+  announcement plays over the music.
+
+**Consequences**: Pairing needs a user action (a button or the Web UI) that
+opens a time-limited pairing window with an auto-accepting agent, which the
+Bluetooth Service owns. That work is tracked separately.
