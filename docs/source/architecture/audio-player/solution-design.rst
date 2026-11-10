@@ -230,6 +230,15 @@ from the Audio Player via the MPD protocol.
 so it runs from boot. Its output is the ``speaker`` device (DEC-033), not a
 loopback.
 
+**Implemented (2026-11-10, KDS-7ix, RAD_REQ_001)**: MPD runs as its packaged
+service, listening on ``127.0.0.1:6600`` only (``mpd.socket``, which listens on
+every interface, is disabled) and with no state file, so it doesn't resume by
+itself after a reboot. The Audio Player talks to it with a small client of its
+own (``audio-player/src/mpd.rs``: ``clear``/``add``/``play``, ``pause``,
+``stop``, ``status``/``currentsong``) rather than the ``mpd_client`` crate.
+Stations live in ``/data/radio/stations.json`` (DR P1–P3 until changed).
+Announcements pause MPD through the protocol and resume it afterwards.
+
 **Rationale**:
 
 - MPD is proven: Volumio, moOde, and RuneAudio all use it successfully.

@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-install librespot vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-install librespot vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -96,6 +96,10 @@ hw-wifi-test:
 ## hw-bluetooth-test — Bluetooth audio input on a real Pi (BT_REQ_001-003): make hw-bluetooth-test PI_HOST=root@host
 hw-bluetooth-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-bluetooth-test.sh
+
+## hw-radio-test — Internet radio on a real Pi (RAD_REQ_001): make hw-radio-test PI_HOST=root@host
+hw-radio-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-radio-test.sh
 
 ## hw-install — Install the current build on a development Pi: make hw-install PI_HOST=root@host
 hw-install:

@@ -1,7 +1,9 @@
 use audio_player::announcer::{espeak_voices, AnnounceQueue, Announcer, Aplay, Chimes};
 use audio_player::arbitrator::Arbitrator;
-use audio_player::ipc;
+use audio_player::ipc::{self, Radio, Services};
 use audio_player::manager::{ManagedSources, Supervision};
+use audio_player::mpd::Mpd;
+use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -13,6 +15,8 @@ use tts_engine::{TtsCache, DEFAULT_TTL};
 const TTS_CACHE_DIR: &str = "/data/tts-cache";
 /// The chimes are regenerated at every start, so they live in /run.
 const CHIME_DIR: &str = "/run/kds/chimes";
+/// MPD listens on localhost only (/etc/mpd.conf).
+const MPD_ADDR: &str = "127.0.0.1:6600";
 /// The shared output in /etc/asound.conf (DEC-033).
 const OUTPUT_DEVICE: &str = "speaker";
 
@@ -33,8 +37,17 @@ async fn main() -> anyhow::Result<()> {
     let bluetooth_up = bluetooth.start_if_available().await;
     println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up}, bluetooth: {bluetooth_up})");
 
+    // Internet radio through the MPD service (RAD_REQ_001, DEC_005).
+    let mpd = Mpd::new(MPD_ADDR);
+    let radio = Arc::new(Radio {
+        stations: StationStore::new(STATIONS_FILE),
+        mpd: mpd.clone(),
+        current: std::sync::Mutex::new(None),
+    });
+
     let sources = Arc::new(Mutex::new(ManagedSources {
         managers: vec![airplay, spotify, bluetooth],
+        mpd: Some(mpd),
     }));
 
     // Announcements (TTS_REQ_002). If the cache or chimes can't be set up, the
@@ -74,7 +87,11 @@ async fn main() -> anyhow::Result<()> {
 
     let arb_clone = Arc::clone(&arb);
     let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc::serve("/run/kds/audio.sock", arb_clone, queue).await {
+        let services = Services {
+            announcements: Some(queue),
+            radio: Some(radio),
+        };
+        if let Err(e) = ipc::serve("/run/kds/audio.sock", arb_clone, services).await {
             eprintln!("IPC server error: {}", e);
         }
     });

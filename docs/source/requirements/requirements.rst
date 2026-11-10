@@ -130,6 +130,18 @@ Software — Audio Streaming
 
    The system shall support internet radio streaming (e.g., Icecast, Shoutcast).
 
+.. req:: RAD_REQ_001
+   :id: RAD_REQ_001
+   :status: open
+   :tags: software, streaming, radio
+
+   Internet radio stations shall be kept in a list on the data partition, which
+   the API can read, add to and remove from, and the speaker shall play a
+   station from the list on request and stop on request (SW_REQ_004, DEC_005).
+   Only ``http`` and ``https`` stream URLs are accepted. A new speaker starts
+   with DR P1, P2 and P3. An announcement pauses the radio and resumes it
+   afterwards (TTS_REQ_002).
+
 Software — DSP
 --------------
 

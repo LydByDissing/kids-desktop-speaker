@@ -13,6 +13,16 @@ pub fn app(state: AppState) -> Router {
         .route("/api/system/time", get(routes::system::get_time))
         .route("/api/audio/source", get(routes::audio::get_source))
         .route("/api/tts", post(routes::tts::post_tts))
+        .route(
+            "/api/radio/stations",
+            get(routes::radio::get_stations).post(routes::radio::add_station),
+        )
+        .route(
+            "/api/radio/stations/:id",
+            axum::routing::delete(routes::radio::remove_station),
+        )
+        .route("/api/radio/play", post(routes::radio::play))
+        .route("/api/radio/stop", post(routes::radio::stop))
         .route("/api/ota/status", get(routes::services::get_ota_status))
         .route("/api/ota/check", post(routes::services::post_ota_check))
         .route("/api/ota/reboot", post(routes::services::post_ota_reboot))

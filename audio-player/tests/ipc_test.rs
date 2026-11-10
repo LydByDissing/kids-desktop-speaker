@@ -11,7 +11,7 @@ fn arbitrator() -> Arc<Mutex<Arbitrator>> {
 #[tokio::test]
 async fn status_reports_no_active_source_when_idle() {
     let response = handle(json!({"cmd": "status"}), arbitrator()).await;
-    assert_eq!(response, json!({"ok": true, "active": null}));
+    assert_eq!(response, json!({"ok": true, "active": null, "radio": null}));
 }
 
 #[tokio::test]

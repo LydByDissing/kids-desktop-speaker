@@ -13,22 +13,24 @@ use bluetooth_service::pairing::PairingWindow;
 /// retrying until BlueZ is up (BT_REQ_002). Returns the connection, which must
 /// stay open for the agent to keep working.
 async fn start_agent(window: Arc<Mutex<PairingWindow>>) -> Option<zbus::Connection> {
-    let bus = match zbus::Connection::system().await {
+    let agent = Agent {
+        window,
+        bluez: "org.bluez".into(),
+    };
+    // Served from the builder, so the object server is running before BlueZ
+    // can send the agent anything.
+    let bus = match zbus::connection::Builder::system().and_then(|b| b.serve_at(AGENT_PATH, agent))
+    {
+        Ok(builder) => builder.build().await,
+        Err(e) => Err(e),
+    };
+    let bus = match bus {
         Ok(bus) => bus,
         Err(e) => {
             eprintln!("bluetooth-service: no system bus, pairing disabled: {e}");
             return None;
         }
     };
-    let agent = Agent {
-        window,
-        bus: bus.clone(),
-        bluez: "org.bluez".into(),
-    };
-    if let Err(e) = bus.object_server().at(AGENT_PATH, agent).await {
-        eprintln!("bluetooth-service: could not serve the agent: {e}");
-        return None;
-    }
     let mut delay = Duration::from_secs(1);
     loop {
         match bluez::register_agent(&bus, "org.bluez", AGENT_PATH).await {

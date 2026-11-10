@@ -153,6 +153,30 @@ else
 fi
 
 echo ""
+echo "--- Internet radio (MPD, RAD_REQ_001) ---"
+require_executable /usr/bin/mpd
+if grep -q '^bind_to_address "127.0.0.1"' /etc/mpd.conf && grep -q 'device      "speaker"' /etc/mpd.conf; then
+    ok "MPD listens on localhost and plays to the speaker"
+else
+    fail "mpd.conf does not bind localhost or play to the speaker"
+fi
+if grep -q '^state_file' /etc/mpd.conf; then
+    fail "MPD keeps a state file (radio would restart after a reboot)"
+else
+    ok "MPD keeps no state file"
+fi
+if [ -e /etc/systemd/system/multi-user.target.wants/mpd.service ]; then
+    ok "mpd.service starts at boot"
+else
+    fail "mpd.service is not enabled"
+fi
+if ls /etc/systemd/system/*.wants/mpd.socket >/dev/null 2>&1; then
+    fail "mpd.socket is enabled (it listens on every interface)"
+else
+    ok "mpd.socket is disabled"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf

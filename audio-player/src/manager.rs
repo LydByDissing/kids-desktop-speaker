@@ -226,6 +226,8 @@ fn describe(status: ExitStatus) -> String {
 /// The streaming sources, shared by the supervision loop and the announcer.
 pub struct ManagedSources {
     pub managers: Vec<Manager>,
+    /// MPD runs as its own service, so it is paused through its protocol.
+    pub mpd: Option<crate::mpd::Mpd>,
 }
 
 impl ManagedSources {
@@ -257,10 +259,27 @@ impl crate::announcer::Sources for ManagedSources {
                 }
             }
         }
+        if let Some(mpd) = &self.mpd {
+            if let Ok(status) = mpd.status().await {
+                if status.state == crate::mpd::PlayState::Play {
+                    match mpd.set_paused(true).await {
+                        Ok(()) => paused.push("mpd".to_string()),
+                        Err(e) => eprintln!("audio-player: {e}"),
+                    }
+                }
+            }
+        }
         paused
     }
 
     async fn resume(&mut self, names: &[String]) {
+        if let Some(mpd) = &self.mpd {
+            if names.iter().any(|n| n == "mpd") {
+                if let Err(e) = mpd.set_paused(false).await {
+                    eprintln!("audio-player: {e}");
+                }
+            }
+        }
         for manager in &mut self.managers {
             if names.iter().any(|n| n == manager.name()) {
                 if let Err(e) = manager.resume().await {

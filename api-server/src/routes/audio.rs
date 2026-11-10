@@ -8,7 +8,12 @@ use crate::state::{AppState, Service};
 /// The active source, from the Audio Player. Sources it doesn't report are idle.
 pub async fn get_source(State(state): State<AppState>) -> ApiResult {
     let status = query(&state, Service::AudioPlayer, "status").await?;
-    let active = status.get("active").and_then(Value::as_str);
+    // Radio plays through MPD, which reports its own state (RAD_REQ_001).
+    let radio_playing = status["radio"]["state"] == "playing";
+    let active = status
+        .get("active")
+        .and_then(Value::as_str)
+        .or(radio_playing.then_some("radio"));
     let source_state = |name: &str| {
         if active == Some(name) {
             "playing"
@@ -21,7 +26,11 @@ pub async fn get_source(State(state): State<AppState>) -> ApiResult {
         "sources": {
             "airplay": { "state": source_state("airplay") },
             "spotify": { "state": source_state("spotify") },
-            "radio":   { "state": source_state("radio") }
+            "radio":   {
+                "state": source_state("radio"),
+                "station": status["radio"]["station"],
+                "title": status["radio"]["title"]
+            }
         }
     })))
 }

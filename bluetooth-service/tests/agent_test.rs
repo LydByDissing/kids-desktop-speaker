@@ -163,17 +163,19 @@ async fn setup() -> Option<Setup> {
         .await
         .unwrap();
     let window = Arc::new(Mutex::new(PairingWindow::default()));
+    let agent = Agent {
+        window: Arc::clone(&window),
+        bluez: "org.bluez".into(),
+    };
+    // As in the service: served from the builder, so no message can arrive
+    // before the object server is running.
     let speaker = connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .serve_at(AGENT_PATH, agent)
         .unwrap()
         .build()
         .await
         .unwrap();
-    let agent = Agent {
-        window: Arc::clone(&window),
-        bus: speaker.clone(),
-        bluez: "org.bluez".into(),
-    };
-    speaker.object_server().at(AGENT_PATH, agent).await.unwrap();
     Some(Setup {
         _bus: bus,
         bluez,
@@ -201,6 +203,18 @@ impl Setup {
             Err(zbus::Error::MethodError(name, _, _)) => Err(name.to_string()),
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    /// Waits up to a second for the agent's trust to land (it is set in a task
+    /// after the agent has answered).
+    async fn becomes_trusted(&self) -> bool {
+        for _ in 0..50 {
+            if self.trusted().await {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        false
     }
 
     async fn trusted(&self) -> bool {
@@ -276,21 +290,20 @@ async fn pairing_during_the_window_is_accepted_and_trusted() {
             .await,
         Ok(())
     );
-    assert!(s.trusted().await, "a paired device must be trusted at once");
+    assert!(s.becomes_trusted().await, "a paired device must be trusted");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_trusted_device_is_authorised_after_the_window_closes() {
+async fn services_are_authorised_during_the_window_and_the_device_trusted() {
     let Some(s) = setup().await else { return };
     s.open_window();
-    s.call_agent("RequestAuthorization", &(device(),))
-        .await
-        .unwrap();
-    s.window.lock().unwrap().close();
+    // BlueZ may ask about AVRCP before the agent's trust has landed.
     assert_eq!(
         s.call_agent("AuthorizeService", &(device(), AVRCP)).await,
         Ok(())
     );
+    // Trusted, BlueZ authorises it on later connections without asking.
+    assert!(s.becomes_trusted().await);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -48,6 +48,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     espeak-ng \
     # Bluetooth audio input: A2DP sink (DEC-035)
     bluez-alsa-utils \
+    # Internet radio (DEC_005)
+    mpd \
     # Bluetooth
     bluez \
     # RAUC
@@ -136,6 +138,7 @@ COPY ci/device/asound.conf /etc/asound.conf
 COPY ci/device/shairport-sync.conf /etc/shairport-sync.conf
 # Bluetooth audio (DEC-035): sink-only BlueALSA, pairings on /data, and the
 # loudspeaker device class, without which iOS won't offer the speaker.
+COPY ci/device/mpd.conf /etc/mpd.conf
 COPY ci/device/bluealsa-sink-only.conf /etc/systemd/system/bluealsa.service.d/sink-only.conf
 COPY ci/device/bluetooth-data.conf /etc/systemd/system/bluetooth.service.d/data.conf
 RUN grep -q '^\[General\]' /etc/bluetooth/main.conf \
@@ -284,8 +287,11 @@ RUN systemctl enable \
         api-server.service \
         audio-player.service \
         ota-updater.service \
-        bluetooth-service.service && \
+        bluetooth-service.service \
+        mpd.service && \
     systemctl disable dnsmasq.service hostapd.service shairport-sync.service bluealsa-aplay.service && \
+    # Socket activation would listen on every interface; MPD binds localhost.
+    systemctl disable mpd.socket && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 

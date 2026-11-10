@@ -1,9 +1,11 @@
 //! The BlueZ pairing agent (BT_REQ_002, DEC-035).
 //!
 //! BlueZ calls these methods when a device pairs or connects. While the pairing
-//! window is open the agent accepts the pairing and marks the device trusted, so
-//! its profiles (A2DP, AVRCP) are authorised at once; iOS drops the audio link if
-//! AVRCP is refused. Outside the window, only trusted devices are authorised.
+//! window is open the agent accepts the pairing and its profiles (A2DP, AVRCP),
+//! and marks the device trusted; iOS drops the audio link if AVRCP is refused.
+//! Trusted devices reconnect later without involving the agent. Outside the
+//! window, every request reaches the agent only for an unknown device and is
+//! rejected.
 
 use crate::pairing::PairingWindow;
 use std::sync::{Arc, Mutex};
@@ -25,8 +27,6 @@ pub enum AgentError {
 
 pub struct Agent {
     pub window: Arc<Mutex<PairingWindow>>,
-    /// The bus to reach BlueZ's device objects on.
-    pub bus: Connection,
     /// BlueZ's bus name; "org.bluez" except in tests.
     pub bluez: String,
 }
@@ -39,42 +39,44 @@ impl Agent {
             .unwrap_or(false)
     }
 
-    async fn device_property(&self, device: &ObjectPath<'_>, name: &str) -> zbus::Result<bool> {
-        let reply = self
-            .bus
-            .call_method(
-                Some(self.bluez.as_str()),
-                device,
-                Some("org.freedesktop.DBus.Properties"),
-                "Get",
-                &("org.bluez.Device1", name),
-            )
-            .await?;
-        let value: zbus::zvariant::OwnedValue = reply.body().deserialize()?;
-        bool::try_from(value).map_err(zbus::Error::Variant)
-    }
-
-    async fn set_trusted(&self, device: &ObjectPath<'_>) -> zbus::Result<()> {
-        self.bus
-            .call_method(
-                Some(self.bluez.as_str()),
-                device,
-                Some("org.freedesktop.DBus.Properties"),
-                "Set",
-                &("org.bluez.Device1", "Trusted", Value::from(true)),
-            )
-            .await?;
-        Ok(())
+    /// Marks the device trusted, so it reconnects later without the agent
+    /// (BlueZ authorises trusted devices itself). This runs as its own task:
+    /// the agent answers BlueZ first and never waits on BlueZ while BlueZ waits
+    /// on it.
+    fn trust_soon(&self, bus: &Connection, device: &ObjectPath<'_>) {
+        let bus = bus.clone();
+        let bluez = self.bluez.clone();
+        let device = device.to_owned();
+        tokio::spawn(async move {
+            let result = bus
+                .call_method(
+                    Some(bluez.as_str()),
+                    &device,
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Set",
+                    &("org.bluez.Device1", "Trusted", Value::from(true)),
+                )
+                .await;
+            match result {
+                Ok(_) => println!("bluetooth-service: trusted {device}"),
+                Err(e) => eprintln!("bluetooth-service: could not trust {device}: {e}"),
+            }
+        });
     }
 
     /// Accepts during the pairing window and trusts the device; rejects otherwise.
-    async fn accept_new(&self, device: &ObjectPath<'_>, what: &str) -> Result<(), AgentError> {
+    fn accept_new(
+        &self,
+        bus: &Connection,
+        device: &ObjectPath<'_>,
+        what: &str,
+    ) -> Result<(), AgentError> {
         if !self.window_open() {
             eprintln!("bluetooth-service: rejected {what} from {device}: pairing window closed");
             return Err(AgentError::Rejected("pairing window closed".into()));
         }
-        self.set_trusted(device).await?;
-        println!("bluetooth-service: accepted {what} from {device} and trusted it");
+        println!("bluetooth-service: accepted {what} from {device}");
+        self.trust_soon(bus, device);
         Ok(())
     }
 }
@@ -85,15 +87,23 @@ impl Agent {
         println!("bluetooth-service: agent released by BlueZ");
     }
 
-    async fn request_pin_code(&self, device: OwnedObjectPath) -> Result<String, AgentError> {
-        self.accept_new(&device, "PIN request").await?;
+    async fn request_pin_code(
+        &self,
+        #[zbus(connection)] bus: &Connection,
+        device: OwnedObjectPath,
+    ) -> Result<String, AgentError> {
+        self.accept_new(bus, &device, "PIN request")?;
         Ok("0000".into())
     }
 
     async fn display_pin_code(&self, _device: OwnedObjectPath, _pincode: String) {}
 
-    async fn request_passkey(&self, device: OwnedObjectPath) -> Result<u32, AgentError> {
-        self.accept_new(&device, "passkey request").await?;
+    async fn request_passkey(
+        &self,
+        #[zbus(connection)] bus: &Connection,
+        device: OwnedObjectPath,
+    ) -> Result<u32, AgentError> {
+        self.accept_new(bus, &device, "passkey request")?;
         Ok(0)
     }
 
@@ -101,31 +111,31 @@ impl Agent {
 
     async fn request_confirmation(
         &self,
+        #[zbus(connection)] bus: &Connection,
         device: OwnedObjectPath,
         _passkey: u32,
     ) -> Result<(), AgentError> {
-        self.accept_new(&device, "pairing").await
+        self.accept_new(bus, &device, "pairing")
     }
 
-    async fn request_authorization(&self, device: OwnedObjectPath) -> Result<(), AgentError> {
-        self.accept_new(&device, "pairing").await
+    async fn request_authorization(
+        &self,
+        #[zbus(connection)] bus: &Connection,
+        device: OwnedObjectPath,
+    ) -> Result<(), AgentError> {
+        self.accept_new(bus, &device, "pairing")
     }
 
-    /// A trusted device's services are always authorised; an unknown device's
-    /// only during the pairing window.
+    /// BlueZ asks only about devices that aren't trusted yet; it authorises
+    /// trusted ones itself. So a service is authorised during the pairing window
+    /// (the device has just paired) and rejected otherwise.
     async fn authorize_service(
         &self,
+        #[zbus(connection)] bus: &Connection,
         device: OwnedObjectPath,
         uuid: String,
     ) -> Result<(), AgentError> {
-        if self
-            .device_property(&device, "Trusted")
-            .await
-            .unwrap_or(false)
-        {
-            return Ok(());
-        }
-        self.accept_new(&device, &format!("service {uuid}")).await
+        self.accept_new(bus, &device, &format!("service {uuid}"))
     }
 
     async fn cancel(&self) {}
