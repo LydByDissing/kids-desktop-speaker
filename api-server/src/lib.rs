@@ -12,6 +12,7 @@ pub fn app(state: AppState) -> Router {
         .route("/health", get(routes::health::get_health))
         .route("/api/system/time", get(routes::system::get_time))
         .route("/api/audio/source", get(routes::audio::get_source))
+        .route("/api/tts", post(routes::tts::post_tts))
         .route("/api/ota/status", get(routes::services::get_ota_status))
         .route("/api/ota/check", post(routes::services::post_ota_check))
         .route("/api/ota/reboot", post(routes::services::post_ota_reboot))

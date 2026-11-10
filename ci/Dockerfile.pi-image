@@ -44,6 +44,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libasound2 \
     # AirPlay receiver, started by audio-player (DEC_004)
     shairport-sync \
+    # Announcements: espeak-ng speaks Danish and English (DEC-030)
+    espeak-ng \
     # Bluetooth
     bluez \
     # RAUC

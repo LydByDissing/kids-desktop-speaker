@@ -222,3 +222,51 @@ fn describe(status: ExitStatus) -> String {
         _ => status.to_string(),
     }
 }
+
+/// The streaming sources, shared by the supervision loop and the announcer.
+pub struct ManagedSources {
+    pub managers: Vec<Manager>,
+}
+
+impl ManagedSources {
+    /// Supervises every source (AUD_REQ_002) and returns what happened to each.
+    pub async fn supervise_all(&mut self) -> Vec<(&'static str, Supervision)> {
+        let mut events = Vec::new();
+        for manager in &mut self.managers {
+            events.push((manager.name(), manager.supervise().await));
+        }
+        events
+    }
+
+    pub async fn stop_all(&mut self) -> Result<(), ManagerError> {
+        for manager in &mut self.managers {
+            manager.stop().await?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::announcer::Sources for ManagedSources {
+    async fn pause_all(&mut self) -> Vec<String> {
+        let mut paused = Vec::new();
+        for manager in &mut self.managers {
+            if manager.is_running() {
+                match manager.pause().await {
+                    Ok(()) => paused.push(manager.name().to_string()),
+                    Err(e) => eprintln!("audio-player: {e}"),
+                }
+            }
+        }
+        paused
+    }
+
+    async fn resume(&mut self, names: &[String]) {
+        for manager in &mut self.managers {
+            if names.iter().any(|n| n == manager.name()) {
+                if let Err(e) = manager.resume().await {
+                    eprintln!("audio-player: {e}");
+                }
+            }
+        }
+    }
+}

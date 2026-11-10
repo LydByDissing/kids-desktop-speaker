@@ -126,3 +126,43 @@ async fn stop_after_the_source_exited_succeeds() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(manager.stop().await.is_ok());
 }
+
+fn proc_state(pid: u32) -> char {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    stat.rsplit(')')
+        .next()
+        .unwrap()
+        .trim_start()
+        .chars()
+        .next()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn announcer_pauses_and_resumes_only_running_sources() {
+    use audio_player::announcer::Sources;
+    use audio_player::manager::ManagedSources;
+
+    let mut running = Manager::new("sleep", "/bin/sleep", vec!["30".to_string()]);
+    assert!(running.start_if_available().await);
+    let pid = running.pid().unwrap();
+    let mut missing = Manager::new("missing", "/nonexistent/source", vec![]);
+    assert!(!missing.start_if_available().await);
+    let mut sources = ManagedSources {
+        managers: vec![running, missing],
+    };
+
+    let paused = sources.pause_all().await;
+    assert_eq!(paused, vec!["sleep".to_string()]);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(proc_state(pid), 'T', "source should be stopped");
+    // A stopped source has not exited, so supervision leaves it alone.
+    for (_, event) in sources.supervise_all().await {
+        assert_eq!(event, Supervision::Idle);
+    }
+
+    sources.resume(&paused).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(proc_state(pid), 'S', "source should run again");
+    sources.stop_all().await.unwrap();
+}

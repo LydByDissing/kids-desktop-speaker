@@ -1,15 +1,22 @@
-//! The Audio Player's IPC server: `status` and `mute` (IPC protocol, DEC-027).
+//! The Audio Player's IPC server: `status`, `mute` and `announce` (IPC protocol,
+//! DEC-027, DEC-033).
 
+use crate::announcer::{AnnounceQueue, Announcement};
 use crate::arbitrator::{Arbitrator, Source};
 use kds_ipc::{command, error, ok};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-pub async fn serve(sock_path: &str, arb: Arc<Mutex<Arbitrator>>) -> std::io::Result<()> {
+pub async fn serve(
+    sock_path: &str,
+    arb: Arc<Mutex<Arbitrator>>,
+    announcements: AnnounceQueue,
+) -> std::io::Result<()> {
     kds_ipc::serve(sock_path, move |request| {
         let arb = Arc::clone(&arb);
-        async move { handle(request, arb).await }
+        let announcements = announcements.clone();
+        async move { handle_with(request, arb, Some(&announcements)).await }
     })
     .await
 }
@@ -22,6 +29,14 @@ fn source_name(source: &Source) -> &'static str {
 }
 
 pub async fn handle(request: Value, arb: Arc<Mutex<Arbitrator>>) -> Value {
+    handle_with(request, arb, None).await
+}
+
+pub async fn handle_with(
+    request: Value,
+    arb: Arc<Mutex<Arbitrator>>,
+    announcements: Option<&AnnounceQueue>,
+) -> Value {
     match command(&request) {
         Some("status") => {
             let arb = arb.lock().await;
@@ -36,6 +51,25 @@ pub async fn handle(request: Value, arb: Arc<Mutex<Arbitrator>>) -> Value {
             };
             arb.lock().await.source_stopped(source);
             ok(Value::Null)
+        }
+        Some("announce") => {
+            let Some(queue) = announcements else {
+                return error("announcements unavailable");
+            };
+            let text = match request.get("text") {
+                Some(Value::String(text)) => text,
+                Some(_) => return error("text must be a string"),
+                None => return error("announce needs text"),
+            };
+            let lang = match request.get("lang") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(lang)) => Some(lang.as_str()),
+                Some(_) => return error("lang must be a string"),
+            };
+            match Announcement::new(text, lang).and_then(|a| queue.submit(a)) {
+                Ok(position) => ok(json!({ "position": position })),
+                Err(e) => error(e),
+            }
         }
         Some(other) => error(format!("unknown command: {other}")),
         None => error("missing cmd"),

@@ -140,38 +140,28 @@ TTS messages are **queued and played sequentially**. If multiple messages
 arrive while an announcement is playing, they wait in a FIFO queue.
 
 .. plantuml::
-   :caption: TTS Message Queue Processing
+   :caption: TTS Message Queue Processing (DEC-033)
    :name: fig-tts-queue
 
    @startuml
    title TTS Message Queue Processing
 
    participant "API Server" as api
-   queue "TTS Queue" as queue
-   participant "TTS Engine" as tts
-   participant "CamillaDSP" as cdsp
+   participant "Audio Player\nannouncer" as ann
+   participant "TTS cache\n+ espeak-ng" as tts
+   participant "Active source\n(e.g. shairport-sync)" as src
+   participant "ALSA speaker\n(dmix)" as out
 
-   api -> queue : enqueue("Dinner is ready!")
-   api -> queue : enqueue("Time for bed!")
-   note over queue: [Dinner is ready!, Time for bed!]
-
-   queue -> tts : dequeue("Dinner is ready!")
-   api -> cdsp : SetFaderVolume(Main, -20dB)
-   cdsp -> cdsp : Ramp main audio down (400ms)
-   tts -> tts : synthesize → write to ALSA loopback ch1
-   tts -> queue : playback complete
-   api -> cdsp : SetFaderVolume(Main, previous_level)
-   cdsp -> cdsp : Ramp main audio back up (400ms)
-
-   queue -> tts : dequeue("Time for bed!")
-   api -> cdsp : SetFaderVolume(Main, -20dB)
-   cdsp -> cdsp : Ramp main audio down (400ms)
-   tts -> tts : synthesize → write to ALSA loopback ch1
-   tts -> queue : playback complete
-   api -> cdsp : SetFaderVolume(Main, previous_level)
-   cdsp -> cdsp : Ramp main audio back up (400ms)
-
-   note over queue: empty
+   api -> ann : announce("Aftensmaden er klar", da-DK)
+   ann --> api : queued, position 1
+   ann -> tts : get_or_synthesize
+   tts --> ann : WAV (cached or new)
+   ann -> src : SIGSTOP
+   ann -> out : in chime
+   ann -> out : speech
+   ann -> out : out chime
+   ann -> src : SIGCONT
+   note over ann : next queued announcement
 
    @enduml
 
@@ -180,8 +170,12 @@ Queue behaviour:
 - Messages are processed FIFO (first in, first out)
 - A maximum queue length prevents unbounded growth (e.g., 10 messages)
 - When the queue is full, new messages are rejected with an API error
+- Speech is synthesised before the source is paused, so the pause covers only
+  the chimes and the speech
+- The source is resumed even if synthesis or playback fails
 - The API Server pushes ``tts_announcement`` WebSocket events for each message
-  (queued, playing, completed) so the Web UI can show queue status
+  (queued, playing, completed) so the Web UI can show queue status (not yet
+  implemented)
 
 Interfaces
 ----------
@@ -193,14 +187,15 @@ Interfaces
    * - Talks To
      - Protocol
      - Purpose
-   * - API Server
-     - Internal (Rust IPC)
-     - Receives TTS text messages, reports queue and playback status
-   * - Piper
-     - FFI (piper-tts-rs) or CLI subprocess
-     - Text-to-audio synthesis
-   * - ALSA loopback
-     - ALSA PCM
-     - Writes TTS audio to dedicated channel for CamillaDSP mixing
+   * - Audio Player
+     - Rust library (``tts-engine`` crate)
+     - The Audio Player's announcer calls the cache and synthesizer (DEC-033);
+       the API Server reaches it with the ``announce`` IPC command
+   * - espeak-ng
+     - CLI subprocess
+     - Text-to-audio synthesis, Danish or English (DEC-030)
+   * - ALSA ``speaker``
+     - ``aplay`` subprocess
+     - Plays the chimes and speech through the shared dmix output (DEC-033)
 
 Component pages will be created during the component interview phase.

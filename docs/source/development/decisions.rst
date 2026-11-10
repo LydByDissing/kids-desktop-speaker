@@ -2324,3 +2324,41 @@ token.
 **Context.** Cloud TTS credentials are entered in the Web UI (TTS_REQ_005). Over
 plain HTTP anyone on the home network could read them, and with equal tokens any
 integration could replace them.
+
+DEC-033 — Announcements Pause the Source; One Shared Output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_033
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, tts, dsp
+
+**Decision 1: an announcement pauses the source instead of ducking it.**
+The Audio Player hosts the announcer (TTS_REQ_002). For each announcement it
+synthesises the speech first (espeak-ng through the TTS cache), then pauses the
+running sources with SIGSTOP, plays an "in" chime, the speech and an "out"
+chime, and resumes the sources with SIGCONT. The sources are always resumed,
+even if playback fails. Announcements wait in a FIFO queue of at most 10.
+
+**Decision 2: one shared ALSA output.** ``/etc/asound.conf`` defines
+``hat_mix``, a dmix on the HAT at 48 kHz, and ``speaker``, a plug in front of
+it that converts any rate. Every source and the announcer write to
+``speaker``. A paused source keeps its PCM open, so without dmix the chime
+could not open the HAT.
+
+**Decision 3: the DSP pipeline drops to 2 channels.** Only one source plays at a
+time (AUD_REQ_001) and announcements no longer play over music, so the 6-channel
+loopback, per-source faders and TTS ducking in the CamillaDSP design are not
+needed. When CamillaDSP is added, it processes one stereo stream between
+``speaker`` and the HAT.
+
+**Context.** Measured on the Pi Zero W (2026-11-10): an AirPlay session from a
+PipeWire sender survived shairport-sync being stopped for 6 seconds and resumed
+playing at 15 % CPU; dmix played two streams at different rates at once.
+AirPlay is a live stream, so after an announcement it resumes at the live
+position rather than where it stopped.
+
+**Consequences.** No CamillaDSP is needed for announcements, and the CPU budget
+is one source plus the chimes and speech. Rate conversion for every stream
+happens in the ``speaker`` plug.

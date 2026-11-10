@@ -124,6 +124,14 @@ How other platforms handle internet radio and podcast playback:
 Audio Pipeline
 ---------------
 
+.. note::
+
+   Superseded in part by DEC-033 (2026-11-10): announcements pause the source
+   instead of being mixed over it, so the pipeline is one stereo stream. All
+   sources and the announcer write to the ``speaker`` device (a plug in front
+   of a dmix on the HAT). The 6-channel design below is kept for reference
+   until CamillaDSP is added.
+
 All audio flows through a dual-channel ALSA loopback pipeline:
 
 .. plantuml::
@@ -186,13 +194,13 @@ Source activation follows these rules:
 1. **New source starts**: Any currently playing source is paused/stopped/
    ignored. The new source takes over.
 
-2. **TTS announcement (highest priority)**: When a TTS message arrives:
-   - Current source volume is **ducked** (lowered) via CamillaDSP
-   - TTS audio plays at normal volume
-   - After TTS completes, the previous source volume is **restored** to its
-   original level
-   - The previous source is **not stopped** — it continues playing at reduced
-   volume during the announcement
+2. **TTS announcement (highest priority)**: When a TTS message arrives
+   (TTS_REQ_002, DEC-033):
+   - The speech is synthesised first (espeak-ng through the TTS cache)
+   - The running source is **paused** (SIGSTOP)
+   - An "in" chime, the speech and an "out" chime play through ``speaker``
+   - The source is **resumed** (SIGCONT). A live stream such as AirPlay
+     continues at the live position
 
 3. **Fade transitions**: All volume changes (source switch, TTS duck/restore)
    are handled by **CamillaDSP** via its TCP API. CamillaDSP applies smooth
@@ -213,7 +221,7 @@ Source Priority Order
    * - Priority
      - Source
    * - 1 (highest)
-     - TTS announcement (ducks others)
+     - TTS announcement (pauses others)
    * - 2
      - AirPlay (interrupts lower-priority sources)
    * - 3

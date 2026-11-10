@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-install vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -92,6 +92,14 @@ hw-ota-test:
 ## hw-wifi-test — Repeated downloads on a real Pi: make hw-wifi-test PI_HOST=root@host
 hw-wifi-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-wifi-test.sh
+
+## hw-install — Install the current build on a development Pi: make hw-install PI_HOST=root@host
+hw-install:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-install.sh $(VERSION)
+
+## hw-announce-test — Announcement flow on a real Pi (TTS_REQ_002): make hw-announce-test PI_HOST=root@host
+hw-announce-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-announce-test.sh
 
 ## vm-ab-test — A/B update and rollback test in QEMU with U-Boot (KDS-in5)
 vm-ab-test: export-rootfs

@@ -98,6 +98,23 @@ require_cmd amixer
 ok "ALSA utilities installed"
 
 echo ""
+echo "--- Announcements (TTS) ---"
+require_cmd espeak-ng
+for voice in da en; do
+    if espeak-ng -v "$voice" -w /tmp/tts-smoke.wav -- "test" 2>/dev/null && [ -s /tmp/tts-smoke.wav ]; then
+        ok "espeak-ng speaks $voice"
+    else
+        fail "espeak-ng cannot speak $voice"
+    fi
+done
+rm -f /tmp/tts-smoke.wav
+if grep -q "type dmix" /etc/asound.conf && grep -q 'slave.pcm "hat_mix"' /etc/asound.conf; then
+    ok "speaker plays through the shared dmix output"
+else
+    fail "asound.conf has no shared dmix output"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf
