@@ -1,6 +1,8 @@
 [Unit]
 Description=Kids Desktop Speaker — Audio Player
-After=api-server.service
+# The hostname names the speaker in the Spotify and AirPlay pickers; avahi
+# advertises them.
+After=api-server.service kds-hostname.service avahi-daemon.service
 Wants=api-server.service
 
 [Service]

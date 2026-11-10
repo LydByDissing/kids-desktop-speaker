@@ -15,6 +15,7 @@ ci/vm/ci_key.pub
 ci/vm/u-boot-qemu.bin
 ci/vm/modules.tar
 ci/output/
+ci/librespot/out/
 
 # Release pipeline binary staging (populated by artifact download in CI)
 ci/binaries/

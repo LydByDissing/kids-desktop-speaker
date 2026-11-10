@@ -1,7 +1,8 @@
 use audio_player::announcer::{espeak_voices, AnnounceQueue, Announcer, Aplay, Chimes};
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc;
-use audio_player::manager::{ManagedSources, Manager, Supervision};
+use audio_player::manager::{ManagedSources, Supervision};
+use audio_player::sources;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -21,22 +22,14 @@ async fn main() -> anyhow::Result<()> {
 
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
 
-    let mut airplay = Manager::new("shairport-sync", "/usr/bin/shairport-sync", vec![]);
-    let mut spotify = Manager::new(
-        "librespot",
-        "/usr/bin/librespot",
-        vec![
-            "--name".to_string(),
-            "KidsSpeaker".to_string(),
-            "--backend".to_string(),
-            "alsa".to_string(),
-        ],
-    );
+    let name = sources::device_name(&sources::hostname());
+    let mut airplay = sources::airplay();
+    let mut spotify = sources::spotify(&name);
 
     // Start whichever sources are installed
     let airplay_up = airplay.start_if_available().await;
     let spotify_up = spotify.start_if_available().await;
-    println!("audio-player: started (airplay: {airplay_up}, spotify: {spotify_up})");
+    println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up})");
 
     let sources = Arc::new(Mutex::new(ManagedSources {
         managers: vec![airplay, spotify],

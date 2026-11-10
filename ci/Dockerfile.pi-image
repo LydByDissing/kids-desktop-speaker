@@ -170,6 +170,10 @@ COPY ${BIN_DIR}/api-server /usr/local/bin/api-server
 COPY ${BIN_DIR}/audio-player /usr/local/bin/audio-player
 COPY ${BIN_DIR}/ota-updater /usr/local/bin/ota-updater
 COPY ${BIN_DIR}/bluetooth-service /usr/local/bin/bluetooth-service
+# Spotify Connect: librespot built from its pinned crates.io release by
+# make -C ci librespot (DEC-034); audio-player starts it.
+COPY ci/librespot/out/librespot /usr/bin/librespot
+COPY ci/librespot/out/LICENSE /usr/share/doc/librespot/copyright
 RUN chmod +x /usr/local/bin/api-server \
              /usr/local/bin/audio-player \
              /usr/local/bin/ota-updater \

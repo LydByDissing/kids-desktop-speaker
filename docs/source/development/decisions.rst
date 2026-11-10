@@ -2362,3 +2362,46 @@ position rather than where it stopped.
 **Consequences.** No CamillaDSP is needed for announcements, and the CPU budget
 is one source plus the chimes and speech. Rate conversion for every stream
 happens in the ``speaker`` plug.
+
+DEC-034 — Build librespot from Source in CI
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_034
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, spotify, ci
+
+**Decision**: Spotify Connect (SW_REQ_001) uses librespot 0.8.0, built by CI
+from its crates.io release for ``arm-unknown-linux-gnueabihf`` and installed as
+``/usr/bin/librespot``. The Audio Player starts and supervises it like
+shairport-sync.
+
+**Context**: librespot publishes no binaries, and raspotify's armhf package
+states that it does not support ARMv6 (Pi 1 and Pi Zero v1.x).
+
+**How it is built** (``make -C ci librespot``, ``ci/scripts/build-librespot.sh``):
+
+- The crate is downloaded from crates.io and checked against a pinned SHA-256,
+  then built with ``cross`` and ``--locked``, so the dependency versions are the
+  ones librespot released with.
+- Features: ``alsa-backend`` (plays to the ``speaker`` device, DEC-033),
+  ``rustls-tls-native-roots`` (no OpenSSL to cross-compile; the image's CA
+  certificates), ``with-avahi`` (Zeroconf through the avahi-daemon already
+  running, instead of a second mDNS responder on port 5353).
+- The cross image (``ci/librespot/Dockerfile``) adds the ALSA headers; the Pi's
+  own ARMv6 libasound is used at run time.
+- CI caches the output, keyed on the build recipe; a cache hit skips the build.
+- The build writes the licence of every crate compiled in; the release's licence
+  inventory includes it as ``librespot-crates.tsv``. librespot is MIT; its
+  dependencies are permissive (MIT, Apache-2.0, ISC, BSD, Zlib, Unicode) plus a
+  few MPL-2.0 crates, whose source is the published crate. There is no GPL code.
+
+**Runtime**: librespot advertises the hostname (as AirPlay does), outputs S16 at
+the speaker's native format, keeps credentials in ``/data/librespot`` so the
+speaker stays linked across updates, and caches no audio, to spare the SD card.
+
+**Consequences**: Upgrading librespot means changing the version and SHA-256 in
+the build script. Like ring in the OTA Updater, the binary carries an ARMv7 ELF
+tag from ring's assembly, which chooses instructions at run time; the ARM1176
+emulation test and real playback on the Pi are what prove it runs.

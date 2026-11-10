@@ -1,0 +1,5 @@
+# Cross config for building librespot (ci/scripts/build-librespot.sh, DEC-034).
+# The image is built from ci/librespot/Dockerfile by the build script. (cross
+# 0.2.5's own pre-build step makes an invalid image tag for this crate.)
+[target.arm-unknown-linux-gnueabihf]
+image = "kds-librespot-cross:0.2.5"

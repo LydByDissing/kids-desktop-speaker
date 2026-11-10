@@ -112,6 +112,16 @@ else
 fi
 
 echo ""
+echo "--- Spotify Connect (librespot, started by audio-player) ---"
+require_executable /usr/bin/librespot
+require_file /usr/share/doc/librespot/copyright
+if /usr/bin/librespot --version 2>/dev/null | grep -q "^librespot 0\.8\."; then
+    ok "librespot 0.8 runs"
+else
+    fail "librespot does not run"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf

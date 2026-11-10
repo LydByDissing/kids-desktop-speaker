@@ -7,6 +7,7 @@
 #   packages.tsv     every Debian package in the image: version, source package,
 #                    source version and declared licenses
 #   rust-crates.tsv  every Rust crate compiled into our services, with its license
+#   librespot-crates.tsv  every crate compiled into librespot (DEC-034)
 #   copyright/       each package's full copyright file
 # The source versions identify exactly which source code corresponds to the
 # binaries, for GPL and LGPL obligations.
@@ -49,6 +50,10 @@ for p in sorted(meta["packages"], key=lambda p: (p["name"], p["version"])):
         continue
     print("\t".join([p["name"], p["version"], p.get("license") or "UNKNOWN", p.get("source") or "local"]))
 ' > "$WORK/licenses/rust-crates.tsv"
+
+LIBRESPOT_CRATES="$REPO/ci/librespot/out/crates.tsv"
+[ -f "$LIBRESPOT_CRATES" ] || { echo "error: missing $LIBRESPOT_CRATES (run make -C ci librespot)" >&2; exit 1; }
+cp "$LIBRESPOT_CRATES" "$WORK/licenses/librespot-crates.tsv"
 
 tar -C "$WORK" -czf "$OUTPUT" licenses
 echo "==> License inventory: $OUTPUT ($(($(wc -l < "$WORK/licenses/packages.tsv") - 1)) packages, $(($(wc -l < "$WORK/licenses/rust-crates.tsv") - 1)) crates)"

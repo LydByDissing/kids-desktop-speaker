@@ -137,6 +137,25 @@ jobs:
       - name: Make binaries executable
         run: chmod +x ci/binaries/*
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      # librespot has no ARMv6 binaries, so it is built from its pinned crates.io
+      # release (DEC-034). The output only changes with the build recipe.
+      - name: Cache librespot
+        uses: actions/cache@v4
+        with:
+          path: ci/librespot/out
+          key: librespot-${{ hashFiles('ci/scripts/build-librespot.sh', 'ci/librespot/Dockerfile', 'ci/librespot/Cross.toml') }}
+
+      - name: Build librespot
+        run: make -C ci librespot
+
       - name: Cache Raspbian base
         uses: actions/cache@v4
         with:

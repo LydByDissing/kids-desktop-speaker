@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-install vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-install librespot vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -163,6 +163,10 @@ clean:
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) 2>/dev/null || true
 	rm -rf $(OUTPUT_DIR)
 	@echo "==> Clean complete"
+
+## librespot — Cross-compile librespot for ARMv6 from the pinned crates.io release (DEC-034)
+librespot:
+	@bash scripts/build-librespot.sh
 
 ## cross-build — Cross-compile all workspace binaries for ARMv6
 cross-build:
