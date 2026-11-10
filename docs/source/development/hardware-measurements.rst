@@ -67,6 +67,28 @@ MPD takes 6.7 s to start on the Pi Zero W, so it is started at boot rather than
 when radio is selected. It reports the stream's metadata (the current
 programme) through its protocol. This confirms DEC_005.
 
+Streaming receivers
+-------------------
+
+Playing through the ``speaker`` device (DEC-033), measured 2026-11-09/10.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 50 20 30
+
+   * - Receiver
+     - CPU
+     - Memory
+   * - shairport-sync 3.3.8 (AirPlay from PipeWire)
+     - 16–18%
+     - 16 MB
+   * - librespot 0.8.0 (Spotify Connect, 160 kbit/s)
+     - 17% (31% while a stream starts)
+     - 17 MB
+
+An announcement during Spotify playback stops librespot for a few seconds; it
+resumes as the same process after one ALSA underrun, which it recovers from.
+
 Text-to-speech
 --------------
 
