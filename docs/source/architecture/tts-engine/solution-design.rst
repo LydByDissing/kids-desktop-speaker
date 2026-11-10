@@ -45,7 +45,8 @@ The TTS Engine is a standalone Rust binary that:
    package "TTS Engine Process" as tts {
        component ["Message Queue\nFIFO, max 10"] as queue
        component ["Synthesis Worker\n(single thread)"] as worker
-       component ["Piper Backend\nFFI or CLI"] as piper
+       component ["Audio Cache\n/data/tts-cache, 90-day TTL"] as cache
+       component ["Synthesis Backend\nespeak-ng (da, en)"] as piper
        component ["ALSA Writer\nloopback_tts"] as alsa
    }
 
@@ -54,42 +55,128 @@ The TTS Engine is a standalone Rust binary that:
 
    api --> queue : enqueue(text, voice)
    queue --> worker : dequeue
-   worker --> piper : synthesize(text, voice)
-   piper --> worker : PCM frames
+   worker --> cache : lookup(text, engine, voice)
+   cache --> piper : synthesize on a miss
+   piper --> cache : WAV
+   cache --> worker : WAV
    worker --> alsa : write PCM
    alsa --> loopback : write
    worker --> api : started/finished events
 
    @enduml
 
-Piper Integration
+Synthesis Backend
 -----------------
 
-Piper is integrated as a **CLI subprocess** for v1.
+**Current: espeak-ng on the device (DEC-030)**, in Danish (``da``, the default)
+and English (``en``), chosen per announcement (TTS_REQ_003). It outputs 22.05 kHz
+WAV, which the default ALSA output resamples to 48 kHz for the HAT.
 
-**Rationale**: The ``piper-tts-rs`` crate (v0.1.4, 202 downloads) is
-early-stage and adds FFI complexity. The Piper CLI is stable, well-tested,
-and produces identical output. The subprocess overhead is negligible
-(synthesis takes seconds; process startup is ~50ms).
-
-**Fallback**: If the CLI approach proves too slow for rapid sequential
-messages, we can switch to ``piper-tts-rs`` or a long-running Piper daemon
-later. The trait-based backend abstraction makes this a drop-in replacement.
+**Deferred: cloud providers (DEC-031).** The rest of this section describes the
+cloud design, kept for later. It would add ElevenLabs and Google ahead of
+espeak-ng without changing the cache.
 
 .. code-block:: rust
 
-   trait TtsBackend: Send {
-       fn synthesize(&self, text: &str, voice: &str) -> Result<Vec<i16>, TtsError>;
+   trait Synthesizer: Send + Sync {
+       /// Provider, model, voice and audio format: everything that changes the
+       /// audio for the same text, so the cache never mixes their output.
+       fn id(&self, language: &str) -> String;
+       fn synthesize(&self, text: &str, language: &str, output: &Path)
+           -> Result<(), TtsError>;
    }
 
-   // v1 implementation
-   struct PiperCliBackend {
-       piper_path: PathBuf,
-       model_dir: PathBuf,
-   }
+   struct ElevenLabs { api_key: Secret, model: String, voices: HashMap<String, String> }
+   struct GoogleTts  { credentials: Secret, voices: HashMap<String, String> }
 
-   // future implementation
-   struct PiperFfiBackend { ... }
+   /// Providers ranked by quality tier. For each announcement, tries only those
+   /// that support its language and are usable, best first; the first success is
+   /// cached. espeak-ng is always last.
+   struct Chain { providers: Vec<Box<dyn Synthesizer>> }
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 39 39
+
+   * -
+     - ElevenLabs
+     - Google Cloud TTS
+   * - Request
+     - ``POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}``, header
+       ``xi-api-key``, JSON ``{"text", "model_id"}``
+     - ``POST https://texttospeech.googleapis.com/v1/text:synthesize``, JSON
+       ``{"input": {"text"}, "voice": {"languageCode", "name"}, "audioConfig"}``
+   * - Language
+     - Model ``eleven_multilingual_v2`` (the default) detects the language; the
+       voice is chosen per language
+     - ``voice.languageCode``, with a voice name per language
+   * - Audio requested
+     - ``output_format=wav_24000`` (44.1 kHz and above needs the Pro tier)
+     - ``LINEAR16`` at ``sampleRateHertz: 24000``; returned base64, with a WAV
+       header
+   * - Limits
+     - Not stated in the API reference
+     - 5,000 bytes per request; 1,000 requests per minute per project
+   * - Credentials
+     - API key, header ``xi-api-key``
+     - API key restricted to the Text-to-Speech API, header ``x-goog-api-key``;
+       service account only if a project rejects keys
+
+Both produce 24 kHz WAV files, which the cache stores as they are and the default
+ALSA output resamples to 48 kHz for the HAT.
+
+**Languages.** Danish (``da-DK``) is the default and English (``en-GB``) is
+also on; other languages are switched on in the config (TTS_REQ_003). espeak-ng
+has voices for both.
+
+**Choosing a provider per language.** Providers are ranked by quality tier, by
+default ElevenLabs, then Google, then espeak-ng. For each announcement the chain
+skips any provider that:
+
+- doesn't support the announcement's language with the configured model,
+- has no credentials or no voice configured for that language, or
+- is marked exhausted after a quota error.
+
+The rest are tried best first. Supported languages come from the providers'
+APIs when the settings page loads them (ElevenLabs ``GET /v1/models``, each
+model's language list; Google ``GET /v1/voices?languageCode=...``), so a model
+or account that can't speak a language is skipped for it automatically. At
+the time of writing, ElevenLabs' multilingual models (``eleven_multilingual_v2``,
+``eleven_flash_v2_5``, ``eleven_v3``) list Danish; ``eleven_flash_v2`` and
+``eleven_turbo_v2`` are English only.
+
+**Failures.** Each request has a 10 s timeout. Network errors, timeouts, HTTP 429
+and 5xx move on to the next provider. A response saying the quota is used up
+(ElevenLabs' quota error, Google's ``RESOURCE_EXHAUSTED``) also marks the provider
+as exhausted: it's skipped for the next hour, then tried again, and the Web UI
+shows it. There is no character cap; when free quota runs out, speech falls back
+to the next provider and finally to espeak-ng, and adding credentials for a paid
+account lifts the limit. HTTP 401 or 403 means the credentials are
+wrong: it moves on too, and is reported through the API so a parent can fix it.
+Text over a provider's limit is refused before sending.
+
+**Credentials** (TTS_REQ_005) live in ``/data/tts/credentials``, mode 0600, set
+through the API. They are never logged or returned by the API.
+
+**Privacy** (TTS_REQ_006). Cloud TTS is off until a parent enables it, after
+confirming: "Announcements will be sent to [provider] to be turned into speech.
+They leave your home network. Messages already spoken are reused without being
+sent again."
+
+Audio Cache
+-----------
+
+Synthesis takes about 2 seconds on the device, and the same messages repeat, so
+results are cached (TTS_REQ_001):
+
+- **Key**: SHA-256 of the synthesizer ID for the language (provider, model,
+  voice, audio format), the language and the text, with whitespace collapsed.
+  Different providers, voices and languages never share an entry.
+- **Storage**: ``/data/tts-cache/<key>.wav`` on the data partition, so the cache
+  survives updates. Files are written beside their final name and renamed into
+  place, so a crash never leaves a partial entry.
+- **Last use**: each hit sets the file's modification time to now.
+- **Expiry**: entries unused for 90 days are deleted, at startup and once a day.
 
 Voice Models
 ~~~~~~~~~~~~

@@ -76,6 +76,10 @@ require_cmd rauc
 require_file /etc/rauc/system.conf
 require_file /etc/rauc/keyring.pem
 require_file /etc/fw_env.config
+require_file /etc/asound.conf
+require_file /etc/udev/rules.d/90-kds-hat.rules
+require_file /etc/systemd/system/kds-hat-init.service
+require_file /usr/lib/kds-boot/overlays/iqaudio-codec.dtbo
 require_file /etc/udev/rules.d/80-kds-wifi-powersave.rules
 require_cmd iw
 require_file /usr/lib/systemd/system/rauc.service
@@ -92,6 +96,46 @@ echo "--- Audio (ALSA) ---"
 require_cmd aplay
 require_cmd amixer
 ok "ALSA utilities installed"
+
+echo ""
+echo "--- Announcements (TTS) ---"
+require_cmd espeak-ng
+# Voice data only: synthesis under QEMU user emulation depends on the host's QEMU
+# (it fails on the CI runner). make hw-announce-test proves speech on a real Pi.
+for voice in da en; do
+    require_file "/usr/lib/arm-linux-gnueabihf/espeak-ng-data/${voice}_dict"
+done
+if grep -q "type dmix" /etc/asound.conf && grep -q 'slave.pcm "hat_mix"' /etc/asound.conf; then
+    ok "speaker plays through the shared dmix output"
+else
+    fail "asound.conf has no shared dmix output"
+fi
+
+echo ""
+echo "--- Spotify Connect (librespot, started by audio-player) ---"
+require_executable /usr/bin/librespot
+require_file /usr/share/doc/librespot/copyright
+if /usr/bin/librespot --version 2>/dev/null | grep -q "^librespot 0\.8\."; then
+    ok "librespot 0.8 runs"
+else
+    fail "librespot does not run"
+fi
+
+echo ""
+echo "--- AirPlay (shairport-sync, started by audio-player) ---"
+require_executable /usr/bin/shairport-sync
+require_file /etc/shairport-sync.conf
+if grep -q 'output_device = "speaker"' /etc/shairport-sync.conf; then
+    ok "shairport-sync plays through the speaker device"
+else
+    fail "shairport-sync.conf does not use the speaker device"
+fi
+# audio-player owns the process; the package's own service would race it for the port.
+if [ -e /etc/systemd/system/multi-user.target.wants/shairport-sync.service ]; then
+    fail "the package's shairport-sync.service is enabled"
+else
+    ok "the package's shairport-sync.service is disabled"
+fi
 
 echo ""
 echo "--- Bluetooth ---"

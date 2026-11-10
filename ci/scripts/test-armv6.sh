@@ -28,7 +28,7 @@ check "image is Raspbian" "$?" 0
 
 for cmd in "/bin/bash --version" "/usr/bin/rauc --version" "/usr/sbin/bluetoothd --version" \
            "/bin/systemctl --version" "/usr/bin/openssl version" "/usr/sbin/hostapd -v" \
-           "/usr/sbin/dnsmasq --version" "/usr/sbin/avahi-daemon --version" "/usr/bin/aplay --version"; do
+           "/usr/sbin/dnsmasq --version" "/usr/bin/librespot --version" "/usr/sbin/avahi-daemon --version" "/usr/bin/aplay --version"; do
     rc=$(in_image "$cmd >/dev/null 2>&1; echo \$?" 2>/dev/null | tail -1)
     if [ "$rc" = 132 ] || [ "$rc" = 139 ] || [ "$rc" = 127 ]; then
         check "$cmd" "$rc" "no crash"

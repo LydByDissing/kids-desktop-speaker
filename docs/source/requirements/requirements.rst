@@ -52,6 +52,27 @@ Hardware
 Software — Audio Streaming
 --------------------------
 
+.. req:: AUD_REQ_001
+   :id: AUD_REQ_001
+   :status: open
+   :tags: software, audio
+
+   Only one audio source shall be active at a time. The CPU budget is therefore
+   the DSP chain plus the most demanding single source, not all sources at once
+   (see Hardware Measurements). A TTS announcement interrupts the active source
+   (TTS_REQ_002) rather than playing over it.
+
+.. req:: AUD_REQ_002
+   :id: AUD_REQ_002
+   :status: open
+   :tags: software, audio
+
+   The Audio Player shall reap a streaming source process (shairport-sync,
+   librespot) that exits on its own and restart it, waiting longer after each
+   quick failure (1 s doubling to at most 60 s, reset once the source has run
+   for a minute). A source that was never installed is not retried. The
+   source's own log output shall reach the journal.
+
 .. req:: SW_REQ_001
    :id: SW_REQ_001
    :status: open
@@ -132,7 +153,76 @@ Software — Features
    The system shall support sending custom text messages that are read aloud
    using a text-to-speech engine.
 
-   Note: deferred per DEC-015.
+   Note: deferred per DEC-015. Work on the TTS audio cache (TTS_REQ_001) started
+   on 2026-11-09 at the product owner's request; the engine choice is KDS-o2d.
+
+.. req:: TTS_REQ_001
+   :id: TTS_REQ_001
+   :status: open
+   :tags: software, tts, performance
+
+   Synthesised speech shall be cached on the data partition, keyed by the text,
+   language, provider, model, voice and audio format, and reused instead of
+   synthesised again. An entry shall be
+   removed 90 days after it was last used. Synthesis takes about 2 seconds on the
+   Pi Zero W, and the same messages repeat often.
+
+.. req:: TTS_REQ_002
+   :id: TTS_REQ_002
+   :status: open
+   :tags: software, tts, audio
+
+   A TTS announcement shall pause the active source, play a short "in" chime,
+   speak the announcement, play a short "out" chime, then resume the source where
+   it was paused. Nothing else plays during the announcement.
+
+.. req:: TTS_REQ_003
+   :id: TTS_REQ_003
+   :status: open
+   :tags: software, tts, i18n
+
+   Each announcement shall carry a language (a BCP 47 tag such as ``da-DK`` or
+   ``en-GB``) and be spoken in that language, with a voice configured per language
+   (ref DEC-030). Danish (``da-DK``) and English (``en-GB``) are available, with
+   Danish the default when an announcement names no language. Other languages
+   shall be switched on in the config.
+
+.. req:: TTS_REQ_004
+   :id: TTS_REQ_004
+   :status: deferred
+   :tags: software, tts, cloud
+
+   Speech shall be synthesised by a cloud service: ElevenLabs and Google Cloud
+   Text-to-Speech, ranked by quality tier, with espeak-ng on the device as the
+   last resort. Each announcement shall go to the highest-ranked provider that
+   supports its language and is usable: credentials set, a voice configured for
+   the language, and quota left. When a provider fails, is unreachable, or has used up its
+   quota, the next one shall be tried. A provider that reports its quota used up
+   shall be skipped for a period, rather than tried first for every announcement.
+   A cached announcement shall play without contacting any provider.
+
+.. req:: TTS_REQ_005
+   :id: TTS_REQ_005
+   :status: deferred
+   :tags: software, tts, security
+
+   Provider credentials shall be stored on the data partition, readable only by
+   the TTS Engine, and entered by a parent in the Web UI (Config → Text-to-speech)
+   or through the API. They shall be write-only: the UI and API show whether a
+   provider is configured and the last four characters of its key, never the key.
+   They shall never be part of the image, the repository or logs. Credentials
+   shall only be accepted over HTTPS, so they don't cross the network in clear,
+   and only from an admin token (DEC-032).
+
+.. req:: TTS_REQ_006
+   :id: TTS_REQ_006
+   :status: deferred
+   :tags: software, tts, privacy
+
+   Announcement text is sent to the chosen provider, outside the home. Cloud TTS
+   shall be off until a parent enables it, after confirming this notice: "Announcements
+   will be sent to [provider] to be turned into speech. They leave your home
+   network. Messages already spoken are reused without being sent again."
 
 .. req:: FEAT_REQ_002
    :id: FEAT_REQ_002

@@ -28,7 +28,7 @@ Technology Choice
 -----------------
 
 The driver layer relies on the **ALSA** (Advanced Linux Sound Architecture)
-driver provided by the Linux kernel for the Cirrus Logic WM8731 codec chip
+driver provided by the Linux kernel for the Dialog DA7213 codec chip
 on the Pi-Codec Zero. No custom kernel driver is needed — the standard
 ``snd-soc-iqaudio-codec`` module is used.
 

@@ -16,7 +16,17 @@ pub async fn query(
     service: Service,
     cmd: &str,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
-    match kds_ipc::request(state.socket(service), &json!({ "cmd": cmd })).await {
+    send(state, service, &json!({ "cmd": cmd })).await
+}
+
+/// Sends a full request (a `cmd` plus its arguments) to a service, with the same
+/// error mapping as [`query`].
+pub async fn send(
+    state: &AppState,
+    service: Service,
+    request: &Value,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    match kds_ipc::request(state.socket(service), request).await {
         Ok(mut response) => {
             if let Some(map) = response.as_object_mut() {
                 map.remove("ok");

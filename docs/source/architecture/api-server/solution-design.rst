@@ -187,7 +187,9 @@ Token-based auth with two mechanisms:
 Token management:
 
 - Tokens are stored in ``/data/auth/tokens.json`` (data partition, survives OTA)
-- Each token has: ``id``, ``name``, ``created_at``, ``last_used_at``, ``enabled``
+- Each token has: ``id``, ``name``, ``admin``, ``created_at``, ``last_used_at``,
+  ``enabled``. Admin tokens are required for credentials and other sensitive
+  settings (DEC-032)
 - Tokens are created/revoked via the Web UI (Config → API Tokens)
 - No token expiry in v1 (manual revocation only)
 
@@ -211,6 +213,36 @@ Token management:
 
    Tokens are stored as SHA-256 hashes. The full token is only shown once
    (at creation time) and never stored in plaintext.
+
+Text-to-Speech Configuration
+----------------------------
+
+**Deferred with cloud TTS (DEC-031).** Endpoints behind the Web UI's ``/config/tts`` page
+(TTS_REQ_005). Credentials are write-only: no endpoint returns a stored key.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Endpoint
+     - Purpose
+   * - ``GET /api/tts/config``
+     - Enabled, provider order, voices per language, and per provider whether a
+       key is set plus its last four characters
+   * - ``PUT /api/tts/config``
+     - Enable or disable cloud TTS, set provider order and voices
+   * - ``PUT /api/tts/credentials/{provider}``
+     - Store a provider's key. Rejected unless the request arrived over HTTPS
+   * - ``DELETE /api/tts/credentials/{provider}``
+     - Remove a provider's key
+   * - ``POST /api/tts/test/{provider}``
+     - Synthesise a short phrase with that provider only, without caching
+
+The API Server passes credentials to the TTS Engine over IPC; the TTS Engine
+alone stores them, in ``/data/tts/credentials`` (mode 0600).
+
+Credential endpoints require an admin token (DEC-032). Other tokens can read
+``GET /api/tts/config``, which never contains keys.
 
 Auto-Discovery
 --------------

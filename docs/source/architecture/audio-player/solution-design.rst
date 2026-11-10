@@ -192,12 +192,20 @@ AirPlay Backend — Decision
 .. code-block:: text
 
    Audio Player (source manager)
-       └── shairport-sync (child process)
-           └── ALSA output → loopback_main
+       └── shairport-sync (child process, supervised: AUD_REQ_002)
+           └── ALSA "speaker" (plug, 48 kHz) → IQaudIO Pi-Codec Zero
 
-shairport-sync is configured via ``/etc/shairport-sync.conf`` to use the
-loopback device as its ALSA output. The Audio Player starts it when AirPlay
-is selected as source, stops it when switching away.
+shairport-sync reads ``/etc/shairport-sync.conf`` (``ci/device/shairport-sync.conf``):
+it advertises the hostname, uses ``basic`` interpolation (soxr is too heavy for
+the Pi Zero W) and writes to the ``speaker`` device from ``/etc/asound.conf``,
+the same path the announcements use. The package's own
+``shairport-sync.service`` is disabled; the Audio Player starts the process,
+reaps it if it exits, and restarts it with backoff (1 s doubling to 60 s).
+
+Measured on the Pi Zero W (2026-11-09, PipeWire RAOP sender on Linux):
+16–18 % CPU and 16 MB RSS while playing; about 0.2 s of audio queued in the
+HAT's buffer. The roughly 2 s from pause to silence is the sender's latency
+(PipeWire's ``raop.latency.ms`` defaults to 1500 ms), not the device.
 
 .. note::
 
@@ -216,6 +224,12 @@ Internet Radio / Podcast Backend — Decision
 **Decision**: Use **MPD** (Music Player Daemon) as a backend, controlled
 from the Audio Player via the MPD protocol.
 
+**Confirmed on hardware (2026-11-10)**: playing the DR P3 MP3 stream, MPD
+0.23.12 uses 7.9 % CPU and 40 MB, against 8.3 % and 22 MB for GStreamer and
+23.3 % and 49 MB for mpv (see Hardware Measurements). It takes 6.7 s to start,
+so it runs from boot. Its output is the ``speaker`` device (DEC-033), not a
+loopback.
+
 **Rationale**:
 
 - MPD is proven: Volumio, moOde, and RuneAudio all use it successfully.
@@ -231,7 +245,7 @@ from the Audio Player via the MPD protocol.
 
    Audio Player (source manager)
        └── mpd_client → MPD daemon (localhost:6600)
-           └── ALSA output → loopback_main
+           └── ALSA output → speaker (DEC-033)
 
 MPD is configured to output to the loopback device. The Audio Player controls
 it via the MPD protocol (play, pause, stop, playlist management).
@@ -416,9 +430,6 @@ Open Questions
    - **MPD as systemd dependency**: Should MPD be a separate systemd service
      that audio-player.service depends on, or should the Audio Player start
      MPD itself? Recommendation: separate service for clean lifecycle mgmt.
-
-   - **shairport-sync config**: Need to write the shairport-sync.conf that
-     outputs to loopback_main. This is a deployment config, not code.
 
    - **CPU budget**: 40% for Audio Player + 50% for CamillaDSP = 90% of a
      single core. Tight. Need real hardware validation. May need to reduce

@@ -16,7 +16,8 @@ SRC="${1:?usage: update-boot.sh <new-slot-boot-files> <boot-partition>}"
 DST="${2:?usage: update-boot.sh <new-slot-boot-files> <boot-partition>}"
 # Order matters: the boot script last, so it's never newer than what it boots.
 FILES=(bootcode.bin start.elf fixup.dat start_cd.elf fixup_cd.dat u-boot.bin
-       bcm2708-rpi-zero-w.dtb config.txt boot.scr kds-boot.version)
+       bcm2708-rpi-zero-w.dtb overlays/iqaudio-codec.dtbo config.txt boot.scr
+       kds-boot.version)
 
 log() { echo "update-boot: $*"; }
 
@@ -33,9 +34,12 @@ for f in "${FILES[@]}"; do
     if cmp -s "$SRC/$f" "$DST/$f"; then
         continue
     fi
-    cp "$SRC/$f" "$DST/.$f.new"
-    sync "$DST/.$f.new" 2>/dev/null || sync
-    mv -f "$DST/.$f.new" "$DST/$f"
+    dir=$(dirname "$f")
+    mkdir -p "$DST/$dir"
+    tmp="$DST/$dir/.$(basename "$f").new"
+    cp "$SRC/$f" "$tmp"
+    sync "$tmp" 2>/dev/null || sync
+    mv -f "$tmp" "$DST/$f"
     sync
     log "updated $f"
     changed=$((changed + 1))

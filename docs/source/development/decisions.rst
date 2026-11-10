@@ -2208,3 +2208,236 @@ device must get an IPv4 address within two minutes. Otherwise, a configured
 network that is visible in a scan means the update broke the connection, which
 fails the check and leads to a rollback. A network that isn't visible is treated
 as the router being off, which passes, so an outage doesn't cause reboot loops.
+
+DEC-030 — Text-to-Speech Engine: espeak-ng
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_030
+   :status: resolved
+   :date: 2026-11-09
+   :tags: tts, audio
+
+.. note::
+
+   DEC-031 proposed cloud TTS, then was deferred on 2026-11-09. This decision
+   stands, extended to Danish (the default) and English, which espeak-ng speaks.
+
+**Decision**: The speaker uses **espeak-ng** with its English voice for text-to-
+speech, on the device. Its quality is accepted as adequate rather than good.
+
+**Context**
+
+Piper, the original choice, can't run on the Pi Zero W (no ARMv6 build). Of the
+engines that do run, a listening test on the real speaker found espeak-ng's English
+voice the best, ahead of flite's 16 kHz voices. espeak-ng is also the fastest:
+about 0.7 s for 6 s of speech (see Hardware Measurements), and the TTS cache
+(TTS_REQ_001) avoids repeating even that.
+
+**Consequences**
+
+- Text-to-speech works offline, with no other machine or service.
+- espeak-ng outputs 22.05 kHz, which the audio HAT rejects directly; the default
+  ALSA output resamples to 48 kHz.
+- Better voices are possible later: espeak-ng voice variants and speed or pitch
+  settings, or Piper on another machine at home with the speaker caching its
+  audio. The ``Synthesizer`` interface allows either without changing the cache.
+
+DEC-031 — Cloud Text-to-Speech: ElevenLabs and Google Cloud TTS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_031
+   :status: deferred
+   :date: 2026-11-09
+   :tags: tts, cloud, i18n, privacy
+
+.. note::
+
+   Deferred on 2026-11-09: more trouble than it's worth for now. The speaker uses
+   espeak-ng on the device (DEC-030) in Danish and English. This design is kept
+   for later; the cache and the ``Synthesizer`` interface already support it.
+
+**Decision**: Synthesise speech with cloud services, ElevenLabs and Google
+Cloud Text-to-Speech, tried in a configured order, and keep the disk cache so the
+same announcement is synthesised once. Supersedes DEC-030.
+
+**Context**
+
+The speaker must speak several languages. The on-device engines that run on the
+Pi Zero W sound poor even in English and worse in other languages, and neural
+engines need at least a Pi 4. Both providers handle many languages with natural
+voices. The cache (TTS_REQ_001) keeps cost and latency down, and lets cached
+announcements play offline.
+
+**Consequences**
+
+- Announcement text leaves the home, so cloud TTS is opt-in (TTS_REQ_006).
+- Uncached announcements need internet access and a provider account.
+- Providers charge per character; the cache avoids paying twice for the same text.
+- Provider credentials live on the data partition (TTS_REQ_005).
+
+**Resolved (2026-11-09)**
+
+- espeak-ng stays as the last resort, after both providers, so an announcement
+  is never silent when the cloud is unreachable.
+- Changing credentials requires an admin token (DEC-032).
+- The Web UI and API use HTTPS with a self-signed certificate (DEC-032).
+- Languages: Danish (``da-DK``, the default) and English (``en-GB``). Other
+  languages are switched on in the config.
+- No character cap. When a provider's free quota runs out, announcements fall
+  through to the next provider and finally to espeak-ng on the device. Adding
+  credentials for a paid account lifts the limit.
+
+- Google authentication: an API key, restricted in the Google Cloud console to
+  the Text-to-Speech API, sent in the ``x-goog-api-key`` header so it never
+  appears in a URL. Google's Text-to-Speech authentication page doesn't mention
+  API keys, but independent integrations use them with this API. If a project
+  rejects keys, a service-account option will be added; the settings page's Test
+  button shows at once whether a key works.
+- The opt-in wording: "Announcements will be sent to [provider] to be turned into
+  speech. They leave your home network. Messages already spoken are reused
+  without being sent again."
+
+DEC-032 — Web Security: Self-Signed HTTPS and Admin Tokens
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_032
+   :status: resolved
+   :date: 2026-11-09
+   :tags: security, api, web
+
+**Decision 1 — HTTPS with a self-signed certificate.** The Web UI and API are
+served over HTTPS. Each device creates its own certificate on first boot and keeps
+it on the data partition, so it survives updates and is never shared between
+devices. Browsers warn on the first visit; the parent accepts the certificate once.
+A local certificate authority was rejected: every phone and computer would have to
+trust it first.
+
+**Decision 2 — admin tokens.** API tokens gain an ``admin`` flag. Changing
+credentials and other sensitive settings requires an admin token. Other tokens,
+such as one issued to Home Assistant, can control playback and read state but
+can't change credentials. The first token, created during setup, is an admin
+token.
+
+**Context.** Cloud TTS credentials are entered in the Web UI (TTS_REQ_005). Over
+plain HTTP anyone on the home network could read them, and with equal tokens any
+integration could replace them.
+
+DEC-033 — Announcements Pause the Source; One Shared Output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_033
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, tts, dsp
+
+**Decision 1: an announcement pauses the source instead of ducking it.**
+The Audio Player hosts the announcer (TTS_REQ_002). For each announcement it
+synthesises the speech first (espeak-ng through the TTS cache), then pauses the
+running sources with SIGSTOP, plays an "in" chime, the speech and an "out"
+chime, and resumes the sources with SIGCONT. The sources are always resumed,
+even if playback fails. Announcements wait in a FIFO queue of at most 10.
+
+**Decision 2: one shared ALSA output.** ``/etc/asound.conf`` defines
+``hat_mix``, a dmix on the HAT at 48 kHz, and ``speaker``, a plug in front of
+it that converts any rate. Every source and the announcer write to
+``speaker``. A paused source keeps its PCM open, so without dmix the chime
+could not open the HAT.
+
+**Decision 3: the DSP pipeline drops to 2 channels.** Only one source plays at a
+time (AUD_REQ_001) and announcements no longer play over music, so the 6-channel
+loopback, per-source faders and TTS ducking in the CamillaDSP design are not
+needed. When CamillaDSP is added, it processes one stereo stream between
+``speaker`` and the HAT.
+
+**Context.** Measured on the Pi Zero W (2026-11-10): an AirPlay session from a
+PipeWire sender survived shairport-sync being stopped for 6 seconds and resumed
+playing at 15 % CPU; dmix played two streams at different rates at once.
+AirPlay is a live stream, so after an announcement it resumes at the live
+position rather than where it stopped.
+
+**Consequences.** No CamillaDSP is needed for announcements, and the CPU budget
+is one source plus the chimes and speech. Rate conversion for every stream
+happens in the ``speaker`` plug.
+
+DEC-034 — Build librespot from Source in CI
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_034
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, spotify, ci
+
+**Decision**: Spotify Connect (SW_REQ_001) uses librespot 0.8.0, built by CI
+from its crates.io release for ``arm-unknown-linux-gnueabihf`` and installed as
+``/usr/bin/librespot``. The Audio Player starts and supervises it like
+shairport-sync.
+
+**Context**: librespot publishes no binaries, and raspotify's armhf package
+states that it does not support ARMv6 (Pi 1 and Pi Zero v1.x).
+
+**How it is built** (``make -C ci librespot``, ``ci/scripts/build-librespot.sh``):
+
+- The crate is downloaded from crates.io and checked against a pinned SHA-256,
+  then built with ``cross`` and ``--locked``, so the dependency versions are the
+  ones librespot released with.
+- Features: ``alsa-backend`` (plays to the ``speaker`` device, DEC-033),
+  ``rustls-tls-native-roots`` (no OpenSSL to cross-compile; the image's CA
+  certificates), ``with-avahi`` (Zeroconf through the avahi-daemon already
+  running, instead of a second mDNS responder on port 5353).
+- The cross image (``ci/librespot/Dockerfile``) adds the ALSA headers; the Pi's
+  own ARMv6 libasound is used at run time.
+- CI caches the output, keyed on the build recipe; a cache hit skips the build.
+- The build writes the licence of every crate compiled in; the release's licence
+  inventory includes it as ``librespot-crates.tsv``. librespot is MIT; its
+  dependencies are permissive (MIT, Apache-2.0, ISC, BSD, Zlib, Unicode) plus a
+  few MPL-2.0 crates, whose source is the published crate. There is no GPL code.
+
+**Runtime**: librespot advertises the hostname (as AirPlay does), outputs S16 at
+the speaker's native format, keeps credentials in ``/data/librespot`` so the
+speaker stays linked across updates, and caches no audio, to spare the SD card.
+
+**Consequences**: Upgrading librespot means changing the version and SHA-256 in
+the build script. Like ring in the OTA Updater, the binary carries an ARMv7 ELF
+tag from ring's assembly, which chooses instructions at run time; the ARM1176
+emulation test and real playback on the Pi are what prove it runs.
+
+DEC-035 — Bluetooth Audio with BlueALSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_035
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, bluetooth
+
+**Decision**: Bluetooth audio from a phone or tablet (A2DP sink) uses BlueALSA
+(Debian ``bluez-alsa-utils`` 4.0.0): ``bluealsa`` registers the A2DP sink with
+BlueZ and ``bluealsa-aplay`` plays the stream into the ``speaker`` device
+(DEC-033). PulseAudio and PipeWire were not considered: a sound server is too
+heavy for the Pi Zero W and would duplicate the ALSA setup.
+
+**Measured on the Pi Zero W (2026-11-10)**, an iPad playing over SBC:
+bluetoothd, bluealsa and bluealsa-aplay together use 15 % CPU and about 15 MB.
+
+**Findings from the test**
+
+- The adapter must report the loudspeaker device class
+  (``Class = 0x240414`` in ``/etc/bluetooth/main.conf``), or iOS won't offer it
+  as a speaker.
+- ``bluealsa`` must run with ``-p a2dp-sink`` only; the packaged service also
+  offers ``a2dp-source``.
+- The pairing agent must trust and authorise the device during pairing. When
+  authorisation of AVRCP (remote control) was refused because the device was
+  not yet trusted, iOS dropped the audio link after 10 seconds.
+- ``bluealsa-aplay`` must be a source managed by the Audio Player, so that an
+  announcement pauses it like AirPlay and Spotify (TTS_REQ_002); unmanaged, the
+  announcement plays over the music.
+
+**Consequences**: Pairing needs a user action (a button or the Web UI) that
+opens a time-limited pairing window with an auto-accepting agent, which the
+Bluetooth Service owns. That work is tracked separately.

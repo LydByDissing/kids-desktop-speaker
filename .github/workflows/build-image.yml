@@ -48,6 +48,17 @@ jobs:
         run: make cross-build
         working-directory: ci
 
+      # librespot has no ARMv6 binaries, so it is built from its pinned crates.io
+      # release (DEC-034). The output only changes with the build recipe.
+      - name: Cache librespot
+        uses: actions/cache@v4
+        with:
+          path: ci/librespot/out
+          key: librespot-${{ hashFiles('ci/scripts/build-librespot.sh', 'ci/librespot/Dockerfile', 'ci/librespot/Cross.toml') }}
+
+      - name: Build librespot
+        run: make -C ci librespot
+
       - name: Cache Raspbian base
         uses: actions/cache@v4
         with:

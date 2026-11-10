@@ -18,16 +18,23 @@ Sockets
      - Commands
    * - Audio Player
      - ``/run/kds/audio.sock``
-     - ``status``, ``mute``
+     - ``status``, ``mute``, ``announce``
    * - OTA Updater
      - ``/run/kds/ota.sock``
      - ``status``, ``install``
    * - Bluetooth Service
      - ``/run/kds/bt.sock``
      - ``status``
-   * - TTS Engine
-     - ``/run/kds/tts.sock``
-     - Not yet implemented
+
+The TTS Engine is a library inside the Audio Player (DEC-033), so it has no
+socket of its own. ``announce`` takes ``text`` and an optional ``lang``
+(``da``/``da-DK``, the default, or ``en``/``en-GB``). It answers once the
+announcement is queued, with its ``position`` in the queue, or with an error
+when the text is empty, the language is not enabled, or the queue (10) is full.
+
+.. code-block:: json
+
+   {"cmd": "announce", "text": "Aftensmaden er klar", "lang": "da-DK"}
 
 A server creates ``/run/kds`` if it doesn't exist, and replaces a stale socket
 left by a previous run.

@@ -85,6 +85,7 @@ Page Structure
    /config/bluetooth       → Bluetooth paired devices
    /config/dsp             → DSP profiles
    /config/ota             → OTA update status
+   /config/tts             → Text-to-speech: providers, credentials, voices
    /config/system          → System info
    /login                  → Login page (token entry)
 
@@ -117,6 +118,31 @@ Config Pages
 
 Settings and source management. Each sub-page follows a consistent pattern:
 list view → add/edit form → save/cancel.
+
+Text-to-speech (``/config/tts``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Deferred with cloud TTS (DEC-031).** Where a parent would set up cloud
+text-to-speech (TTS_REQ_004 to TTS_REQ_006):
+
+- **Enable cloud TTS**: off by default. Turning it on shows "Announcements will be
+  sent to [provider] to be turned into speech. They leave your home network.
+  Messages already spoken are reused without being sent again." and needs an
+  explicit confirmation.
+- **Providers**: one card each for ElevenLabs and Google Cloud TTS, in priority
+  order, which can be changed.
+- **Credentials**: a password-type field per provider. After saving, the field is
+  cleared and the card shows only "Configured, key ending in 1234". A saved key is
+  never sent back to the browser. "Remove" deletes it.
+- **Test**: lists the provider's voices and speaks a short phrase through that
+  provider alone, reporting success or the provider's error, such as a rejected
+  key. For Google, this is where a project that doesn't accept API keys shows up.
+- **Voices**: a voice per language per provider, chosen from the provider's list.
+  A provider whose model doesn't support an enabled language shows that, and is
+  skipped for that language.
+
+The page refuses to submit credentials unless the page itself was loaded over
+HTTPS.
 
 State Management
 ----------------

@@ -45,3 +45,67 @@ async fn mute_rejects_unknown_and_missing_sources() {
     let missing = handle(json!({"cmd": "mute"}), arbitrator()).await;
     assert_eq!(missing, json!({"ok": false, "error": "mute needs source"}));
 }
+
+mod announce {
+    use audio_player::announcer::AnnounceQueue;
+    use audio_player::arbitrator::Arbitrator;
+    use audio_player::ipc::{handle, handle_with};
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    fn arb() -> Arc<Mutex<Arbitrator>> {
+        Arc::new(Mutex::new(Arbitrator::new()))
+    }
+
+    #[tokio::test]
+    async fn announce_queues_and_reports_the_position() {
+        let (queue, mut rx) = AnnounceQueue::new();
+        let r = handle_with(
+            json!({"cmd": "announce", "text": "Hello", "lang": "en-GB"}),
+            arb(),
+            Some(&queue),
+        )
+        .await;
+        assert_eq!(r, json!({"ok": true, "position": 1}));
+        let queued = rx.recv().await.unwrap();
+        assert_eq!(queued.text, "Hello");
+        assert_eq!(queued.lang, audio_player::announcer::Lang::En);
+    }
+
+    #[tokio::test]
+    async fn announce_rejects_bad_requests() {
+        let (queue, _rx) = AnnounceQueue::new();
+        for (request, message) in [
+            (json!({"cmd": "announce"}), "announce needs text"),
+            (
+                json!({"cmd": "announce", "text": 5}),
+                "text must be a string",
+            ),
+            (
+                json!({"cmd": "announce", "text": " "}),
+                "announce needs text",
+            ),
+            (
+                json!({"cmd": "announce", "text": "Hej", "lang": 1}),
+                "lang must be a string",
+            ),
+            (
+                json!({"cmd": "announce", "text": "Hej", "lang": "fr"}),
+                "language not enabled: fr",
+            ),
+        ] {
+            let r = handle_with(request.clone(), arb(), Some(&queue)).await;
+            assert_eq!(r, json!({"ok": false, "error": message}), "{request}");
+        }
+    }
+
+    #[tokio::test]
+    async fn announce_without_an_announcer_is_unavailable() {
+        let r = handle(json!({"cmd": "announce", "text": "Hej"}), arb()).await;
+        assert_eq!(
+            r,
+            json!({"ok": false, "error": "announcements unavailable"})
+        );
+    }
+}

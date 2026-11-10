@@ -155,7 +155,7 @@ Containers
        Container(dsp, "CamillaDSP", "Rust (external) + systemd", "Master volume, EQ profiles, DSP pipeline; 2ch loopback mixer for TTS ducking")
        Container(tts, "TTS Engine", "Piper + piper-tts-rs", "Offline TTS: text → speech on dedicated ALSA ch; queued, multi-voice")
        Container(ota, "OTA Updater", "Rust + RAUC", "Atomic system updates via RAUC A/B partitions; GitHub Releases; auto-rollback")
-       Container(hatdrv, "HAT Audio Driver", "ALSA / Linux kernel", "Kernel driver for IQaudIO Pi-Codec Zero (WM8731 codec)")
+       Container(hatdrv, "HAT Audio Driver", "ALSA / Linux kernel", "Kernel driver for IQaudIO Pi-Codec Zero (DA7213 codec)")
 
    }
 
@@ -233,7 +233,7 @@ Zero W:
        windows. User data persisted on separate data partition.
    * - HAT Audio Driver
      - ALSA / Linux kernel / systemd
-     - Kernel driver for the IQaudIO Pi-Codec Zero HAT (Cirrus Logic WM8731
+     - Kernel driver for the IQaudIO Pi-Codec Zero HAT (Dialog DA7213
        codec). Configured via Raspberry Pi OS device tree overlay and systemd.
        Provides ALSA PCM device, mixer controls, and loopback channels.
 
