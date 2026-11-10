@@ -224,6 +224,12 @@ Internet Radio / Podcast Backend — Decision
 **Decision**: Use **MPD** (Music Player Daemon) as a backend, controlled
 from the Audio Player via the MPD protocol.
 
+**Confirmed on hardware (2026-11-10)**: playing the DR P3 MP3 stream, MPD
+0.23.12 uses 7.9 % CPU and 40 MB, against 8.3 % and 22 MB for GStreamer and
+23.3 % and 49 MB for mpv (see Hardware Measurements). It takes 6.7 s to start,
+so it runs from boot. Its output is the ``speaker`` device (DEC-033), not a
+loopback.
+
 **Rationale**:
 
 - MPD is proven: Volumio, moOde, and RuneAudio all use it successfully.
@@ -239,7 +245,7 @@ from the Audio Player via the MPD protocol.
 
    Audio Player (source manager)
        └── mpd_client → MPD daemon (localhost:6600)
-           └── ALSA output → loopback_main
+           └── ALSA output → speaker (DEC-033)
 
 MPD is configured to output to the loopback device. The Audio Player controls
 it via the MPD protocol (play, pause, stop, playlist management).

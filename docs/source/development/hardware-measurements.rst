@@ -56,11 +56,16 @@ Decoding the live DR P3 stream (MP3, 128 kbit/s) over Wi-Fi.
    * - GStreamer 1.22 (``souphttpsrc ! decodebin``)
      - 8.3%
      - 22 MB
+   * - MPD 0.23.12 (null output, 2026-11-10)
+     - 7.9%
+     - 40 MB
    * - mpv 0.35
      - 23.3%
      - 49 MB
 
-MPD was not measured.
+MPD takes 6.7 s to start on the Pi Zero W, so it is started at boot rather than
+when radio is selected. It reports the stream's metadata (the current
+programme) through its protocol. This confirms DEC_005.
 
 Text-to-speech
 --------------
