@@ -1,5 +1,5 @@
 [workspace]
 members = ["api-server", "audio-player", "ota-updater", "bluetooth-service", "kds-ipc", "tts-engine"]
 resolver = "2"
-# librespot is built from its own crates.io release (ci/scripts/build-librespot.sh).
-exclude = ["ci/librespot"]
+# librespot and CamillaDSP are built from their own releases (ci/scripts/build-*.sh).
+exclude = ["ci/librespot", "ci/camilladsp"]

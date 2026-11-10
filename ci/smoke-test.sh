@@ -177,6 +177,36 @@ else
 fi
 
 echo ""
+echo "--- DSP (CamillaDSP, DEC-036) ---"
+require_executable /usr/bin/camilladsp
+require_file /usr/share/doc/camilladsp/copyright
+if /usr/bin/camilladsp --check /etc/camilladsp/config.yml 2>&1 | grep -q "Config is valid"; then
+    ok "the CamillaDSP config is valid"
+else
+    fail "the CamillaDSP config is invalid"
+fi
+if grep -q 'pcm "hw:Loopback,0,0"' /etc/asound.conf && grep -q "^snd-aloop" /etc/modules-load.d/snd-aloop.conf; then
+    ok "the sources play into the loopback CamillaDSP reads"
+else
+    fail "speaker does not feed the loopback"
+fi
+if grep -q -- "-a 127.0.0.1" /etc/systemd/system/camilladsp.service; then
+    ok "CamillaDSP's websocket listens on localhost only"
+else
+    fail "CamillaDSP's websocket is not limited to localhost"
+fi
+if grep -q "^StartLimitIntervalSec=0" /etc/systemd/system/camilladsp.service; then
+    ok "CamillaDSP keeps retrying until the HAT is there"
+else
+    fail "CamillaDSP may give up before the HAT appears"
+fi
+if grep -q "camilladsp.service" /etc/udev/rules.d/90-kds-hat.rules; then
+    ok "CamillaDSP starts when the HAT appears"
+else
+    fail "the HAT rule does not start CamillaDSP"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf

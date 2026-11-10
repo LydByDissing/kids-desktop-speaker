@@ -6,8 +6,8 @@
 # Runs against the image installed on the Pi and needs internet access. Plays
 # DR P3 through the API, checks that MPD streams to the HAT and reports the
 # programme, that an announcement pauses and resumes it, and that it stops.
-# Also checks that MPD is reachable only on localhost. You will hear the radio
-# for about half a minute.
+# Also checks that MPD is reachable only on localhost. The speaker is muted
+# unless KDS_HW_AUDIBLE=1.
 
 set -uo pipefail
 
@@ -15,6 +15,8 @@ set -uo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 source "$REPO/ci/scripts/hw-lib.sh"
 remote true || { echo "error: cannot reach $PI_HOST" >&2; exit 2; }
+trap speaker_unmute EXIT
+speaker_mute
 
 api() { # method path [json] -> HTTP status; body in /tmp/kds-api.out on the Pi
     remote "curl -s -o /tmp/kds-api.out -w '%{http_code}' -X $1 -H 'content-type: application/json' ${3:+-d '$3'} http://127.0.0.1:8080$2"

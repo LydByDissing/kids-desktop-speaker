@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-install librespot vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -101,6 +101,10 @@ hw-bluetooth-test:
 hw-radio-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-radio-test.sh
 
+## hw-dsp-test — CamillaDSP levels, clipping and volume on a real Pi (DEC-036): make hw-dsp-test PI_HOST=root@host
+hw-dsp-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-dsp-test.sh
+
 ## hw-install — Install the current build on a development Pi: make hw-install PI_HOST=root@host
 hw-install:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-install.sh $(VERSION)
@@ -161,6 +165,10 @@ legal-info: export-rootfs
 	bash scripts/gen-sbom.sh $(OUTPUT_DIR)/rootfs.tar $(LEGAL_DIR)/sbom.spdx.json $(VERSION)
 	tar -xzf $(LEGAL_DIR)/licenses.tar.gz -C $(LEGAL_DIR) licenses/packages.tsv
 	python3 scripts/collect-sources.py $(LEGAL_DIR)/licenses/packages.tsv $(LEGAL_DIR)/sources
+	# CamillaDSP (GPL-3.0) is built by us: its exact source is the release
+	# archive plus our Cargo.lock (DEC-036).
+	mkdir -p $(LEGAL_DIR)/sources/camilladsp
+	cp camilladsp/out/camilladsp-*.tar.gz camilladsp/out/camilladsp-*.Cargo.lock $(LEGAL_DIR)/sources/camilladsp/
 	tar -C $(LEGAL_DIR) -cf $(LEGAL_DIR)/sources.tar sources
 	rm -rf $(LEGAL_DIR)/sources $(LEGAL_DIR)/licenses
 	@echo "==> legal-info: $$(ls $(LEGAL_DIR) | tr '\n' ' ')"
@@ -175,6 +183,10 @@ clean:
 ## librespot — Cross-compile librespot for ARMv6 from the pinned crates.io release (DEC-034)
 librespot:
 	@bash scripts/build-librespot.sh
+
+## camilladsp — Cross-compile CamillaDSP for ARMv6 from its pinned release (DEC-036)
+camilladsp:
+	@bash scripts/build-camilladsp.sh
 
 ## cross-build — Cross-compile all workspace binaries for ARMv6
 cross-build:

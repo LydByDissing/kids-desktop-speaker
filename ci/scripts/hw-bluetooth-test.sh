@@ -16,6 +16,8 @@ set -uo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 source "$REPO/ci/scripts/hw-lib.sh"
 remote true || { echo "error: cannot reach $PI_HOST" >&2; exit 2; }
+trap speaker_unmute EXIT
+speaker_mute
 
 api() { # method path -> HTTP status; body in /tmp/kds-api.out on the Pi
     remote "curl -s -o /tmp/kds-api.out -w '%{http_code}' -X $1 http://127.0.0.1:8080$2"

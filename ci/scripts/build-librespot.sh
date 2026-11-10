@@ -38,11 +38,11 @@ echo "$SHA256  $SRC/librespot.crate" | sha256sum -c --quiet - \
 tar -xzf "$SRC/librespot.crate" -C "$SRC"
 
 echo "==> Building the cross image..."
-docker build -q -t kds-librespot-cross:0.2.5 "$REPO/ci/librespot" >/dev/null
+docker build -q -t kds-cross-alsa:0.2.5 "$REPO/ci/cross-alsa" >/dev/null
 
 echo "==> Cross-compiling librespot $VERSION for $TARGET ($FEATURES)..."
 cd "$SRC/librespot-$VERSION"
-CROSS_CONFIG="$REPO/ci/librespot/Cross.toml" cross build --release --locked \
+CROSS_CONFIG="$REPO/ci/cross-alsa/Cross.toml" cross build --release --locked \
     --target "$TARGET" --no-default-features --features "$FEATURES"
 
 cp "target/$TARGET/release/librespot" "$OUT/librespot"

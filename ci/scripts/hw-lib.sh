@@ -96,3 +96,19 @@ reboot_pi() { remote "nohup sh -c 'sleep 2; systemctl reboot' >/dev/null 2>&1 &"
 summary() {
     remote 'echo "  version=$(cat /etc/kds-version) slot=$(rauc status 2>/dev/null | sed -n "s/^Booted from: //p") state=$(systemctl is-system-running)"; fw_printenv 2>/dev/null | grep -E "^BOOT_" | tr "\n" " "; echo'
 }
+
+# Hardware tests play sound, so they mute the speaker (the HAT's line output)
+# for their duration; set KDS_HW_AUDIBLE=1 to listen. Checks read the stream
+# before the HAT (ALSA state, CamillaDSP's meters), so muting changes no result.
+SPEAKER_MUTED_BY_TEST=0
+speaker_mute() {
+    [ "${KDS_HW_AUDIBLE:-0}" = 1 ] && return 0
+    remote "amixer -q -c IQaudIOCODEC sset Lineout off" || return 0
+    SPEAKER_MUTED_BY_TEST=1
+    log "speaker muted for the test (KDS_HW_AUDIBLE=1 to listen)"
+}
+speaker_unmute() {
+    [ "$SPEAKER_MUTED_BY_TEST" = 1 ] || return 0
+    remote "amixer -q -c IQaudIOCODEC sset Lineout on" && log "speaker unmuted"
+    SPEAKER_MUTED_BY_TEST=0
+}

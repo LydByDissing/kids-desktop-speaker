@@ -2389,7 +2389,7 @@ states that it does not support ARMv6 (Pi 1 and Pi Zero v1.x).
   ``rustls-tls-native-roots`` (no OpenSSL to cross-compile; the image's CA
   certificates), ``with-avahi`` (Zeroconf through the avahi-daemon already
   running, instead of a second mDNS responder on port 5353).
-- The cross image (``ci/librespot/Dockerfile``) adds the ALSA headers; the Pi's
+- The cross image (``ci/cross-alsa/Dockerfile``, shared with CamillaDSP) adds the ALSA headers; the Pi's
   own ARMv6 libasound is used at run time.
 - CI caches the output, keyed on the build recipe; a cache hit skips the build.
 - The build writes the licence of every crate compiled in; the release's licence
@@ -2451,3 +2451,44 @@ bluetoothd, bluealsa and bluealsa-aplay together use 15 % CPU and about 15 MB.
   (a systemd drop-in), so pairings survive updates (BT_REQ_003).
 - The Audio Player starts ``bluealsa-aplay --pcm=speaker`` as a managed source;
   the package's ``bluealsa-aplay.service`` is disabled.
+
+DEC-036 — CamillaDSP Behind an ALSA Loopback
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_036
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, dsp, licensing
+
+**Decision 1: where CamillaDSP sits.** Every source and the announcer write to
+``speaker``, a plug in front of ``hat_mix`` (a dmix at 48 kHz, DEC-033). The
+dmix now writes into the playback side of an ALSA loopback (``snd-aloop``, one
+substream). CamillaDSP 4.1.3 captures the other side as one stereo stream,
+processes it and plays it on the HAT (``hw:IQaudIOCODEC,0``, S32_LE). The
+loopback runs on its own clock, so CamillaDSP adjusts the loopback's rate to the
+HAT's (``enable_rate_adjust``). A ``camilladsp`` ALSA plugin was not needed.
+
+**Decision 2: a limiter now, EQ with tuning.** The pipeline is a limiter at
+-1 dBFS on both channels, so no source or volume setting can clip the output.
+The speaker's bass EQ (DSP_REQ_001) comes with DSP tuning, measured on the
+speaker.
+
+**Decision 3: built from source.** CamillaDSP is GPL-3.0. CI builds it from the
+pinned v4.1.3 release archive (SHA-256 checked) with our own ``Cargo.lock``
+(the tag ships none), cross-compiled like librespot (DEC-034) with the shared
+ALSA cross image. Each release's ``sources.tar`` contains that archive and lock
+file, the exact source of the binary; ``licenses.tar.gz`` lists its crates.
+
+**Measured on the Pi Zero W (2026-11-10)**: 8 % CPU and 6.5 MB. A -6 dBFS tone
+passes at -6.00 dB; a full-scale tone leaves at -1.00 dBFS with no clipped
+samples; the loopback's rate settles within 0.01 % of the HAT's. Over AirPlay,
+the sender's volume changes the level on the Pi (100 %: -6.0 dB, 50 %: -34.9 dB),
+a steep curve at low volume that tuning should revisit.
+
+**Consequences**: CamillaDSP must run for anything to be heard; it starts when
+the HAT appears (udev) and keeps retrying until the HAT is there. When the last
+stream stops, the loopback's capture stalls and CamillaDSP pauses; it logs one
+playback underrun each time, into silence, which is expected. Its websocket listens on
+localhost only. ``make -C ci hw-dsp-test`` checks levels, clipping, timing and,
+optionally, the sender's volume over AirPlay.

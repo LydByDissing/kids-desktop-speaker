@@ -1,0 +1,21 @@
+[Unit]
+Description=Kids Desktop Speaker — CamillaDSP (DSP_REQ_001, DEC-036)
+# Started by udev when the HAT appears (90-kds-hat.rules), after its routing
+# is set. Every source plays into the loopback; without this nothing is heard.
+After=kds-hat-init.service systemd-modules-load.service sound.target
+Wants=kds-hat-init.service
+# At boot it may start before the HAT is probed; keep retrying every RestartSec
+# instead of giving up after systemd's default 5 starts in 10 seconds.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# The websocket (levels, volume) listens on localhost only.
+ExecStart=/usr/bin/camilladsp -p 1234 -a 127.0.0.1 /etc/camilladsp/config.yml
+Restart=always
+RestartSec=2
+# Audio processing must not be starved by downloads or synthesis.
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target
