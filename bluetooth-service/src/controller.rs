@@ -50,8 +50,10 @@ impl Controller {
         &mut self,
         tx: &tokio::sync::mpsc::Sender<AvrcpEvent>,
     ) -> Result<(), ControllerError> {
-        // Spawn bluetoothctl process
+        // Spawn bluetoothctl as a monitor only: its default agent would refuse
+        // authorisation in this non-interactive session (DEC-035).
         let mut child = TokioCommand::new("bluetoothctl")
+            .arg("--agent=off")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

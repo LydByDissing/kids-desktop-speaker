@@ -26,6 +26,8 @@ if [ -d "$DATA" ] && mountpoint -q "$DATA"; then
         ssh-keygen -q -t ed25519 -N '' -f "$DATA/ssh/ssh_host_ed25519_key"
     fi
     cp -p "$DATA"/ssh/ssh_host_* /etc/ssh/
+    # Bluetooth pairings (BT_REQ_003), bind-mounted for bluetoothd.
+    install -d -m 700 "$DATA/bluetooth"
 else
     ssh-keygen -A
 fi

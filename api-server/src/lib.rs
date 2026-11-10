@@ -21,6 +21,10 @@ pub fn app(state: AppState) -> Router {
             get(routes::services::get_bluetooth_status),
         )
         .route(
+            "/api/bluetooth/pair",
+            post(routes::services::post_bluetooth_pair),
+        )
+        .route(
             "/api/audio/volume-limit",
             get(routes::audio::get_volume_limit).post(routes::audio::set_volume_limit),
         )

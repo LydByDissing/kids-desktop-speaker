@@ -46,6 +46,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     shairport-sync \
     # Announcements: espeak-ng speaks Danish and English (DEC-030)
     espeak-ng \
+    # Bluetooth audio input: A2DP sink (DEC-035)
+    bluez-alsa-utils \
     # Bluetooth
     bluez \
     # RAUC
@@ -132,6 +134,12 @@ COPY ci/device/kds-hat-init.sh /usr/local/bin/kds-hat-init.sh
 COPY ci/device/kds-hat-init.service /etc/systemd/system/kds-hat-init.service
 COPY ci/device/asound.conf /etc/asound.conf
 COPY ci/device/shairport-sync.conf /etc/shairport-sync.conf
+# Bluetooth audio (DEC-035): sink-only BlueALSA, pairings on /data, and the
+# loudspeaker device class, without which iOS won't offer the speaker.
+COPY ci/device/bluealsa-sink-only.conf /etc/systemd/system/bluealsa.service.d/sink-only.conf
+COPY ci/device/bluetooth-data.conf /etc/systemd/system/bluetooth.service.d/data.conf
+RUN grep -q '^\[General\]' /etc/bluetooth/main.conf \
+    && sed -i 's/^\[General\]$/[General]\nClass = 0x240414/' /etc/bluetooth/main.conf
 # The HAT is probed late in boot, so the routing starts when its card appears.
 COPY ci/device/90-kds-hat.rules /etc/udev/rules.d/90-kds-hat.rules
 # kds-hat-init sets every control the speaker needs, so ALSA's own save and
@@ -277,7 +285,7 @@ RUN systemctl enable \
         audio-player.service \
         ota-updater.service \
         bluetooth-service.service && \
-    systemctl disable dnsmasq.service hostapd.service shairport-sync.service && \
+    systemctl disable dnsmasq.service hostapd.service shairport-sync.service bluealsa-aplay.service && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 

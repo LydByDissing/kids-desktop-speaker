@@ -15,15 +15,28 @@ Technology Choice
 -----------------
 
 - **Bluetooth stack**: BlueZ (Linux standard, pre-installed on Raspberry Pi OS)
-- **Rust interface**: `bluer`_ (v0.17.4, 2.4 M downloads, official Rust BlueZ wrapper)
-- **Audio backend** (if A2DP enabled): PipeWire or PulseAudio with BlueZ A2DP sink profile
-- **Process**: Standalone Rust binary, communicates with API Server via internal API
+- **Rust interface**: `zbus`_ (pure-Rust D-Bus) for the pairing agent and
+  adapter properties; ``bluetoothctl --agent=off`` for AVRCP events (DEC-035)
+- **Audio backend**: BlueALSA (``bluealsa`` A2DP sink; ``bluealsa-aplay``
+  started by the Audio Player into the ``speaker`` device, DEC-033, DEC-035)
+- **Process**: Standalone Rust binary, communicates with the API Server over IPC
 
-.. _bluer: https://crates.io/crates/bluer
+.. _zbus: https://crates.io/crates/zbus
 
-The ``bluer`` crate wraps BlueZ's D-Bus interface, giving full access to
-adapter management, device pairing, and profile registration. It is the most
-mature Rust Bluetooth crate for Linux by a wide margin.
+Pairing (BT_REQ_002)
+--------------------
+
+The Bluetooth Service registers a BlueZ agent (``org.bluez.Agent1``,
+``NoInputNoOutput``) as the default agent. ``pair`` over IPC
+(``POST /api/bluetooth/pair``) opens a pairing window: the adapter becomes
+discoverable and pairable for 180 seconds, and the agent accepts pairing
+requests and marks each new device trusted. Outside the window it rejects
+pairing and authorisation requests from unknown devices. Trusted devices can
+reconnect at any time. Pairings live in ``/data/bluetooth``, bind-mounted over
+``/var/lib/bluetooth`` for bluetoothd, so they survive updates (BT_REQ_003).
+
+The adapter reports the loudspeaker device class (``Class = 0x240414``), which
+iOS needs before it offers the speaker for audio.
 
 Bluetooth Profiles
 ------------------

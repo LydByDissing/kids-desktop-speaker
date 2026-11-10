@@ -25,14 +25,16 @@ async fn main() -> anyhow::Result<()> {
     let name = sources::device_name(&sources::hostname());
     let mut airplay = sources::airplay();
     let mut spotify = sources::spotify(&name);
+    let mut bluetooth = sources::bluetooth();
 
     // Start whichever sources are installed
     let airplay_up = airplay.start_if_available().await;
     let spotify_up = spotify.start_if_available().await;
-    println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up})");
+    let bluetooth_up = bluetooth.start_if_available().await;
+    println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up}, bluetooth: {bluetooth_up})");
 
     let sources = Arc::new(Mutex::new(ManagedSources {
-        managers: vec![airplay, spotify],
+        managers: vec![airplay, spotify, bluetooth],
     }));
 
     // Announcements (TTS_REQ_002). If the cache or chimes can't be set up, the

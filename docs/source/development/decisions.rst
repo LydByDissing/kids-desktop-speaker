@@ -2438,6 +2438,16 @@ bluetoothd, bluealsa and bluealsa-aplay together use 15 % CPU and about 15 MB.
   announcement pauses it like AirPlay and Spotify (TTS_REQ_002); unmanaged, the
   announcement plays over the music.
 
-**Consequences**: Pairing needs a user action (a button or the Web UI) that
-opens a time-limited pairing window with an auto-accepting agent, which the
-Bluetooth Service owns. That work is tracked separately.
+**Implementation (2026-11-10, KDS-8c7)**
+
+- The Bluetooth Service registers its own BlueZ agent (``org.bluez.Agent1``,
+  capability ``NoInputNoOutput``) over D-Bus with the pure-Rust ``zbus`` crate,
+  instead of ``bluer``, which needs libdbus cross-compiled. The agent accepts
+  and trusts devices only while a pairing window is open (BT_REQ_002), and
+  authorises services for trusted devices at any time.
+- The AVRCP monitor runs ``bluetoothctl --agent=off``. Its default agent, in a
+  session nobody types into, was what refused AVRCP during the test.
+- ``/data/bluetooth`` is bind-mounted over ``/var/lib/bluetooth`` for bluetoothd
+  (a systemd drop-in), so pairings survive updates (BT_REQ_003).
+- The Audio Player starts ``bluealsa-aplay --pcm=speaker`` as a managed source;
+  the package's ``bluealsa-aplay.service`` is disabled.

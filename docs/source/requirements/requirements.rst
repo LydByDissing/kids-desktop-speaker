@@ -87,6 +87,35 @@ Software — Audio Streaming
 
    The system shall support AirPlay for streaming audio from Apple devices.
 
+.. req:: BT_REQ_001
+   :id: BT_REQ_001
+   :status: open
+   :tags: software, streaming, bluetooth
+
+   The speaker shall accept Bluetooth audio (A2DP sink) from a paired phone or
+   tablet and play it as a source like AirPlay and Spotify: one source at a time
+   (AUD_REQ_001), paused during announcements (TTS_REQ_002). It shall present
+   itself as a loudspeaker (ref DEC-035).
+
+.. req:: BT_REQ_002
+   :id: BT_REQ_002
+   :status: open
+   :tags: software, bluetooth, security
+
+   A new device shall only be able to pair during a pairing window that a user
+   opens (through the API, later a button), lasting 3 minutes by default. During
+   the window a device that pairs is trusted and its profiles authorised without
+   a PIN; outside it, pairing and authorisation requests from unknown devices are
+   rejected and only already-paired devices can connect.
+
+.. req:: BT_REQ_003
+   :id: BT_REQ_003
+   :status: open
+   :tags: software, bluetooth, ota
+
+   Bluetooth pairings shall be stored on the data partition, so paired devices
+   stay paired across OTA updates and rollbacks (OTA_REQ_003).
+
 .. req:: SW_REQ_003
    :id: SW_REQ_003
    :status: open

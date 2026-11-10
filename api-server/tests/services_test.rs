@@ -172,3 +172,63 @@ async fn ota_check_and_reboot_are_forwarded() {
         assert_eq!(json["accepted"], cmd);
     }
 }
+
+#[tokio::test]
+async fn bluetooth_pair_opens_a_window_with_the_bluetooth_service() {
+    let dir = run_dir("bt-pair");
+    let path = dir.join("bt.sock");
+    let server_path = path.clone();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let log = std::sync::Arc::clone(&seen);
+    tokio::spawn(async move {
+        kds_ipc::serve(server_path, move |request: Value| {
+            let log = std::sync::Arc::clone(&log);
+            async move {
+                log.lock().unwrap().push(request.clone());
+                match command(&request) {
+                    Some("pair") => ok(json!({"pairing": {"open": true, "remaining_s": 180}})),
+                    _ => error("unknown command"),
+                }
+            }
+        })
+        .await
+        .unwrap();
+    });
+    for _ in 0..100 {
+        if tokio::net::UnixStream::connect(&path).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    for (body, seconds) in [("", Value::Null), (r#"{"seconds": 60}"#, json!(60))] {
+        let mut request = Request::builder().method("POST").uri("/api/bluetooth/pair");
+        if !body.is_empty() {
+            request = request.header("content-type", "application/json");
+        }
+        let response = app(AppState::with_run_dir(&dir))
+            .oneshot(request.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{body}");
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["pairing"]["open"], true);
+        assert_eq!(seen.lock().unwrap().last().unwrap()["seconds"], seconds);
+    }
+}
+
+#[tokio::test]
+async fn bluetooth_pair_without_the_service_is_503() {
+    let response = app(AppState::with_run_dir(run_dir("bt-pair-none")))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/bluetooth/pair")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}

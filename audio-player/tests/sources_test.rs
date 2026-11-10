@@ -40,3 +40,10 @@ fn a_name_with_spaces_stays_one_argument() {
     let args = spotify_args("Kids Room");
     assert_eq!(value_of(&args, "--name"), Some("Kids Room"));
 }
+
+#[test]
+fn bluetooth_plays_through_the_shared_output() {
+    use audio_player::sources::{bluetooth, bluetooth_args};
+    assert_eq!(bluetooth_args(), vec!["--pcm=speaker".to_string()]);
+    assert_eq!(bluetooth().name(), "bluealsa-aplay");
+}

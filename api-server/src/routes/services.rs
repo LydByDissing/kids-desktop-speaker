@@ -61,3 +61,25 @@ pub async fn post_ota_reboot(State(state): State<AppState>) -> ApiResult {
 pub async fn get_bluetooth_status(State(state): State<AppState>) -> ApiResult {
     query(&state, Service::Bluetooth, "status").await.map(Json)
 }
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct PairRequest {
+    /// How long the pairing window stays open; 180 s when absent (BT_REQ_002).
+    pub seconds: Option<u64>,
+}
+
+/// Opens a Bluetooth pairing window, so a phone can pair (BT_REQ_002). The body
+/// is optional.
+pub async fn post_bluetooth_pair(
+    State(state): State<AppState>,
+    body: Option<Json<PairRequest>>,
+) -> ApiResult {
+    let seconds = body.and_then(|Json(b)| b.seconds);
+    send(
+        &state,
+        Service::Bluetooth,
+        &json!({ "cmd": "pair", "seconds": seconds }),
+    )
+    .await
+    .map(Json)
+}

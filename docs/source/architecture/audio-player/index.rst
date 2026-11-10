@@ -196,6 +196,7 @@ Source activation follows these rules:
 
 2. **TTS announcement (highest priority)**: When a TTS message arrives
    (TTS_REQ_002, DEC-033):
+
    - The speech is synthesised first (espeak-ng through the TTS cache)
    - The running source is **paused** (SIGSTOP)
    - An "in" chime, the speech and an "out" chime play through ``speaker``

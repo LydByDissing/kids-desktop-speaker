@@ -1,4 +1,5 @@
-//! The streaming sources the Audio Player starts (SW_REQ_001, SW_REQ_002).
+//! The streaming sources the Audio Player starts (SW_REQ_001, SW_REQ_002,
+//! BT_REQ_001).
 
 use crate::manager::Manager;
 
@@ -50,6 +51,20 @@ pub fn spotify_args(name: &str) -> Vec<String> {
 
 pub fn spotify(name: &str) -> Manager {
     Manager::new("librespot", "/usr/bin/librespot", spotify_args(name))
+}
+
+/// bluealsa-aplay plays Bluetooth audio from BlueALSA's A2DP sink into the
+/// shared output (DEC-035). With no phone connected it waits.
+pub fn bluetooth_args() -> Vec<String> {
+    vec!["--pcm=speaker".to_string()]
+}
+
+pub fn bluetooth() -> Manager {
+    Manager::new(
+        "bluealsa-aplay",
+        "/usr/bin/bluealsa-aplay",
+        bluetooth_args(),
+    )
 }
 
 /// The system's hostname, or an empty string if it can't be read.

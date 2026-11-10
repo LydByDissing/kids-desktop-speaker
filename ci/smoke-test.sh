@@ -122,6 +122,37 @@ else
 fi
 
 echo ""
+echo "--- Bluetooth audio (BlueALSA, DEC-035) ---"
+require_executable /usr/bin/bluealsa
+require_executable /usr/bin/bluealsa-aplay
+if grep -q "^Class = 0x240414" /etc/bluetooth/main.conf; then
+    ok "the adapter presents itself as a loudspeaker"
+else
+    fail "main.conf does not set the loudspeaker class"
+fi
+if grep -q "ExecStart=/usr/bin/bluealsa -p a2dp-sink$" /etc/systemd/system/bluealsa.service.d/sink-only.conf; then
+    ok "BlueALSA runs as an A2DP sink only"
+else
+    fail "BlueALSA is not sink-only"
+fi
+if grep -q "BindPaths=-/data/bluetooth:/var/lib/bluetooth" /etc/systemd/system/bluetooth.service.d/data.conf; then
+    ok "pairings are kept on /data"
+else
+    fail "pairings are not kept on /data"
+fi
+# audio-player owns bluealsa-aplay, so announcements can pause it.
+if ls /etc/systemd/system/*.wants/bluealsa-aplay.service >/dev/null 2>&1; then
+    fail "the package's bluealsa-aplay.service is enabled"
+else
+    ok "the package's bluealsa-aplay.service is disabled"
+fi
+if [ -e /etc/systemd/system/bluetooth.target.wants/bluealsa.service ]; then
+    ok "bluealsa starts with Bluetooth"
+else
+    fail "bluealsa is not enabled"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf
