@@ -9,10 +9,10 @@ use bluetooth_service::events::AvrcpEvent;
 use bluetooth_service::ipc::{self, Context};
 use bluetooth_service::pairing::PairingWindow;
 
-/// Serves the pairing agent on the system bus and registers it with BlueZ,
-/// retrying until BlueZ is up (BT_REQ_002). Returns the connection, which must
-/// stay open for the agent to keep working.
-async fn start_agent(window: Arc<Mutex<PairingWindow>>) -> Option<zbus::Connection> {
+/// Connects to the system bus with the pairing agent already served, so BlueZ
+/// can use it as soon as it is registered (BT_REQ_002). Returns None without a
+/// system bus; pairing is then unavailable but the rest of the service runs.
+async fn connect_agent(window: Arc<Mutex<PairingWindow>>) -> Option<zbus::Connection> {
     let agent = Agent {
         window,
         bluez: "org.bluez".into(),
@@ -24,26 +24,31 @@ async fn start_agent(window: Arc<Mutex<PairingWindow>>) -> Option<zbus::Connecti
         Ok(builder) => builder.build().await,
         Err(e) => Err(e),
     };
-    let bus = match bus {
-        Ok(bus) => bus,
+    match bus {
+        Ok(bus) => Some(bus),
         Err(e) => {
             eprintln!("bluetooth-service: no system bus, pairing disabled: {e}");
-            return None;
+            None
         }
-    };
+    }
+}
+
+/// Registers the agent with BlueZ, retrying until BlueZ is up. Runs in the
+/// background: the IPC server must answer even when BlueZ never comes up.
+async fn register_until_done(bus: zbus::Connection) {
     let mut delay = Duration::from_secs(1);
     loop {
         match bluez::register_agent(&bus, "org.bluez", AGENT_PATH).await {
             Ok(()) => {
                 println!("bluetooth-service: pairing agent registered");
-                return Some(bus);
+                return;
             }
             Err(e) => {
                 eprintln!(
                     "bluetooth-service: registering the agent failed ({e}); retrying in {delay:?}"
                 );
                 tokio::time::sleep(delay).await;
-                delay = (delay * 2).min(Duration::from_secs(30));
+                delay = (delay * 2).min(Duration::from_secs(60));
             }
         }
     }
@@ -57,7 +62,10 @@ async fn main() -> anyhow::Result<()> {
     let mut join_set: JoinSet<()> = JoinSet::new();
 
     let mut ctx = Context::new(Arc::clone(&connected), Arc::clone(&window));
-    ctx.bus = start_agent(Arc::clone(&window)).await;
+    ctx.bus = connect_agent(Arc::clone(&window)).await;
+    if let Some(bus) = ctx.bus.clone() {
+        join_set.spawn(register_until_done(bus));
+    }
     join_set.spawn(async move {
         if let Err(e) = ipc::serve("/run/kds/bt.sock", ctx).await {
             eprintln!("ipc error: {e}");
