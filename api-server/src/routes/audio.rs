@@ -2,8 +2,10 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::routes::services::{query, ApiResult};
+use crate::auth::{ensure_admin, Principal};
+use crate::routes::services::{query, send, ApiResult};
 use crate::state::{AppState, Service};
+use crate::transport::Transport;
 
 /// The active source, from the Audio Player. Sources it doesn't report are idle.
 pub async fn get_source(State(state): State<AppState>) -> ApiResult {
@@ -35,41 +37,50 @@ pub async fn get_source(State(state): State<AppState>) -> ApiResult {
     })))
 }
 
-pub async fn get_volume_limit(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let guard = state.vol_limit.read().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":"state poisoned"})),
-        )
-    })?;
-    Ok(Json(json!({ "limit": *guard })))
+/// Sends a volume command; the Audio Player's refusals are the client's
+/// request failing (422).
+async fn volume_command(state: &AppState, request: Value) -> ApiResult {
+    match send(state, Service::AudioPlayer, &request).await {
+        Ok(reply) => Ok(Json(reply)),
+        Err((StatusCode::BAD_GATEWAY, body)) => Err((StatusCode::UNPROCESSABLE_ENTITY, body)),
+        Err(other) => Err(other),
+    }
+}
+
+/// The device volume and the limit (VOL_REQ_001).
+pub async fn get_volume(State(state): State<AppState>) -> ApiResult {
+    volume_command(&state, json!({"cmd": "volume"})).await
+}
+
+#[derive(Deserialize)]
+pub struct VolumeBody {
+    pub volume: Value,
+}
+
+/// Sets the device volume; above the limit it is capped (anyone with a token).
+pub async fn set_volume(State(state): State<AppState>, Json(body): Json<VolumeBody>) -> ApiResult {
+    volume_command(&state, json!({"cmd": "set_volume", "volume": body.volume})).await
+}
+
+pub async fn get_volume_limit(State(state): State<AppState>) -> ApiResult {
+    volume_command(&state, json!({"cmd": "volume"})).await
 }
 
 #[derive(Deserialize)]
 pub struct VolumeLimitBody {
-    pub limit: u8,
+    pub limit: Value,
 }
 
+/// Sets the maximum volume: a parental control, so an admin token is needed.
 pub async fn set_volume_limit(
     State(state): State<AppState>,
+    principal: Option<axum::Extension<Principal>>,
+    transport: Option<axum::Extension<Transport>>,
     Json(body): Json<VolumeLimitBody>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    if body.limit > 100 {
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({ "error": "limit must be between 0 and 100" })),
-        ));
-    }
-    match state.vol_limit.write() {
-        Ok(mut guard) => {
-            *guard = body.limit;
-            Ok(Json(json!({ "limit": body.limit })))
-        }
-        Err(_) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "internal state error" })),
-        )),
-    }
+) -> ApiResult {
+    ensure_admin(
+        principal.as_ref().map(|p| &p.0),
+        transport.as_ref().map(|t| &t.0),
+    )?;
+    volume_command(&state, json!({"cmd": "set_limit", "limit": body.limit})).await
 }

@@ -27,7 +27,7 @@ if [ -z "${KDS_TOKEN:-}" ] && [ -f "$SCRIPT_DIR/ci_key" ]; then
     until [ -n "${KDS_TOKEN:-}" ] || [ $SECONDS -ge $deadline ]; do
         KDS_TOKEN=$(timeout 20 ssh -i "$SCRIPT_DIR/ci_key" -p "${KDS_VM_SSH_PORT:-2222}" -o BatchMode=yes \
             -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-            root@localhost "curl -s -X POST -H 'content-type: application/json' -d '{\"name\": \"smoke test\"}' \
+            root@localhost "curl -s -X POST -H 'content-type: application/json' -d '{\"name\": \"smoke test\", \"admin\": true}' \
             http://127.0.0.1:8080/api/tokens" 2>/dev/null | jq -r '.token // empty') || true
         [ -n "${KDS_TOKEN:-}" ] || sleep 5
     done
@@ -105,15 +105,28 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# Test 5: POST /api/audio/volume-limit body '{"limit":50}' → expect HTTP 200
-echo "==> Test 5: POST /api/audio/volume-limit"
-if response=$(curl -sf "${AUTH[@]}" -X POST "$BASE/api/audio/volume-limit" \
-    -H "Content-Type: application/json" \
-    -d '{"limit":50}' 2>&1); then
-    echo "[PASS] audio/volume-limit POST"
+# Test 5: the volume limit is a parental control: even an admin token may only
+# change it over HTTPS (VOL_REQ_001), and the VM forwards plain HTTP only.
+echo "==> Test 5: POST /api/audio/volume-limit over plain HTTP is refused"
+code=$(curl -s -o /dev/null -w '%{http_code}' "${AUTH[@]}" -X POST "$BASE/api/audio/volume-limit" \
+    -H "Content-Type: application/json" -d '{"limit":50}')
+if [ "$code" = 403 ]; then
+    echo "[PASS] audio/volume-limit POST over HTTP: 403"
     PASS=$((PASS + 1))
 else
-    echo "[FAIL] audio/volume-limit POST — $response"
+    echo "[FAIL] audio/volume-limit POST over HTTP: got $code, want 403"
+    FAIL=$((FAIL + 1))
+fi
+
+# Test 5b: the device volume can be set with any token.
+echo "==> Test 5b: POST /api/audio/volume"
+if response=$(curl -sf "${AUTH[@]}" -X POST "$BASE/api/audio/volume" \
+    -H "Content-Type: application/json" -d '{"volume":30}' 2>&1) \
+    && echo "$response" | jq -e '.volume == 30' >/dev/null 2>&1; then
+    echo "[PASS] audio/volume POST"
+    PASS=$((PASS + 1))
+else
+    echo "[FAIL] audio/volume POST — $response"
     FAIL=$((FAIL + 1))
 fi
 

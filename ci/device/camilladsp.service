@@ -10,8 +10,11 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+# The statefile restores the device volume if CamillaDSP restarts on its own
+# (DEC-040); the Audio Player sets it at start and on every change.
+ExecStartPre=/bin/mkdir -p /data/camilladsp
 # The websocket (levels, volume) listens on localhost only.
-ExecStart=/usr/bin/camilladsp -p 1234 -a 127.0.0.1 /etc/camilladsp/config.yml
+ExecStart=/usr/bin/camilladsp -p 1234 -a 127.0.0.1 -s /data/camilladsp/statefile.yml /etc/camilladsp/config.yml
 Restart=always
 RestartSec=2
 # Audio processing must not be starved by downloads or synthesis.

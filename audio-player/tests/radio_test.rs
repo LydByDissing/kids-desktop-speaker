@@ -92,6 +92,7 @@ fn services(mpd: &FakeMpd, name: &str) -> Services {
         announcing: None,
         stopper: None,
         podcasts: None,
+        volume: None,
         radio: Some(Arc::new(Radio {
             stations: StationStore::new(temp_path(name)),
             mpd: Mpd::new(&mpd.addr),
@@ -277,6 +278,7 @@ async fn status_survives_mpd_being_down() {
         announcing: None,
         stopper: None,
         podcasts: None,
+        volume: None,
         radio: Some(Arc::new(Radio {
             stations: StationStore::new(temp_path("down")),
             mpd: Mpd::new("127.0.0.1:1"),
@@ -351,4 +353,40 @@ async fn playing_the_radio_displaces_the_active_source() {
     assert_eq!(arb.lock().await.active(), Some(Source::Radio));
     handle_full(json!({"cmd": "radio_stop"}), Arc::clone(&arb), &s).await;
     assert_eq!(arb.lock().await.active(), None);
+}
+
+#[tokio::test]
+async fn a_remote_starts_pauses_and_steps_through_stations() {
+    let mpd = fake_mpd().await;
+    let s = services(&mpd, "remote");
+    let arb = Arc::new(Mutex::new(Arbitrator::new()));
+    let remote = |action: &str| {
+        handle_full(
+            json!({"cmd": "remote", "action": action}),
+            Arc::clone(&arb),
+            &s,
+        )
+    };
+    let current = || s.radio.as_ref().unwrap().current.lock().unwrap().clone();
+
+    let r = remote("play_pause").await;
+    assert_eq!(
+        r["station"]["id"], "dr-p1",
+        "nothing playing: the first station {r}"
+    );
+    assert_eq!(
+        remote("play_pause").await,
+        json!({"ok": true, "radio": "paused"})
+    );
+    assert_eq!(*mpd.state.lock().unwrap(), "pause");
+    assert_eq!(
+        remote("play_pause").await,
+        json!({"ok": true, "radio": "playing"})
+    );
+    remote("next").await;
+    assert_eq!(current().as_deref(), Some("dr-p2"));
+    remote("previous").await;
+    remote("previous").await;
+    assert_eq!(current().as_deref(), Some("dr-p3"), "wraps around");
+    assert_eq!(remote("rewind").await["ok"], false);
 }

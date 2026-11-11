@@ -30,6 +30,12 @@ async fn main() -> Result<()> {
             tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
         }
     });
+    // Alarms (ALM_REQ_001): checked every 15 s.
+    tokio::spawn(api_server::schedule::run_alarms(
+        state.clone(),
+        std::time::Duration::from_secs(15),
+    ));
+
     // Not set up yet: read the setup code aloud until someone uses it.
     if !state.tokens.has_admin() {
         tokio::spawn(api_server::routes::setup::read_until_set_up(state.clone()));

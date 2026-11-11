@@ -281,6 +281,30 @@ pub async fn authenticate(
     }
 }
 
+/// Checks for an admin token over HTTPS, or the device itself (AUTH_REQ_002):
+/// for handlers whose other methods need less, such as the volume limit.
+pub fn ensure_admin(
+    principal: Option<&Principal>,
+    transport: Option<&Transport>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    match principal {
+        Some(Principal::Local) => Ok(()),
+        Some(p) if !p.is_admin() => Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "an admin token is required"})),
+        )),
+        Some(_) if transport != Some(&Transport::Https) => Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "this endpoint requires HTTPS"})),
+        )),
+        Some(_) => Ok(()),
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "missing or invalid token"})),
+        )),
+    }
+}
+
 /// For token management and credentials: an admin token over HTTPS, or the
 /// device itself (AUTH_REQ_002).
 pub async fn require_admin(

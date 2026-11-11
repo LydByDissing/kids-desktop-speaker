@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod messages;
 pub mod routes;
+pub mod schedule;
 pub mod setup;
 pub mod state;
 pub mod tls;
@@ -66,8 +67,27 @@ pub fn app(state: AppState) -> Router {
             post(routes::services::post_bluetooth_pair),
         )
         .route(
+            "/api/audio/volume",
+            get(routes::audio::get_volume).post(routes::audio::set_volume),
+        )
+        .route(
             "/api/audio/volume-limit",
             get(routes::audio::get_volume_limit).post(routes::audio::set_volume_limit),
+        )
+        .route(
+            "/api/timer",
+            get(routes::schedule::get_timer)
+                .post(routes::schedule::start_timer)
+                .delete(routes::schedule::cancel_timer),
+        )
+        .route(
+            "/api/alarms",
+            get(routes::schedule::list_alarms).post(routes::schedule::add_alarm),
+        )
+        .route(
+            "/api/alarms/:id",
+            axum::routing::put(routes::schedule::update_alarm)
+                .delete(routes::schedule::remove_alarm),
         )
         .route("/api/setup/start", post(routes::setup::start))
         .route("/api/setup", post(routes::setup::complete))

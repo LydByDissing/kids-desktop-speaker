@@ -52,6 +52,17 @@ Hardware
 Software — Audio Streaming
 --------------------------
 
+.. req:: RMT_REQ_001
+   :id: RMT_REQ_001
+   :status: open
+   :tags: software, bluetooth, controls
+
+   A paired Bluetooth remote's buttons shall control the speaker (HW_REQ_004,
+   UST_REQ_007): volume up and down change the device volume by 5 % within the
+   limit (VOL_REQ_001); play/pause pauses or resumes the radio or podcast, and
+   with nothing playing starts the first radio station; next and previous step
+   through the radio stations while the radio plays (ref DEC-042).
+
 .. req:: AUD_REQ_001
    :id: AUD_REQ_001
    :status: open
@@ -423,6 +434,17 @@ Software — Features
    The system shall enforce a configurable maximum volume limit, defaulting to
    75% of hardware output range (ref DEC-020).
 
+.. req:: VOL_REQ_001
+   :id: VOL_REQ_001
+   :status: open
+   :tags: software, audio, parental
+
+   The speaker shall have one device volume, 0-100 % (0 is muted), applied to
+   everything it plays after each sender's own volume, and a maximum volume
+   (FEAT_REQ_007, 75 % by default) that the device volume can never exceed.
+   Both shall survive restarts and updates. Anyone with a token may change the
+   volume; only an admin token may change the maximum (ref DEC-040).
+
 .. req:: FEAT_REQ_008
    :id: FEAT_REQ_008
    :status: open
@@ -441,6 +463,41 @@ Software — Features
 
 Software — Reliability & Performance
 -------------------------------------
+
+.. req:: SLP_REQ_001
+   :id: SLP_REQ_001
+   :status: open
+   :tags: software, audio, timer
+
+   A sleep timer of 1 to 240 minutes shall, when it runs out, fade the volume
+   to silence over 30 seconds, stop every source, and restore the volume
+   setting for next time (FEAT_REQ_009). It can be read and cancelled while it
+   runs. A new timer replaces the running one (ref DEC-041).
+
+.. req:: ALM_REQ_001
+   :id: ALM_REQ_001
+   :status: open
+   :tags: software, audio, alarm
+
+   Alarms shall be kept on the data partition, each with a time of day (local
+   time), the days of the week it repeats on (every day when none are given), a
+   radio station, a volume (capped by the limit, VOL_REQ_001) and an on/off
+   switch (FEAT_REQ_008). When one goes off, the station starts quietly and the
+   volume rises to the alarm's volume over a minute; if the station cannot play,
+   the speaker says "Godmorgen" with the chimes instead. An alarm goes off at
+   most once per day, and not for times passed while the clock was not yet set
+   (ref DEC-041).
+
+.. req:: DSC_REQ_001
+   :id: DSC_REQ_001
+   :status: open
+   :tags: software, networking, integration
+
+   The speaker shall advertise its HTTPS API and Web UI over mDNS, as
+   ``_kidsspeaker._tcp`` (with the API path and authentication in its TXT
+   record) and ``_https._tcp``, both on port 443 under the device's hostname, so
+   browsers, apps and Home Assistant can find it without an IP address
+   (Auto-Discovery, FEAT_REQ_005, ref DEC-043).
 
 .. req:: REL_REQ_001
    :id: REL_REQ_001

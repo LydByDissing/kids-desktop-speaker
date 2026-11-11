@@ -86,6 +86,22 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // A Bluetooth remote's buttons (RMT_REQ_001, DEC-042).
+    join_set.spawn(bluetooth_service::input::watch_remotes(
+        "/sys/class/input".into(),
+        "/dev/input".into(),
+        Duration::from_secs(5),
+        |action| async move {
+            let request = serde_json::json!({"cmd": "remote", "action": action.name()});
+            if let Err(e) = kds_ipc::request("/run/kds/audio.sock", &request).await {
+                eprintln!(
+                    "bluetooth-service: could not pass on {}: {e}",
+                    action.name()
+                );
+            }
+        },
+    ));
+
     join_set.spawn(async move {
         while let Some(_event) = rx.recv().await {
             let _ = connected.write().map(|mut c| *c = true);

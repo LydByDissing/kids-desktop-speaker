@@ -31,6 +31,16 @@ pub struct Services {
     pub stopper: Option<Arc<dyn crate::switcher::Stopper>>,
     /// Podcast feeds and episodes (POD_REQ_001/002).
     pub podcasts: Option<Arc<crate::podcasts::Podcasts>>,
+    /// The device volume and the limit (VOL_REQ_001).
+    pub volume: Option<Arc<crate::volume::Volume>>,
+}
+
+/// A percentage argument, 0-100.
+fn percent_arg(request: &Value, name: &str) -> Result<u8, String> {
+    match request.get(name).and_then(Value::as_u64) {
+        Some(v) if v <= 100 => Ok(v as u8),
+        _ => Err(format!("{name} must be a whole number from 0 to 100")),
+    }
 }
 
 /// A message id names a file in the messages directory, so it may only hold
@@ -219,6 +229,93 @@ async fn handle_podcast(
     }
 }
 
+/// A Bluetooth remote's button (RMT_REQ_001, DEC-042).
+async fn handle_remote(action: &str, arb: &Arc<Mutex<Arbitrator>>, services: &Services) -> Value {
+    match action {
+        "volume_up" | "volume_down" => {
+            let Some(volume) = &services.volume else {
+                return error("volume unavailable");
+            };
+            let current = volume.current().volume;
+            let next = if action == "volume_up" {
+                current.saturating_add(5).min(100)
+            } else {
+                current.saturating_sub(5)
+            };
+            match volume.set_volume(next).await {
+                Ok((settings, _)) => ok(crate::volume::describe(&settings)),
+                Err(e) => error(e),
+            }
+        }
+        "play_pause" => {
+            let Some(radio) = &services.radio else {
+                return error("radio unavailable");
+            };
+            let state = radio.mpd.status().await.map(|s| s.state);
+            match state {
+                Ok(PlayState::Play) => match radio.mpd.set_paused(true).await {
+                    Ok(()) => ok(json!({ "radio": "paused" })),
+                    Err(e) => error(e),
+                },
+                Ok(PlayState::Pause) => match radio.mpd.set_paused(false).await {
+                    Ok(()) => ok(json!({ "radio": "playing" })),
+                    Err(e) => error(e),
+                },
+                _ => {
+                    // Nothing on MPD. Another source playing can't be paused
+                    // from here; otherwise start the first station.
+                    if let Some(active) = arb.lock().await.active() {
+                        return ok(json!({ "ignored": active.name() }));
+                    }
+                    let Some(first) = radio
+                        .stations
+                        .list()
+                        .ok()
+                        .and_then(|l| l.into_iter().next())
+                    else {
+                        return error("no stations");
+                    };
+                    handle_radio(
+                        "radio_play",
+                        &json!({ "id": first.id }),
+                        radio,
+                        arb,
+                        services.stopper.as_ref(),
+                    )
+                    .await
+                }
+            }
+        }
+        "next" | "previous" => {
+            let Some(radio) = &services.radio else {
+                return error("radio unavailable");
+            };
+            let current = radio.current.lock().ok().and_then(|c| c.clone());
+            let (Some(current), Ok(stations)) = (current, radio.stations.list()) else {
+                return ok(json!({ "ignored": "no station playing" }));
+            };
+            let Some(i) = stations.iter().position(|s| s.id == current) else {
+                return ok(json!({ "ignored": "no station playing" }));
+            };
+            let n = stations.len();
+            let j = if action == "next" {
+                (i + 1) % n
+            } else {
+                (i + n - 1) % n
+            };
+            handle_radio(
+                "radio_play",
+                &json!({ "id": stations[j].id }),
+                radio,
+                arb,
+                services.stopper.as_ref(),
+            )
+            .await
+        }
+        other => error(format!("unknown action: {other}")),
+    }
+}
+
 pub async fn handle_full(
     request: Value,
     arb: Arc<Mutex<Arbitrator>>,
@@ -272,6 +369,69 @@ pub async fn handle_full(
             }
             None => error("podcasts unavailable"),
         },
+        Some(cmd @ ("volume" | "set_volume" | "set_limit")) => {
+            let Some(volume) = &services.volume else {
+                return error("volume unavailable");
+            };
+            let applied = match cmd {
+                "set_volume" => match percent_arg(&request, "volume") {
+                    Ok(v) => volume.set_volume(v).await,
+                    Err(e) => return error(e),
+                },
+                "set_limit" => match percent_arg(&request, "limit") {
+                    Ok(l) => volume.set_limit(l).await,
+                    Err(e) => return error(e),
+                },
+                _ => Ok((volume.current(), None)),
+            };
+            match applied {
+                Ok((settings, warning)) => {
+                    let mut reply = crate::volume::describe(&settings);
+                    if let Some(w) = warning {
+                        reply["warning"] = json!(w);
+                    }
+                    ok(reply)
+                }
+                Err(e) => error(e),
+            }
+        }
+        Some("remote") => {
+            let action = request
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            handle_remote(action, &arb, services).await
+        }
+        Some("stop_all") => {
+            // The sleep timer (SLP_REQ_001): stop whatever plays, the way each
+            // source allows (DEC-039), and MPD in any case.
+            let playing: Vec<Source> = {
+                let a = arb.lock().await;
+                Source::ALL
+                    .into_iter()
+                    .filter(|s| a.state_of(s) == crate::arbitrator::SourceState::Playing)
+                    .collect()
+            };
+            let mut stopped = Vec::new();
+            if let Some(stopper) = &services.stopper {
+                for source in &playing {
+                    match stopper.stop(*source).await {
+                        Ok(()) => stopped.push(source.name()),
+                        Err(e) => eprintln!("audio-player: could not stop {}: {e}", source.name()),
+                    }
+                }
+            }
+            if !playing.contains(&Source::Radio) {
+                if let Some(radio) = &services.radio {
+                    let _ = radio.mpd.stop().await;
+                }
+            }
+            let mut a = arb.lock().await;
+            for source in Source::ALL {
+                a.source_stopped(source);
+            }
+            ok(json!({ "stopped": stopped }))
+        }
         Some("source_event") => {
             let source = match request.get("source").and_then(Value::as_str) {
                 Some(name) => match Source::parse(name) {

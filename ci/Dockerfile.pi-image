@@ -135,6 +135,9 @@ RUN chmod +x /usr/local/bin/kds-health-check.sh
 COPY ci/device/kds-hat-init.sh /usr/local/bin/kds-hat-init.sh
 COPY ci/device/kds-hat-init.service /etc/systemd/system/kds-hat-init.service
 COPY ci/device/asound.conf /etc/asound.conf
+# Alarms are set in local time (DEC-041).
+RUN ln -sf /usr/share/zoneinfo/Europe/Copenhagen /etc/localtime \
+    && echo Europe/Copenhagen > /etc/timezone
 # DSP (DEC-036): CamillaDSP built from its pinned release (make -C ci
 # camilladsp), between the sources' loopback and the HAT.
 COPY ci/camilladsp/out/camilladsp /usr/bin/camilladsp
@@ -148,6 +151,8 @@ COPY --chmod=755 ci/device/kds-spotify-event /usr/local/bin/kds-spotify-event
 # Bluetooth audio (DEC-035): sink-only BlueALSA, pairings on /data, and the
 # loudspeaker device class, without which iOS won't offer the speaker.
 COPY ci/device/mpd.conf /etc/mpd.conf
+# Discovery of the API and Web UI over mDNS (DEC-043).
+COPY ci/device/kids-speaker.service.avahi /etc/avahi/services/kids-speaker.service
 COPY ci/device/bluealsa-sink-only.conf /etc/systemd/system/bluealsa.service.d/sink-only.conf
 COPY ci/device/bluetooth-data.conf /etc/systemd/system/bluetooth.service.d/data.conf
 RUN grep -q '^\[General\]' /etc/bluetooth/main.conf \
