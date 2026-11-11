@@ -2624,7 +2624,10 @@ CamillaDSP over its localhost websocket (``SetVolume``, ``SetMute``) at start-up
 and on every change. CamillaDSP's statefile (``/data/camilladsp/statefile.yml``)
 restores the level if CamillaDSP restarts on its own.
 
-**Default**: the volume starts at the limit, 75 % (-15 dB).
+**Default**: the volume starts at the limit, 75 % (-15 dB). This is
+provisional: the speaker is a raw driver without its cabinet, so the default,
+the limit and the curve are set when it is in the cabinet, together with the
+DSP tuning (KDS-9jt.6).
 
 **Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
 an even curve in loudness. The limit caps the percentage: asking for more than
