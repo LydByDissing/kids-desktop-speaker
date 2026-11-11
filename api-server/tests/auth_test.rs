@@ -353,6 +353,10 @@ async fn audio_player(run: &Path) -> Arc<Mutex<Vec<String>>> {
             async move {
                 match command(&request) {
                     Some("announce") => {
+                        // The setup code is read slowly, digit by digit.
+                        if request["slow"] != true {
+                            return error("the setup code must be read slowly");
+                        }
                         log.lock()
                             .unwrap()
                             .push(request["text"].as_str().unwrap().to_string());

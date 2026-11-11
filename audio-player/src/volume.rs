@@ -30,8 +30,9 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
+        // The volume starts at the limit (DEC-040).
         Settings {
-            volume: 40,
+            volume: 75,
             limit: 75,
         }
     }

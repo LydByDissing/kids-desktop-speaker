@@ -2553,7 +2553,10 @@ later, credentials) needs an admin token over HTTPS.
 **Decision 2: the first admin token comes from a spoken code** (decided with
 the user). The speaker has no screen or buttons, and the SD card should not be
 needed. So the speaker reads a 6-digit code aloud, in Danish, through the
-announcement queue (DEC-033): only someone in the room hears it. Until an admin
+announcement queue (DEC-033): only someone in the room hears it. The digits are
+read slowly, one at a time (espeak-ng at 140 words a minute with 600 ms between
+words, about 1.5 s a digit; ``"slow": true`` on the ``announce`` command), as
+the normal speed was too fast to write down. Until an admin
 token exists the speaker reads it after every start-up and repeats it, 8 s after
 each reading ends, until setup is completed. ``POST /api/setup {code, name}``
 exchanges the code for an admin token. Later, ``POST /api/setup/start`` asks

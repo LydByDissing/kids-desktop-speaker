@@ -27,6 +27,14 @@ pub trait Synthesizer: Send + Sync {
 pub enum Engine {
     /// espeak-ng: fastest, 22 kHz, robotic.
     EspeakNg { voice: String },
+    /// espeak-ng read slowly: `speed` words a minute (default 175) and
+    /// `word_gap` tens of milliseconds between words, so digits come one at
+    /// a time (the setup code, DEC-038).
+    EspeakNgSlow {
+        voice: String,
+        speed: u32,
+        word_gap: u32,
+    },
     /// flite: 16 kHz voices awb, rms and slt sound more natural; kal is 8 kHz.
     Flite { voice: String },
 }
@@ -42,6 +50,25 @@ impl Engine {
                 vec![
                     "-v".into(),
                     voice.clone(),
+                    "-w".into(),
+                    output,
+                    "--".into(),
+                    text.into(),
+                ],
+            ),
+            Engine::EspeakNgSlow {
+                voice,
+                speed,
+                word_gap,
+            } => (
+                "espeak-ng".into(),
+                vec![
+                    "-v".into(),
+                    voice.clone(),
+                    "-s".into(),
+                    speed.to_string(),
+                    "-g".into(),
+                    word_gap.to_string(),
                     "-w".into(),
                     output,
                     "--".into(),
@@ -67,6 +94,11 @@ impl Synthesizer for Engine {
     fn id(&self) -> String {
         match self {
             Engine::EspeakNg { voice } => format!("espeak-ng:{voice}"),
+            Engine::EspeakNgSlow {
+                voice,
+                speed,
+                word_gap,
+            } => format!("espeak-ng:{voice}:s{speed}:g{word_gap}"),
             Engine::Flite { voice } => format!("flite:{voice}"),
         }
     }
@@ -117,5 +149,21 @@ mod tests {
         let (_, args) =
             Engine::EspeakNg { voice: "en".into() }.command("-v hi", Path::new("/o.wav"));
         assert_eq!(args, ["-v", "en", "-w", "/o.wav", "--", "-v hi"]);
+    }
+
+    #[test]
+    fn slow_espeak_sets_speed_and_word_gap_and_has_its_own_id() {
+        let slow = Engine::EspeakNgSlow {
+            voice: "da".into(),
+            speed: 140,
+            word_gap: 60,
+        };
+        let (_, args) = slow.command("4, 7", Path::new("/o.wav"));
+        assert_eq!(
+            args,
+            ["-v", "da", "-s", "140", "-g", "60", "-w", "/o.wav", "--", "4, 7"]
+        );
+        // A different id keeps slow and normal speech apart in the cache.
+        assert_eq!(slow.id(), "espeak-ng:da:s140:g60");
     }
 }

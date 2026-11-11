@@ -51,6 +51,8 @@ impl Lang {
 pub struct Announcement {
     pub text: String,
     pub lang: Lang,
+    /// Read slowly, one word at a time: for codes and digits.
+    pub slow: bool,
 }
 
 impl Announcement {
@@ -62,7 +64,13 @@ impl Announcement {
         Ok(Announcement {
             text: text.to_string(),
             lang: Lang::parse(lang)?,
+            slow: false,
         })
+    }
+
+    /// The same announcement, read slowly.
+    pub fn slow(self) -> Self {
+        Announcement { slow: true, ..self }
     }
 }
 
@@ -201,11 +209,35 @@ pub fn espeak_voices() -> Voices {
     voices
 }
 
+/// Words a minute and the gap between words (in 10 ms) for slow speech:
+/// about 1.5 s a digit, measured on the Pi Zero W.
+pub const SLOW_SPEED: u32 = 140;
+pub const SLOW_WORD_GAP: u32 = 60;
+
+/// The espeak-ng voices read slowly, for the setup code.
+pub fn slow_espeak_voices() -> Voices {
+    let mut voices: Voices = HashMap::new();
+    for lang in [Lang::Da, Lang::En] {
+        voices.insert(
+            lang,
+            Arc::new(Engine::EspeakNgSlow {
+                voice: lang.espeak_voice().into(),
+                speed: SLOW_SPEED,
+                word_gap: SLOW_WORD_GAP,
+            }),
+        );
+    }
+    voices
+}
+
 pub struct Announcer<O: Output, S: Sources> {
     pub output: O,
     pub sources: Arc<Mutex<S>>,
     pub cache: Arc<TtsCache>,
     pub voices: Voices,
+    /// Used for slow announcements; a language without one reads at the
+    /// normal speed.
+    pub slow_voices: Voices,
     pub chimes: Chimes,
 }
 
@@ -213,9 +245,12 @@ impl<O: Output, S: Sources> Announcer<O, S> {
     /// Speaks one announcement. The speech is synthesised before anything is
     /// paused, and the paused sources are resumed even if playback fails.
     pub async fn speak(&self, announcement: &Announcement) -> Result<Lookup, AnnounceError> {
-        let synth = self
-            .voices
-            .get(&announcement.lang)
+        let slow = announcement
+            .slow
+            .then(|| self.slow_voices.get(&announcement.lang))
+            .flatten();
+        let synth = slow
+            .or_else(|| self.voices.get(&announcement.lang))
             .cloned()
             .ok_or(AnnounceError::NoVoice(announcement.lang))?;
         let cache = Arc::clone(&self.cache);
