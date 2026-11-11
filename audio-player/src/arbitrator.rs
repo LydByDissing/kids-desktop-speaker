@@ -4,6 +4,30 @@ use std::collections::HashMap;
 pub enum Source {
     Airplay,
     Spotify,
+    Bluetooth,
+    Radio,
+}
+
+impl Source {
+    pub const ALL: [Source; 4] = [
+        Source::Airplay,
+        Source::Spotify,
+        Source::Bluetooth,
+        Source::Radio,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Source::Airplay => "airplay",
+            Source::Spotify => "spotify",
+            Source::Bluetooth => "bluetooth",
+            Source::Radio => "radio",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Source> {
+        Source::ALL.into_iter().find(|s| s.name() == name)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,8 +44,9 @@ pub struct Arbitrator {
 impl Arbitrator {
     pub fn new() -> Self {
         let mut states = HashMap::new();
-        states.insert(Source::Airplay, SourceState::Stopped);
-        states.insert(Source::Spotify, SourceState::Stopped);
+        for source in Source::ALL {
+            states.insert(source, SourceState::Stopped);
+        }
         Arbitrator { states }
     }
 

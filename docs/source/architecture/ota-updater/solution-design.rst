@@ -297,17 +297,26 @@ Open Questions
      RAUC handles verification — we just need to provide the public key
      in the RAUC keyring on the device.
 
+     **Status (2026-11-11)**: Resolved: releases are signed with a stable key in CI and verified against the keyring in the image (CI_REQ_005).
+
    - **GitHub API rate limiting**: Unauthenticated GitHub API requests are
      limited to 60/hour. Our 6-hour polling is fine, but on-demand checks
      from the API Server could hit the limit. Consider using a GitHub
      token for authenticated requests (5000/hour).
+
+     **Status (2026-11-11)**: Open: checks are unauthenticated; 60 per hour is enough for the 6-hour poll plus manual checks.
 
    - **Bundle size**: RAUC bundles will be 100-150MB. On a Pi Zero W with
      slow SD card and limited bandwidth, download could take 10-30 minutes.
      The background download approach handles this, but we should show
      progress in the Web UI.
 
+     **Status (2026-11-11)**: Measured: about 456 MB (KDS-9jt.5 tracks trimming MPD); progress in the Web UI comes in wave 5 (KDS-apx.7).
+
    - **First boot after OTA**: The ``rauc-mark-good.service`` needs to run
      on the first boot after an update. How do we distinguish "first boot
      after update" from "normal boot"? RAUC's boot attempt counter handles
      this — if the counter is > 0, it's a new slot boot.
+
+
+     **Status (2026-11-11)**: Resolved: rauc-mark-good runs only when booted from a RAUC slot and marks it good once the health check passes (OTA_REQ_009).

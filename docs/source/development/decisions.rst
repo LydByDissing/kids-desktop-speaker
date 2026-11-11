@@ -2389,7 +2389,7 @@ states that it does not support ARMv6 (Pi 1 and Pi Zero v1.x).
   ``rustls-tls-native-roots`` (no OpenSSL to cross-compile; the image's CA
   certificates), ``with-avahi`` (Zeroconf through the avahi-daemon already
   running, instead of a second mDNS responder on port 5353).
-- The cross image (``ci/librespot/Dockerfile``) adds the ALSA headers; the Pi's
+- The cross image (``ci/cross-alsa/Dockerfile``, shared with CamillaDSP) adds the ALSA headers; the Pi's
   own ARMv6 libasound is used at run time.
 - CI caches the output, keyed on the build recipe; a cache hit skips the build.
 - The build writes the licence of every crate compiled in; the release's licence
@@ -2438,6 +2438,168 @@ bluetoothd, bluealsa and bluealsa-aplay together use 15 % CPU and about 15 MB.
   announcement pauses it like AirPlay and Spotify (TTS_REQ_002); unmanaged, the
   announcement plays over the music.
 
-**Consequences**: Pairing needs a user action (a button or the Web UI) that
-opens a time-limited pairing window with an auto-accepting agent, which the
-Bluetooth Service owns. That work is tracked separately.
+**Implementation (2026-11-10, KDS-8c7)**
+
+- The Bluetooth Service registers its own BlueZ agent (``org.bluez.Agent1``,
+  capability ``NoInputNoOutput``) over D-Bus with the pure-Rust ``zbus`` crate,
+  instead of ``bluer``, which needs libdbus cross-compiled. The agent accepts
+  and trusts devices only while a pairing window is open (BT_REQ_002), and
+  authorises services for trusted devices at any time.
+- The AVRCP monitor runs ``bluetoothctl --agent=off``. Its default agent, in a
+  session nobody types into, was what refused AVRCP during the test.
+- ``/data/bluetooth`` is bind-mounted over ``/var/lib/bluetooth`` for bluetoothd
+  (a systemd drop-in), so pairings survive updates (BT_REQ_003).
+- The Audio Player starts ``bluealsa-aplay --pcm=speaker`` as a managed source;
+  the package's ``bluealsa-aplay.service`` is disabled.
+
+DEC-036 — CamillaDSP Behind an ALSA Loopback
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_036
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, dsp, licensing
+
+**Decision 1: where CamillaDSP sits.** Every source and the announcer write to
+``speaker``, a plug in front of ``hat_mix`` (a dmix at 48 kHz, DEC-033). The
+dmix now writes into the playback side of an ALSA loopback (``snd-aloop``, one
+substream). CamillaDSP 4.1.3 captures the other side as one stereo stream,
+processes it and plays it on the HAT (``hw:IQaudIOCODEC,0``, S32_LE). The
+loopback runs on its own clock, so CamillaDSP adjusts the loopback's rate to the
+HAT's (``enable_rate_adjust``). A ``camilladsp`` ALSA plugin was not needed.
+
+**Decision 2: a limiter now, EQ with tuning.** The pipeline is a limiter at
+-1 dBFS on both channels, so no source or volume setting can clip the output.
+The speaker's bass EQ (DSP_REQ_001) comes with DSP tuning, measured on the
+speaker.
+
+**Decision 3: built from source.** CamillaDSP is GPL-3.0. CI builds it from the
+pinned v4.1.3 release archive (SHA-256 checked) with our own ``Cargo.lock``
+(the tag ships none), cross-compiled like librespot (DEC-034) with the shared
+ALSA cross image. Each release's ``sources.tar`` contains that archive and lock
+file, the exact source of the binary; ``licenses.tar.gz`` lists its crates.
+
+**Buffering**: CamillaDSP's defaults (a target of one 1024-frame chunk,
+corrected every 10 s) let the HAT run dry every 30-50 s on the single-core Pi
+Zero: a 10-minute radio soak had 15 underruns. A target of 2048 frames (43 ms,
+about 20 ms more latency) corrected every 3 s had none over 15 minutes.
+
+**Measured on the Pi Zero W (2026-11-10)**: 8 % CPU and 6.5 MB. A -6 dBFS tone
+passes at -6.00 dB; a full-scale tone leaves at -1.00 dBFS with no clipped
+samples; the loopback's rate settles within 0.01 % of the HAT's. Over AirPlay,
+the sender's volume changes the level on the Pi (100 %: -6.0 dB, 50 %: -34.9 dB),
+a steep curve at low volume that tuning should revisit.
+
+**Consequences**: CamillaDSP must run for anything to be heard; it starts when
+the HAT appears (udev) and keeps retrying until the HAT is there. When the last
+stream stops, the loopback's capture stalls and CamillaDSP pauses; it logs one
+playback underrun each time, into silence, which is expected. Its websocket listens on
+localhost only. ``make -C ci hw-dsp-test`` checks levels, clipping, timing and,
+optionally, the sender's volume over AirPlay.
+
+DEC-037 — Recorded Voice Messages
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_037
+   :status: resolved
+   :date: 2026-11-10
+   :tags: audio, messages, api
+
+**Context**: espeak-ng sounds robotic (DEC-030), so parents can record short
+voice messages instead (MSG_REQ_001-003). Decided with the user: a new message
+plays at once; named messages are kept, unnamed ones expire 90 days after they
+were last played.
+
+**Decision 1: the browser sends WAV.** The Web UI records with MediaRecorder,
+decodes with Web Audio and uploads 16-bit PCM WAV (24 kHz mono is about 1.4 MB
+for 30 s), so the Pi needs no Opus or AAC decoder. The API Server accepts PCM
+WAV of 8-48 kHz, mono or stereo, 16-bit, at most 30 s (a little slack for
+headers) and at most 6 MB.
+
+**Decision 2: the API Server owns the messages; the Audio Player plays them.**
+IPC messages are limited to 64 KiB, so recordings don't travel over IPC. The
+API Server stores each message in ``/data/messages`` as ``<id>.wav`` plus
+``<id>.json`` (recorded time, name, duration, last played) and expires unnamed
+ones. To play one it sends ``play_message {id}`` to the Audio Player, which
+reads ``/data/messages/<id>.wav`` (ids are checked, so no other file can be
+named) and queues it with the announcements: pause, in chime, the recording,
+out chime, resume.
+
+**Decision 3: recording needs HTTPS, the API doesn't require it.** Browsers
+only allow the microphone on secure pages, so the Web UI is served over HTTPS
+(WEB_REQ_001). A message is not a credential, so the API accepts it on either
+listener.
+
+DEC-038 — API Tokens and a Spoken Setup Code
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_038
+   :status: resolved
+   :date: 2026-11-11
+   :tags: security, api, onboarding
+
+**Decision 1: every request needs a token** (decided with the user), except
+``/health`` (the update health check uses it and it reveals only "ok" and the
+version), the two setup endpoints, and requests from the device itself over
+loopback (anything on the Pi already runs as root; on-device scripts and the
+hardware tests use this). Tokens are 256-bit random strings, shown once and
+stored as SHA-256 hashes in ``/data/api/tokens.json`` with a name, an admin
+flag, the creation time and when they were last used. Managing tokens (and,
+later, credentials) needs an admin token over HTTPS.
+
+**Decision 2: the first admin token comes from a spoken code** (decided with
+the user). The speaker has no screen or buttons, and the SD card should not be
+needed. So the speaker reads a 6-digit code aloud, in Danish, through the
+announcement queue (DEC-033): only someone in the room hears it. Until an admin
+token exists the speaker reads it after every start-up and repeats it, 8 s after
+each reading ends, until setup is completed. ``POST /api/setup {code, name}``
+exchanges the code for an admin token. Later, ``POST /api/setup/start`` asks
+for a new code to recover a lost admin token (once a minute at most, to stop
+announcement spam). A code allows 5 attempts and is compared in constant time.
+
+**Rejected**: a code on the boot partition (needs the SD card), the first caller
+after boot becoming admin (anyone on the network could claim the speaker), a
+button (there is none).
+
+DEC-039 — One Source at a Time: Source Events and Stopping the Others
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_039
+   :status: resolved
+   :date: 2026-11-11
+   :tags: audio, bluetooth
+
+**Context**: every receiver writes to the shared output (DEC-033), so nothing
+stopped two senders from playing mixed (AUD_REQ_001). The arbitrator existed but
+was never told what played.
+
+**Decision 1: each source reports when it plays.** The Audio Player accepts
+``source_event {source, state}`` over IPC (``active`` or ``inactive``):
+
+- AirPlay: shairport-sync's ``run_this_before_play_begins`` and
+  ``run_this_after_play_ends`` run ``audio-player notify airplay active|inactive``.
+- Spotify: librespot's ``--onevent`` runs ``kds-spotify-event``, which passes
+  ``$PLAYER_EVENT`` to ``audio-player notify spotify`` (``playing`` is active;
+  ``paused``, ``stopped`` and ``session_disconnected`` are inactive).
+- Bluetooth: the Bluetooth Service watches BlueZ's ``MediaTransport1.State``
+  (``active`` while the phone streams) and reports it.
+- Radio: the Audio Player starts MPD itself.
+
+**Decision 2: the newest wins, and the others are stopped the way each allows.**
+Radio: MPD stops. AirPlay and Spotify: the receiver is restarted, which ends
+the session (neither offers a "stop" a receiver can send). Bluetooth: the
+Bluetooth Service sends AVRCP Pause to the phone through BlueZ's
+``MediaPlayer1`` (``avrcp {action}`` over IPC), so the phone shows it paused.
+
+A sender that reconnects by itself keeps the "newest wins" rule: PipeWire's
+AirPlay sink reconnects to the restarted receiver while it still has audio, and
+then takes over again. An iPhone shows the AirPlay session as ended instead.
+
+**Decision 3: announcements pause a Bluetooth phone over AVRCP** (KDS-9jt.2) and
+send Play afterwards, so it continues where it was. If the phone offers no
+AVRCP player, the Audio Player falls back to stopping ``bluealsa-aplay`` with
+SIGSTOP as before.

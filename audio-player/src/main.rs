@@ -1,8 +1,12 @@
 use audio_player::announcer::{espeak_voices, AnnounceQueue, Announcer, Aplay, Chimes};
 use audio_player::arbitrator::Arbitrator;
-use audio_player::ipc;
+use audio_player::ipc::{self, Radio, Services};
 use audio_player::manager::{ManagedSources, Supervision};
+use audio_player::mpd::{Mpd, PlayState};
+use audio_player::podcasts::{PodcastStore, Podcasts, PODCASTS_DIR};
+use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
+use audio_player::switcher::{BtClient, DeviceStopper};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -13,11 +17,32 @@ use tts_engine::{TtsCache, DEFAULT_TTL};
 const TTS_CACHE_DIR: &str = "/data/tts-cache";
 /// The chimes are regenerated at every start, so they live in /run.
 const CHIME_DIR: &str = "/run/kds/chimes";
+/// Recorded voice messages, written by the API Server (DEC-037).
+const MESSAGES_DIR: &str = "/data/messages";
+/// MPD listens on localhost only (/etc/mpd.conf).
+const MPD_ADDR: &str = "127.0.0.1:6600";
 /// The shared output in /etc/asound.conf (DEC-033).
 const OUTPUT_DEVICE: &str = "speaker";
+const AUDIO_SOCKET: &str = "/run/kds/audio.sock";
+const BT_SOCKET: &str = "/run/kds/bt.sock";
+
+/// `audio-player notify <source> <event>`: what the receivers' hooks run to
+/// report that they started or stopped playing (DEC-039).
+async fn notify(source: &str, event: &str) -> anyhow::Result<()> {
+    let request = serde_json::json!({"cmd": "source_event", "source": source, "state": event});
+    kds_ipc::request(AUDIO_SOCKET, &request).await?;
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("notify") {
+        let (Some(source), Some(event)) = (args.get(2), args.get(3)) else {
+            anyhow::bail!("usage: audio-player notify <source> <event>");
+        };
+        return notify(source, event).await;
+    }
     println!("audio-player: starting");
 
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
@@ -25,15 +50,60 @@ async fn main() -> anyhow::Result<()> {
     let name = sources::device_name(&sources::hostname());
     let mut airplay = sources::airplay();
     let mut spotify = sources::spotify(&name);
+    let mut bluetooth = sources::bluetooth();
 
     // Start whichever sources are installed
     let airplay_up = airplay.start_if_available().await;
     let spotify_up = spotify.start_if_available().await;
-    println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up})");
+    let bluetooth_up = bluetooth.start_if_available().await;
+    println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up}, bluetooth: {bluetooth_up})");
 
+    // Internet radio through the MPD service (RAD_REQ_001, DEC_005).
+    let mpd = Mpd::new(MPD_ADDR);
+    let radio = Arc::new(Radio {
+        stations: StationStore::new(STATIONS_FILE),
+        mpd: mpd.clone(),
+        current: std::sync::Mutex::new(None),
+    });
+
+    let podcasts = Arc::new(Podcasts {
+        store: PodcastStore::new(PODCASTS_DIR),
+        mpd: mpd.clone(),
+        current: std::sync::Mutex::new(None),
+    });
+    // Keep the listening position of a playing podcast episode (POD_REQ_002).
+    let saver = Arc::clone(&podcasts);
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(Duration::from_secs(15));
+        loop {
+            every.tick().await;
+            if saver.current().is_some()
+                && saver
+                    .mpd
+                    .status()
+                    .await
+                    .is_ok_and(|s| s.state == PlayState::Play)
+            {
+                saver.save_current().await;
+            }
+        }
+    });
+
+    let bt = BtClient {
+        socket: BT_SOCKET.into(),
+    };
     let sources = Arc::new(Mutex::new(ManagedSources {
-        managers: vec![airplay, spotify],
+        managers: vec![airplay, spotify, bluetooth],
+        mpd: Some(mpd),
+        bt: Some(bt.clone()),
     }));
+    // When a source starts, the others stop (AUD_REQ_003, DEC-039).
+    let stopper = Arc::new(DeviceStopper {
+        sources: Arc::clone(&sources),
+        radio: Some(Arc::clone(&radio)),
+        podcasts: Some(Arc::clone(&podcasts)),
+        bt,
+    });
 
     // Announcements (TTS_REQ_002). If the cache or chimes can't be set up, the
     // speaker still plays music; announce requests are then refused.
@@ -68,11 +138,21 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
-    let announcer_handle = announcer.map(|a| tokio::spawn(a.run(queue_rx)));
+    let announcing = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let busy = Arc::clone(&announcing);
+    let announcer_handle = announcer.map(|a| tokio::spawn(a.run_tracked(queue_rx, busy)));
 
     let arb_clone = Arc::clone(&arb);
     let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc::serve("/run/kds/audio.sock", arb_clone, queue).await {
+        let services = Services {
+            announcements: Some(queue),
+            radio: Some(radio),
+            messages_dir: Some(MESSAGES_DIR.into()),
+            announcing: Some(announcing),
+            stopper: Some(stopper),
+            podcasts: Some(podcasts),
+        };
+        if let Err(e) = ipc::serve(AUDIO_SOCKET, arb_clone, services).await {
             eprintln!("IPC server error: {}", e);
         }
     });

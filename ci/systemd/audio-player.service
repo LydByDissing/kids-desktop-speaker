@@ -1,8 +1,8 @@
 [Unit]
 Description=Kids Desktop Speaker — Audio Player
 # The hostname names the speaker in the Spotify and AirPlay pickers; avahi
-# advertises them.
-After=api-server.service kds-hostname.service avahi-daemon.service
+# advertises them. bluealsa-aplay needs BlueALSA running.
+After=api-server.service kds-hostname.service avahi-daemon.service bluealsa.service
 Wants=api-server.service
 
 [Service]

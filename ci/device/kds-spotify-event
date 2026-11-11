@@ -1,0 +1,4 @@
+#!/bin/sh
+# librespot runs this on every player event with $PLAYER_EVENT set (playing,
+# paused, stopped, ...). The Audio Player keeps one source at a time (DEC-039).
+exec /usr/local/bin/audio-player notify spotify "${PLAYER_EVENT:-unknown}"

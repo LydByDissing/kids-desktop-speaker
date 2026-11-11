@@ -196,6 +196,7 @@ Source activation follows these rules:
 
 2. **TTS announcement (highest priority)**: When a TTS message arrives
    (TTS_REQ_002, DEC-033):
+
    - The speech is synthesised first (espeak-ng through the TTS cache)
    - The running source is **paused** (SIGSTOP)
    - An "in" chime, the speech and an "out" chime play through ``speaker``
@@ -273,3 +274,36 @@ Interfaces
      - Internet radio and podcast playback (TBD: MPD or custom)
 
 Component pages will be created during the component interview phase.
+
+C4 Components
+-------------
+
+The components as implemented (KDS-9ym, 2026-11-11).
+
+.. plantuml::
+   :caption: Components — Audio Player
+
+   @startuml
+   !include ../../c4/C4_Component.puml
+   LAYOUT_TOP_DOWN()
+
+   Container_Boundary(ap, "Audio Player") {
+       Component(mgr, "Source manager", "manager.rs, sources.rs", "Starts and supervises shairport-sync, librespot, bluealsa-aplay; restarts with backoff")
+       Component(switch, "Switcher", "switcher.rs, arbitrator.rs", "One source at a time: newest wins, others stopped (DEC-039)")
+       Component(ann, "Announcer", "announcer.rs", "Queue of speech and recordings: pause, chime, play, chime, resume")
+       Component(radio, "Radio and podcasts", "mpd.rs, radio.rs, podcasts.rs", "Stations and feeds on /data; plays through MPD; keeps podcast positions")
+       Component(ipcs, "IPC server", "ipc.rs", "status, announce, play_message, source_event, radio_*, podcast_*")
+   }
+   Container_Ext(tts, "TTS Engine", "tts-engine crate")
+   System_Ext(mpd, "MPD", "localhost:6600")
+   System_Ext(rx, "Receivers", "shairport-sync, librespot, bluealsa-aplay")
+   System_Ext(bt, "Bluetooth Service", "bt.sock")
+   Rel(ipcs, switch, "source events")
+   Rel(ipcs, ann, "announcements, messages")
+   Rel(ipcs, radio, "radio and podcast commands")
+   Rel(switch, mgr, "restart a receiver")
+   Rel(switch, bt, "AVRCP pause")
+   Rel(ann, tts, "synthesise via the cache")
+   Rel(mgr, rx, "spawn, SIGSTOP/SIGCONT")
+   Rel(radio, mpd, "MPD protocol")
+   @enduml

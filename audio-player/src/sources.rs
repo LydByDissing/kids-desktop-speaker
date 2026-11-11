@@ -1,10 +1,14 @@
-//! The streaming sources the Audio Player starts (SW_REQ_001, SW_REQ_002).
+//! The streaming sources the Audio Player starts (SW_REQ_001, SW_REQ_002,
+//! BT_REQ_001).
 
 use crate::manager::Manager;
 
 /// Where librespot keeps the Spotify credentials, so a speaker stays linked to
 /// its account across updates (DEC-034).
 pub const SPOTIFY_STATE_DIR: &str = "/data/librespot";
+
+/// librespot runs this on each player event, with $PLAYER_EVENT set.
+pub const SPOTIFY_EVENT_HOOK: &str = "/usr/local/bin/kds-spotify-event";
 
 /// The name the speaker shows in the Spotify and AirPlay pickers: the hostname
 /// with a capital first letter, as shairport-sync's "%H" gives
@@ -42,6 +46,9 @@ pub fn spotify_args(name: &str) -> Vec<String> {
         "--system-cache",
         SPOTIFY_STATE_DIR,
         "--disable-audio-cache",
+        // Reports playing/paused to the Audio Player (DEC-039).
+        "--onevent",
+        SPOTIFY_EVENT_HOOK,
     ]
     .iter()
     .map(|s| s.to_string())
@@ -50,6 +57,20 @@ pub fn spotify_args(name: &str) -> Vec<String> {
 
 pub fn spotify(name: &str) -> Manager {
     Manager::new("librespot", "/usr/bin/librespot", spotify_args(name))
+}
+
+/// bluealsa-aplay plays Bluetooth audio from BlueALSA's A2DP sink into the
+/// shared output (DEC-035). With no phone connected it waits.
+pub fn bluetooth_args() -> Vec<String> {
+    vec!["--pcm=speaker".to_string()]
+}
+
+pub fn bluetooth() -> Manager {
+    Manager::new(
+        "bluealsa-aplay",
+        "/usr/bin/bluealsa-aplay",
+        bluetooth_args(),
+    )
 }
 
 /// The system's hostname, or an empty string if it can't be read.

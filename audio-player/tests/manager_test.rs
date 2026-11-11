@@ -150,6 +150,8 @@ async fn announcer_pauses_and_resumes_only_running_sources() {
     assert!(!missing.start_if_available().await);
     let mut sources = ManagedSources {
         managers: vec![running, missing],
+        mpd: None,
+        bt: None,
     };
 
     let paused = sources.pause_all().await;

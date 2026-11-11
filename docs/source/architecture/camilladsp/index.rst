@@ -3,11 +3,13 @@ Camilladsp
 
 .. note::
 
-   Superseded in part by DEC-033 (2026-11-10): announcements pause the source
-   instead of being mixed over it, so the pipeline is one stereo stream. All
-   sources and the announcer write to the ``speaker`` device (a plug in front
-   of a dmix on the HAT). The 6-channel design below is kept for reference
-   until CamillaDSP is added.
+   Superseded in part by DEC-033 and DEC-036 (2026-11-10): announcements pause
+   the source instead of being mixed over it, so the pipeline is one stereo
+   stream. All sources and the announcer write to ``speaker`` (a plug and a
+   dmix) into an ALSA loopback; CamillaDSP 4.1.3 reads the loopback, applies a
+   -1 dBFS limiter (EQ to come with tuning) and plays on the HAT, adjusting the
+   loopback's rate to the HAT's clock. Config: ``ci/device/camilladsp.yml``.
+   The 6-channel design below is kept for reference.
 
 Software DSP engine for the Kids Desktop Speaker. Handles EQ, crossover, bass
 enhancement, and **master volume control**. All audio passes through CamillaDSP

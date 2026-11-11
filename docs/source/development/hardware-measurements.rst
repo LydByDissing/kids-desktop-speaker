@@ -86,6 +86,15 @@ Playing through the ``speaker`` device (DEC-033), measured 2026-11-09/10.
      - 17% (31% while a stream starts)
      - 17 MB
 
+   * - BlueALSA 4.0 (Bluetooth A2DP from an iPad, SBC), whole stack
+     - 14–15%
+     - 15 MB
+
+Each sender's volume control works (it scales the audio before it reaches the
+speaker). An announcement during Spotify or Bluetooth playback stops the player
+for a few seconds; it resumes as the same process after one ALSA underrun.
+The phone itself does not see the pause (KDS-9jt.2 would send AVRCP pause).
+
 An announcement during Spotify playback stops librespot for a few seconds; it
 resumes as the same process after one ALSA underrun, which it recovers from.
 

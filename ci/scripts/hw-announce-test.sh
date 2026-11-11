@@ -6,8 +6,8 @@
 # Runs against the image already installed on the Pi. Sends announcements through
 # the API and checks that the running source (shairport-sync) is stopped while the
 # chimes and speech play on the HAT and resumed afterwards, that a repeated
-# message comes from the TTS cache, and that bad requests are refused. You should
-# hear: ding-ding, the message, ding-ding.
+# message comes from the TTS cache, and that bad requests are refused. With KDS_HW_AUDIBLE=1
+# you hear: ding-ding, the message, ding-ding.
 
 set -uo pipefail
 
@@ -15,9 +15,10 @@ set -uo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=$(mktemp -d)
 source "$REPO/ci/scripts/hw-lib.sh"
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "$WORK"; speaker_unmute' EXIT
 
 remote true || { echo "error: cannot reach $PI_HOST" >&2; exit 2; }
+speaker_mute
 
 # Waits up to 30 s for the audio-player journal since $1 to contain $2; prints the count.
 journal_count() {

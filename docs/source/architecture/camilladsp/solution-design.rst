@@ -370,14 +370,23 @@ Open Questions
      values reduce latency but increase CPU. 1024 at 48000 Hz = 21ms buffer,
      which is acceptable for a streaming speaker.
 
+     **Status (2026-11-11)**: Resolved: 1024 frames with a 2048-frame target level, corrected every 3 s (DEC-036).
+
    - **Ducking depth**: -20 dB is the initial default. Should this be
      user-configurable? Suggested: fixed at -20 dB for v1, configurable in
      a future release.
+
+     **Status (2026-11-11)**: Obsolete: announcements pause the source instead of ducking (DEC-033).
 
    - **Custom profile validation**: What validation does CamillaDSP perform
      on reload? Do we need additional validation in the API Server before
      triggering a reload? Need to test with malformed YAML.
 
+     **Status (2026-11-11)**: Open: with DSP tuning (KDS-9jt.6); the shipped config is checked by ``camilladsp --check`` in the smoke test.
+
    - **CPU usage on Pi Zero W**: The ``CPUQuota=50%`` limit needs validation
      on real hardware. If CamillaDSP exceeds this with our pipeline, we may
      need to reduce chunksize or simplify the DSP chain.
+
+
+     **Status (2026-11-11)**: Resolved by measurement: 8 % CPU (DEC-036); no CPUQuota.

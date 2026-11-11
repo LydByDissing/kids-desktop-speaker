@@ -46,6 +46,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     shairport-sync \
     # Announcements: espeak-ng speaks Danish and English (DEC-030)
     espeak-ng \
+    # Bluetooth audio input: A2DP sink (DEC-035)
+    bluez-alsa-utils \
+    # Internet radio (DEC_005)
+    mpd \
     # Bluetooth
     bluez \
     # RAUC
@@ -131,7 +135,23 @@ RUN chmod +x /usr/local/bin/kds-health-check.sh
 COPY ci/device/kds-hat-init.sh /usr/local/bin/kds-hat-init.sh
 COPY ci/device/kds-hat-init.service /etc/systemd/system/kds-hat-init.service
 COPY ci/device/asound.conf /etc/asound.conf
+# DSP (DEC-036): CamillaDSP built from its pinned release (make -C ci
+# camilladsp), between the sources' loopback and the HAT.
+COPY ci/camilladsp/out/camilladsp /usr/bin/camilladsp
+COPY ci/camilladsp/out/LICENSE /usr/share/doc/camilladsp/copyright
+COPY ci/device/camilladsp.yml /etc/camilladsp/config.yml
+COPY ci/device/camilladsp.service /etc/systemd/system/camilladsp.service
+COPY ci/device/snd-aloop.conf /etc/modprobe.d/snd-aloop.conf
+RUN echo snd-aloop > /etc/modules-load.d/snd-aloop.conf
 COPY ci/device/shairport-sync.conf /etc/shairport-sync.conf
+COPY --chmod=755 ci/device/kds-spotify-event /usr/local/bin/kds-spotify-event
+# Bluetooth audio (DEC-035): sink-only BlueALSA, pairings on /data, and the
+# loudspeaker device class, without which iOS won't offer the speaker.
+COPY ci/device/mpd.conf /etc/mpd.conf
+COPY ci/device/bluealsa-sink-only.conf /etc/systemd/system/bluealsa.service.d/sink-only.conf
+COPY ci/device/bluetooth-data.conf /etc/systemd/system/bluetooth.service.d/data.conf
+RUN grep -q '^\[General\]' /etc/bluetooth/main.conf \
+    && sed -i 's/^\[General\]$/[General]\nClass = 0x240414/' /etc/bluetooth/main.conf
 # The HAT is probed late in boot, so the routing starts when its card appears.
 COPY ci/device/90-kds-hat.rules /etc/udev/rules.d/90-kds-hat.rules
 # kds-hat-init sets every control the speaker needs, so ALSA's own save and
@@ -276,8 +296,12 @@ RUN systemctl enable \
         api-server.service \
         audio-player.service \
         ota-updater.service \
-        bluetooth-service.service && \
-    systemctl disable dnsmasq.service hostapd.service shairport-sync.service && \
+        bluetooth-service.service \
+        mpd.service \
+        camilladsp.service && \
+    systemctl disable dnsmasq.service hostapd.service shairport-sync.service bluealsa-aplay.service && \
+    # Socket activation would listen on every interface; MPD binds localhost.
+    systemctl disable mpd.socket && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 

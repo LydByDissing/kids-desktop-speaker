@@ -363,10 +363,17 @@ Open Questions
      be ideal. Test quality of 22050→48000 resampling. If poor, add a
      dedicated resampling step in the TTS Engine using the ``rubato`` crate.
 
+     **Status (2026-11-11)**: Resolved: the ``speaker`` plug converts 22.05 kHz speech to 48 kHz (DEC-033); accepted by ear on the speaker.
+
    - **Voice model download**: How do voice models get onto the device
      initially? Options: (a) included in the RAUC bundle, (b) downloaded
      on first boot from GitHub, (c) user uploads via Web UI. For v1,
      include a default English voice in the RAUC bundle.
 
+     **Status (2026-11-11)**: Obsolete: espeak-ng ships its voices in the image (DEC-030).
+
    - **Piper startup time**: Measure Piper CLI startup time on Pi Zero W.
      If >200ms, consider keeping a warm Piper process or switching to FFI.
+
+
+     **Status (2026-11-11)**: Obsolete: Piper does not run on ARMv6 (DEC-030).

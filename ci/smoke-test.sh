@@ -122,6 +122,100 @@ else
 fi
 
 echo ""
+echo "--- Bluetooth audio (BlueALSA, DEC-035) ---"
+require_executable /usr/bin/bluealsa
+require_executable /usr/bin/bluealsa-aplay
+if grep -q "^Class = 0x240414" /etc/bluetooth/main.conf; then
+    ok "the adapter presents itself as a loudspeaker"
+else
+    fail "main.conf does not set the loudspeaker class"
+fi
+if grep -q "ExecStart=/usr/bin/bluealsa -p a2dp-sink$" /etc/systemd/system/bluealsa.service.d/sink-only.conf; then
+    ok "BlueALSA runs as an A2DP sink only"
+else
+    fail "BlueALSA is not sink-only"
+fi
+if grep -q "BindPaths=-/data/bluetooth:/var/lib/bluetooth" /etc/systemd/system/bluetooth.service.d/data.conf; then
+    ok "pairings are kept on /data"
+else
+    fail "pairings are not kept on /data"
+fi
+# audio-player owns bluealsa-aplay, so announcements can pause it.
+if ls /etc/systemd/system/*.wants/bluealsa-aplay.service >/dev/null 2>&1; then
+    fail "the package's bluealsa-aplay.service is enabled"
+else
+    ok "the package's bluealsa-aplay.service is disabled"
+fi
+if [ -e /etc/systemd/system/bluetooth.target.wants/bluealsa.service ]; then
+    ok "bluealsa starts with Bluetooth"
+else
+    fail "bluealsa is not enabled"
+fi
+
+echo ""
+echo "--- Internet radio (MPD, RAD_REQ_001) ---"
+require_executable /usr/bin/mpd
+if grep -q '^bind_to_address "127.0.0.1"' /etc/mpd.conf && grep -q 'device      "speaker"' /etc/mpd.conf; then
+    ok "MPD listens on localhost and plays to the speaker"
+else
+    fail "mpd.conf does not bind localhost or play to the speaker"
+fi
+if grep -q '^state_file' /etc/mpd.conf; then
+    fail "MPD keeps a state file (radio would restart after a reboot)"
+else
+    ok "MPD keeps no state file"
+fi
+if [ -e /etc/systemd/system/multi-user.target.wants/mpd.service ]; then
+    ok "mpd.service starts at boot"
+else
+    fail "mpd.service is not enabled"
+fi
+if ls /etc/systemd/system/*.wants/mpd.socket >/dev/null 2>&1; then
+    fail "mpd.socket is enabled (it listens on every interface)"
+else
+    ok "mpd.socket is disabled"
+fi
+
+echo ""
+echo "--- DSP (CamillaDSP, DEC-036) ---"
+require_executable /usr/bin/camilladsp
+require_file /usr/share/doc/camilladsp/copyright
+if /usr/bin/camilladsp --check /etc/camilladsp/config.yml 2>&1 | grep -q "Config is valid"; then
+    ok "the CamillaDSP config is valid"
+else
+    fail "the CamillaDSP config is invalid"
+fi
+if grep -q 'pcm "hw:Loopback,0,0"' /etc/asound.conf && grep -q "^snd-aloop" /etc/modules-load.d/snd-aloop.conf; then
+    ok "the sources play into the loopback CamillaDSP reads"
+else
+    fail "speaker does not feed the loopback"
+fi
+if grep -q -- "-a 127.0.0.1" /etc/systemd/system/camilladsp.service; then
+    ok "CamillaDSP's websocket listens on localhost only"
+else
+    fail "CamillaDSP's websocket is not limited to localhost"
+fi
+if grep -q "^StartLimitIntervalSec=0" /etc/systemd/system/camilladsp.service; then
+    ok "CamillaDSP keeps retrying until the HAT is there"
+else
+    fail "CamillaDSP may give up before the HAT appears"
+fi
+if grep -q "camilladsp.service" /etc/udev/rules.d/90-kds-hat.rules; then
+    ok "CamillaDSP starts when the HAT appears"
+else
+    fail "the HAT rule does not start CamillaDSP"
+fi
+
+echo ""
+echo "--- One source at a time (DEC-039) ---"
+require_executable /usr/local/bin/kds-spotify-event
+if grep -q 'run_this_before_play_begins = "/usr/local/bin/audio-player notify airplay active"' /etc/shairport-sync.conf; then
+    ok "AirPlay reports when it plays"
+else
+    fail "shairport-sync does not report when it plays"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf

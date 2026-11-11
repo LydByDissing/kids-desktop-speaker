@@ -1,6 +1,6 @@
-# Cross image for building librespot (ci/scripts/build-librespot.sh, DEC-034):
-# cross's ARMv6 image plus the ALSA headers the ALSA backend links against.
-# The Pi's own ARMv6 libasound2 is used at run time.
+# Cross image for third-party programs that link against ALSA: librespot
+# (DEC-034) and CamillaDSP (DEC-036). cross's ARMv6 image plus the ALSA
+# headers; the Pi's own ARMv6 libasound2 is used at run time.
 FROM ghcr.io/cross-rs/arm-unknown-linux-gnueabihf:0.2.5
 RUN dpkg --add-architecture armhf \
     && apt-get update \

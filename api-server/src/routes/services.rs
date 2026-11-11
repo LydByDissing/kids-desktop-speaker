@@ -26,7 +26,25 @@ pub async fn send(
     service: Service,
     request: &Value,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
-    match kds_ipc::request(state.socket(service), request).await {
+    send_within(state, service, request, std::time::Duration::from_secs(5)).await
+}
+
+/// As [`send`], allowing the service `limit` to answer: for commands that fetch
+/// from the internet, such as a podcast feed.
+pub async fn send_within(
+    state: &AppState,
+    service: Service,
+    request: &Value,
+    limit: std::time::Duration,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    let reply = kds_ipc::request_with_timeouts(
+        state.socket(service),
+        request,
+        std::time::Duration::from_secs(2),
+        limit,
+    )
+    .await;
+    match reply {
         Ok(mut response) => {
             if let Some(map) = response.as_object_mut() {
                 map.remove("ok");
@@ -60,4 +78,26 @@ pub async fn post_ota_reboot(State(state): State<AppState>) -> ApiResult {
 
 pub async fn get_bluetooth_status(State(state): State<AppState>) -> ApiResult {
     query(&state, Service::Bluetooth, "status").await.map(Json)
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct PairRequest {
+    /// How long the pairing window stays open; 180 s when absent (BT_REQ_002).
+    pub seconds: Option<u64>,
+}
+
+/// Opens a Bluetooth pairing window, so a phone can pair (BT_REQ_002). The body
+/// is optional.
+pub async fn post_bluetooth_pair(
+    State(state): State<AppState>,
+    body: Option<Json<PairRequest>>,
+) -> ApiResult {
+    let seconds = body.and_then(|Json(b)| b.seconds);
+    send(
+        &state,
+        Service::Bluetooth,
+        &json!({ "cmd": "pair", "seconds": seconds }),
+    )
+    .await
+    .map(Json)
 }

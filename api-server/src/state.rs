@@ -1,3 +1,6 @@
+use crate::auth::{TokenStore, TOKENS_FILE};
+use crate::messages::{MessageStore, MESSAGES_DIR};
+use crate::setup::Setup;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -8,18 +11,34 @@ pub const RUN_DIR: &str = "/run/kds";
 pub struct AppState {
     pub vol_limit: Arc<RwLock<u8>>,
     pub run_dir: PathBuf,
+    /// Recorded voice messages (DEC-037).
+    pub messages: Arc<MessageStore>,
+    /// API tokens and the spoken setup code (DEC-038).
+    pub tokens: Arc<TokenStore>,
+    pub setup: Arc<Setup>,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        Self::with_run_dir(RUN_DIR)
-    }
-
-    /// Uses sockets in `run_dir` instead of `/run/kds`, for tests.
-    pub fn with_run_dir(run_dir: impl Into<PathBuf>) -> Self {
         Self {
             vol_limit: Arc::new(RwLock::new(75)),
-            run_dir: run_dir.into(),
+            run_dir: RUN_DIR.into(),
+            messages: Arc::new(MessageStore::new(MESSAGES_DIR)),
+            tokens: Arc::new(TokenStore::load(TOKENS_FILE)),
+            setup: Arc::new(Setup::new()),
+        }
+    }
+
+    /// Uses sockets in `run_dir` instead of `/run/kds`, and keeps messages in
+    /// `run_dir/messages`, for tests.
+    pub fn with_run_dir(run_dir: impl Into<PathBuf>) -> Self {
+        let run_dir: PathBuf = run_dir.into();
+        Self {
+            vol_limit: Arc::new(RwLock::new(75)),
+            messages: Arc::new(MessageStore::new(run_dir.join("messages"))),
+            tokens: Arc::new(TokenStore::load(run_dir.join("api").join("tokens.json"))),
+            setup: Arc::new(Setup::new()),
+            run_dir,
         }
     }
 

@@ -1,0 +1,5 @@
+# Cross config for librespot and CamillaDSP (ci/scripts/build-librespot.sh,
+# build-camilladsp.sh). The image is built from ci/cross-alsa/Dockerfile by
+# those scripts. (cross 0.2.5's own pre-build step makes an invalid image tag.)
+[target.arm-unknown-linux-gnueabihf]
+image = "kds-cross-alsa:0.2.5"

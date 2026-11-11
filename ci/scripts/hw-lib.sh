@@ -96,3 +96,31 @@ reboot_pi() { remote "nohup sh -c 'sleep 2; systemctl reboot' >/dev/null 2>&1 &"
 summary() {
     remote 'echo "  version=$(cat /etc/kds-version) slot=$(rauc status 2>/dev/null | sed -n "s/^Booted from: //p") state=$(systemctl is-system-running)"; fw_printenv 2>/dev/null | grep -E "^BOOT_" | tr "\n" " "; echo'
 }
+
+# Hardware tests play sound, so they mute the speaker (the HAT's line output)
+# for their duration; set KDS_HW_AUDIBLE=1 to listen. Checks read the stream
+# before the HAT (ALSA state, CamillaDSP's meters), so muting changes no result.
+SPEAKER_MUTED_BY_TEST=0
+speaker_mute() {
+    [ "${KDS_HW_AUDIBLE:-0}" = 1 ] && return 0
+    remote "amixer -q -c IQaudIOCODEC sset Lineout off" || return 0
+    SPEAKER_MUTED_BY_TEST=1
+    log "speaker muted for the test (KDS_HW_AUDIBLE=1 to listen)"
+}
+speaker_unmute() {
+    [ "$SPEAKER_MUTED_BY_TEST" = 1 ] || return 0
+    remote "amixer -q -c IQaudIOCODEC sset Lineout on" && log "speaker unmuted"
+    SPEAKER_MUTED_BY_TEST=0
+}
+
+# API tokens (AUTH_REQ_001): requests from the Pi itself need none, so a test
+# that calls the API from this host creates a token over loopback first.
+# api_token NAME [admin] -> prints "ID TOKEN"; api_revoke ID removes it.
+api_token() {
+    local admin=false; [ "${2:-}" = admin ] && admin=true
+    remote "curl -s -X POST -H 'content-type: application/json' -d '{\"name\": \"$1\", \"admin\": $admin}' http://127.0.0.1:8080/api/tokens" \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["info"]["id"], d["token"])'
+}
+api_revoke() {
+    remote "curl -s -o /dev/null -X DELETE http://127.0.0.1:8080/api/tokens/$1"
+}

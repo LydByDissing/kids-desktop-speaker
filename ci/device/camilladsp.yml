@@ -1,0 +1,27 @@
+# CamillaDSP for the kids desktop speaker (DSP_REQ_001, DEC-033, DEC-036).
+#
+# Every source writes to "speaker" (/etc/asound.conf), a dmix on the playback
+# side of an ALSA loopback. CamillaDSP captures the other side, processes one
+# stereo stream and plays it on the HAT. The loopback runs on its own clock, so
+# CamillaDSP adjusts the loopback's rate to match the HAT's (rate adjust).
+#
+# The pipeline is flat for now: a limiter just under full scale stops clipping
+# whatever the sources and their volumes do. The speaker's bass EQ comes with
+# DSP tuning (KDS-1o1 follow-up).
+title: Kids Desktop Speaker
+devices:
+  samplerate: 48000
+  chunksize: 1024
+  queuelimit: 4
+  enable_rate_adjust: true
+  # The defaults (a buffer of one chunk, corrected every 10 s) let the HAT run
+  # dry every 30-50 s on the single-core Pi Zero: 15 underruns in 10 minutes
+  # of radio. Two chunks (43 ms) corrected every 3 s gave none.
+  target_level: 2048
+  adjust_period: 3
+  capture: {type: Alsa, channels: 2, device: "hw:Loopback,1,0", format: S16_LE}
+  playback: {type: Alsa, channels: 2, device: "hw:IQaudIOCODEC,0", format: S32_LE}
+filters:
+  limiter: {type: Limiter, parameters: {clip_limit: -1.0, soft_clip: false}}
+pipeline:
+  - {type: Filter, channels: [0, 1], names: [limiter]}

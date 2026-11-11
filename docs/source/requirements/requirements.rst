@@ -73,6 +73,17 @@ Software — Audio Streaming
    for a minute). A source that was never installed is not retried. The
    source's own log output shall reach the journal.
 
+.. req:: AUD_REQ_003
+   :id: AUD_REQ_003
+   :status: open
+   :tags: software, audio
+
+   When a source starts playing while another plays, the newest source shall win
+   and the other shall stop (AUD_REQ_001): radio is stopped, an AirPlay or
+   Spotify session is ended, and a Bluetooth phone is paused over AVRCP. During
+   an announcement, a Bluetooth phone shall be paused over AVRCP and resumed
+   afterwards, so it continues where it was (ref DEC-039).
+
 .. req:: SW_REQ_001
    :id: SW_REQ_001
    :status: open
@@ -87,6 +98,35 @@ Software — Audio Streaming
 
    The system shall support AirPlay for streaming audio from Apple devices.
 
+.. req:: BT_REQ_001
+   :id: BT_REQ_001
+   :status: open
+   :tags: software, streaming, bluetooth
+
+   The speaker shall accept Bluetooth audio (A2DP sink) from a paired phone or
+   tablet and play it as a source like AirPlay and Spotify: one source at a time
+   (AUD_REQ_001), paused during announcements (TTS_REQ_002). It shall present
+   itself as a loudspeaker (ref DEC-035).
+
+.. req:: BT_REQ_002
+   :id: BT_REQ_002
+   :status: open
+   :tags: software, bluetooth, security
+
+   A new device shall only be able to pair during a pairing window that a user
+   opens (through the API, later a button), lasting 3 minutes by default. During
+   the window a device that pairs is trusted and its profiles authorised without
+   a PIN; outside it, pairing and authorisation requests from unknown devices are
+   rejected and only already-paired devices can connect.
+
+.. req:: BT_REQ_003
+   :id: BT_REQ_003
+   :status: open
+   :tags: software, bluetooth, ota
+
+   Bluetooth pairings shall be stored on the data partition, so paired devices
+   stay paired across OTA updates and rollbacks (OTA_REQ_003).
+
 .. req:: SW_REQ_003
    :id: SW_REQ_003
    :status: open
@@ -100,6 +140,113 @@ Software — Audio Streaming
    :tags: software, streaming
 
    The system shall support internet radio streaming (e.g., Icecast, Shoutcast).
+
+.. req:: RAD_REQ_001
+   :id: RAD_REQ_001
+   :status: open
+   :tags: software, streaming, radio
+
+   Internet radio stations shall be kept in a list on the data partition, which
+   the API can read, add to and remove from, and the speaker shall play a
+   station from the list on request and stop on request (SW_REQ_004, DEC_005).
+   Only ``http`` and ``https`` stream URLs are accepted. A new speaker starts
+   with DR P1, P2 and P3. An announcement pauses the radio and resumes it
+   afterwards (TTS_REQ_002).
+
+.. req:: WEB_REQ_001
+   :id: WEB_REQ_001
+   :status: open
+   :tags: software, security, api
+
+   The API and Web UI shall be served over HTTPS on port 443 with a self-signed
+   certificate that each device creates on first boot, names the device by its
+   hostname (``<hostname>.local``) and keeps on the data partition, so it
+   survives updates (ref DEC-032). Endpoints that receive credentials or other
+   secrets shall reject requests that arrive over plain HTTP. Plain HTTP on port
+   8080 remains for health checks and tests.
+
+.. req:: MSG_REQ_001
+   :id: MSG_REQ_001
+   :status: open
+   :tags: software, audio, messages
+
+   A parent shall be able to send a recorded voice message of at most 30 seconds
+   (a PCM WAV file) to the speaker. It is played like an announcement: the active
+   source pauses, the "in" chime, the recording, the "out" chime, then the source
+   resumes (TTS_REQ_002). A new message plays when it is sent unless the sender
+   asks it not to (ref DEC-037).
+
+.. req:: MSG_REQ_002
+   :id: MSG_REQ_002
+   :status: open
+   :tags: software, audio, messages
+
+   Recorded messages shall be kept on the data partition and listed newest first
+   with the time they were recorded, their duration and an optional name. A
+   message can be named or renamed, played again and deleted. There is no speech
+   to text.
+
+.. req:: MSG_REQ_003
+   :id: MSG_REQ_003
+   :status: open
+   :tags: software, audio, messages
+
+   A named message shall be kept until it is deleted. An unnamed message shall be
+   removed 90 days after it was last played (or recorded, if never replayed).
+
+.. req:: AUTH_REQ_001
+   :id: AUTH_REQ_001
+   :status: open
+   :tags: software, security, api
+
+   Every API request shall carry a valid token (``Authorization: Bearer``),
+   except ``/health``, the setup endpoints (AUTH_REQ_003) and requests made on
+   the device itself over the loopback interface. A missing or unknown token is
+   answered with 401 (ref DEC-038).
+
+.. req:: AUTH_REQ_002
+   :id: AUTH_REQ_002
+   :status: open
+   :tags: software, security, api
+
+   Tokens shall be random (256 bits), shown once when created and stored only as
+   a hash on the data partition, with a name, an admin flag, and when they were
+   created and last used. Creating, listing and revoking tokens, and changing
+   credentials, require an admin token over HTTPS (WEB_REQ_001). The last admin
+   token cannot be revoked.
+
+.. req:: AUTH_REQ_003
+   :id: AUTH_REQ_003
+   :status: open
+   :tags: software, security, onboarding
+
+   The first admin token shall be obtained with a setup code that the speaker
+   reads aloud, so only someone in the room can use it; no SD card, screen or
+   button is needed. Until the speaker is set up (no admin token exists), it
+   shall read the code after start-up and repeat it with a pause of 5 to 10
+   seconds until setup is completed. Afterwards a new code can be requested
+   (``POST /api/setup/start``), at most once a minute, to recover a lost admin
+   token. A code allows 5 attempts; then a new code is needed.
+
+.. req:: POD_REQ_001
+   :id: POD_REQ_001
+   :status: open
+   :tags: software, streaming, podcasts
+
+   Podcast feeds (RSS) shall be kept in a list on the data partition, which the
+   API can read, add to (by the feed's ``http``/``https`` URL; its title is read
+   from the feed) and remove from (SW_REQ_003). For each feed the API shall list
+   its latest 50 episodes, newest first, with title, date and duration.
+
+.. req:: POD_REQ_002
+   :id: POD_REQ_002
+   :status: open
+   :tags: software, streaming, podcasts
+
+   The speaker shall play an episode through MPD (DEC_005) and remember how far
+   it got, so playing it again continues there; an episode played to within a
+   minute of its end starts from the beginning next time. Podcasts are a source
+   like radio: one at a time (AUD_REQ_003), paused by announcements.
 
 Software — DSP
 --------------

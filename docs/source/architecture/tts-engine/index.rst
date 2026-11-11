@@ -199,3 +199,26 @@ Interfaces
      - Plays the chimes and speech through the shared dmix output (DEC-033)
 
 Component pages will be created during the component interview phase.
+
+C4 Components
+-------------
+
+The components as implemented (KDS-9ym, 2026-11-11).
+
+.. plantuml::
+   :caption: Components — TTS Engine
+
+   @startuml
+   !include ../../c4/C4_Component.puml
+   LAYOUT_TOP_DOWN()
+
+   Container_Boundary(te, "TTS Engine (library in the Audio Player)") {
+       Component(cache, "Cache", "cache.rs", "WAVs in /data/tts-cache keyed by synthesiser and text; 90 days since last use")
+       Component(synth, "Synthesisers", "synth.rs", "espeak-ng (Danish, English), flite; no shell")
+   }
+   System_Ext(espeak, "espeak-ng", "CLI")
+   Container_Ext(ann, "Announcer", "Audio Player")
+   Rel(ann, cache, "get_or_synthesize")
+   Rel(cache, synth, "on a miss")
+   Rel(synth, espeak, "subprocess")
+   @enduml

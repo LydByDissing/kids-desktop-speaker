@@ -1,6 +1,6 @@
 //! `POST /api/tts` against a stand-in Audio Player on a real socket.
 
-use api_server::app;
+use api_server::local_app as app;
 use api_server::state::AppState;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

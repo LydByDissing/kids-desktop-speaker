@@ -8,6 +8,7 @@
 #                    source version and declared licenses
 #   rust-crates.tsv  every Rust crate compiled into our services, with its license
 #   librespot-crates.tsv  every crate compiled into librespot (DEC-034)
+#   camilladsp-crates.tsv every crate compiled into CamillaDSP (DEC-036)
 #   copyright/       each package's full copyright file
 # The source versions identify exactly which source code corresponds to the
 # binaries, for GPL and LGPL obligations.
@@ -54,6 +55,9 @@ for p in sorted(meta["packages"], key=lambda p: (p["name"], p["version"])):
 LIBRESPOT_CRATES="$REPO/ci/librespot/out/crates.tsv"
 [ -f "$LIBRESPOT_CRATES" ] || { echo "error: missing $LIBRESPOT_CRATES (run make -C ci librespot)" >&2; exit 1; }
 cp "$LIBRESPOT_CRATES" "$WORK/licenses/librespot-crates.tsv"
+CAMILLADSP_CRATES="$REPO/ci/camilladsp/out/crates.tsv"
+[ -f "$CAMILLADSP_CRATES" ] || { echo "error: missing $CAMILLADSP_CRATES (run make -C ci camilladsp)" >&2; exit 1; }
+cp "$CAMILLADSP_CRATES" "$WORK/licenses/camilladsp-crates.tsv"
 
 tar -C "$WORK" -czf "$OUTPUT" licenses
 echo "==> License inventory: $OUTPUT ($(($(wc -l < "$WORK/licenses/packages.tsv") - 1)) packages, $(($(wc -l < "$WORK/licenses/rust-crates.tsv") - 1)) crates)"
