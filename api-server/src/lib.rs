@@ -38,6 +38,20 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/messages/:id/audio", get(routes::messages::audio))
         .route("/api/messages/:id/play", post(routes::messages::replay))
+        .route(
+            "/api/podcasts",
+            get(routes::podcasts::list).post(routes::podcasts::add),
+        )
+        .route(
+            "/api/podcasts/:id",
+            axum::routing::delete(routes::podcasts::remove),
+        )
+        .route(
+            "/api/podcasts/:id/episodes",
+            get(routes::podcasts::episodes),
+        )
+        .route("/api/podcasts/play", post(routes::podcasts::play))
+        .route("/api/podcasts/stop", post(routes::podcasts::stop))
         .route("/api/radio/play", post(routes::radio::play))
         .route("/api/radio/stop", post(routes::radio::stop))
         .route("/api/ota/status", get(routes::services::get_ota_status))

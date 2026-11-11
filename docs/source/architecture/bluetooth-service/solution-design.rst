@@ -268,10 +268,17 @@ Open Questions
      we may need rate limiting to avoid overwhelming CamillaDSP with
      fader commands.
 
+     **Status (2026-11-11)**: Open: comes with the AVRCP remote in wave 6 (KDS-sgt.4).
+
    - **Multiple paired devices**: How many devices can be paired
      simultaneously? BlueZ supports many, but our UI should handle the
      case of multiple paired devices clearly. For v1, limit to 3 paired
      devices.
 
+     **Status (2026-11-11)**: Open: BlueZ keeps every pairing on /data (BT_REQ_003); the Web UI lists them (wave 5).
+
    - **Battery level**: Some AVRCP devices report battery level via D-Bus.
      Should we expose this in the API? Low priority for v1.
+
+
+     **Status (2026-11-11)**: Deferred: low priority.

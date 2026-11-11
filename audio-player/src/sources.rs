@@ -7,6 +7,9 @@ use crate::manager::Manager;
 /// its account across updates (DEC-034).
 pub const SPOTIFY_STATE_DIR: &str = "/data/librespot";
 
+/// librespot runs this on each player event, with $PLAYER_EVENT set.
+pub const SPOTIFY_EVENT_HOOK: &str = "/usr/local/bin/kds-spotify-event";
+
 /// The name the speaker shows in the Spotify and AirPlay pickers: the hostname
 /// with a capital first letter, as shairport-sync's "%H" gives
 /// ("kidsspeaker-2df5" becomes "Kidsspeaker-2df5").
@@ -43,6 +46,9 @@ pub fn spotify_args(name: &str) -> Vec<String> {
         "--system-cache",
         SPOTIFY_STATE_DIR,
         "--disable-audio-cache",
+        // Reports playing/paused to the Audio Player (DEC-039).
+        "--onevent",
+        SPOTIFY_EVENT_HOOK,
     ]
     .iter()
     .map(|s| s.to_string())

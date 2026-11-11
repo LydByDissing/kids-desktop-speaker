@@ -174,3 +174,32 @@ Interfaces
      - Report paired devices, forward AVRCP commands, pairing requests
 
 Component pages will be created during the component interview phase.
+
+C4 Components
+-------------
+
+The components as implemented (KDS-9ym, 2026-11-11).
+
+.. plantuml::
+   :caption: Components — Bluetooth Service
+
+   @startuml
+   !include ../../c4/C4_Component.puml
+   LAYOUT_TOP_DOWN()
+
+   Container_Boundary(bts, "Bluetooth Service") {
+       Component(agent, "Pairing agent", "agent.rs (zbus)", "org.bluez.Agent1: accepts and trusts devices only while the pairing window is open")
+       Component(window, "Pairing window", "pairing.rs", "Open for 180 s on request")
+       Component(bluez, "BlueZ client", "bluez.rs (zbus)", "Registers the agent, opens pairing, AVRCP Pause/Play, watches transport state")
+       Component(avrcp, "AVRCP monitor", "controller.rs", "bluetoothctl --agent=off: remote-control events")
+       Component(ipcb, "IPC server", "ipc.rs", "status, pair, avrcp")
+   }
+   System_Ext(bluezd, "BlueZ", "bluetoothd over D-Bus")
+   System_Ext(audio, "Audio Player", "audio.sock")
+   Rel(ipcb, window, "pair")
+   Rel(ipcb, bluez, "pair, avrcp")
+   Rel(agent, window, "is it open?")
+   Rel(bluezd, agent, "RequestConfirmation, AuthorizeService")
+   Rel(bluez, bluezd, "D-Bus")
+   Rel(bluez, audio, "source_event bluetooth")
+   @enduml

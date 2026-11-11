@@ -73,6 +73,17 @@ Software — Audio Streaming
    for a minute). A source that was never installed is not retried. The
    source's own log output shall reach the journal.
 
+.. req:: AUD_REQ_003
+   :id: AUD_REQ_003
+   :status: open
+   :tags: software, audio
+
+   When a source starts playing while another plays, the newest source shall win
+   and the other shall stop (AUD_REQ_001): radio is stopped, an AirPlay or
+   Spotify session is ended, and a Bluetooth phone is paused over AVRCP. During
+   an announcement, a Bluetooth phone shall be paused over AVRCP and resumed
+   afterwards, so it continues where it was (ref DEC-039).
+
 .. req:: SW_REQ_001
    :id: SW_REQ_001
    :status: open
@@ -216,6 +227,26 @@ Software — Audio Streaming
    seconds until setup is completed. Afterwards a new code can be requested
    (``POST /api/setup/start``), at most once a minute, to recover a lost admin
    token. A code allows 5 attempts; then a new code is needed.
+
+.. req:: POD_REQ_001
+   :id: POD_REQ_001
+   :status: open
+   :tags: software, streaming, podcasts
+
+   Podcast feeds (RSS) shall be kept in a list on the data partition, which the
+   API can read, add to (by the feed's ``http``/``https`` URL; its title is read
+   from the feed) and remove from (SW_REQ_003). For each feed the API shall list
+   its latest 50 episodes, newest first, with title, date and duration.
+
+.. req:: POD_REQ_002
+   :id: POD_REQ_002
+   :status: open
+   :tags: software, streaming, podcasts
+
+   The speaker shall play an episode through MPD (DEC_005) and remember how far
+   it got, so playing it again continues there; an episode played to within a
+   minute of its end starts from the beginning next time. Podcasts are a source
+   like radio: one at a time (AUD_REQ_003), paused by announcements.
 
 Software — DSP
 --------------

@@ -228,6 +228,8 @@ pub struct ManagedSources {
     pub managers: Vec<Manager>,
     /// MPD runs as its own service, so it is paused through its protocol.
     pub mpd: Option<crate::mpd::Mpd>,
+    /// The Bluetooth Service, to pause a phone over AVRCP (DEC-039).
+    pub bt: Option<crate::switcher::BtClient>,
 }
 
 impl ManagedSources {
@@ -238,6 +240,18 @@ impl ManagedSources {
             events.push((manager.name(), manager.supervise().await));
         }
         events
+    }
+
+    /// Restarts a source, which ends its session (an AirPlay or Spotify sender
+    /// sees the speaker disconnect). Used when another source displaces it.
+    pub async fn restart(&mut self, name: &str) -> Result<(), String> {
+        let manager = self
+            .managers
+            .iter_mut()
+            .find(|m| m.name() == name)
+            .ok_or_else(|| format!("no source {name}"))?;
+        manager.stop().await.map_err(|e| e.to_string())?;
+        manager.start().await.map_err(|e| e.to_string())
     }
 
     pub async fn stop_all(&mut self) -> Result<(), ManagerError> {
@@ -251,7 +265,25 @@ impl ManagedSources {
 impl crate::announcer::Sources for ManagedSources {
     async fn pause_all(&mut self) -> Vec<String> {
         let mut paused = Vec::new();
+        // A phone streaming over Bluetooth is paused over AVRCP, so it shows
+        // paused and resumes where it was (DEC-039). The Bluetooth Service
+        // refuses when nothing plays; then bluealsa-aplay is stopped instead.
+        let bluetooth_running = self
+            .managers
+            .iter()
+            .any(|m| m.name() == "bluealsa-aplay" && m.is_running());
+        if bluetooth_running {
+            if let Some(bt) = &self.bt {
+                if bt.avrcp("pause").await.is_ok() {
+                    paused.push("avrcp".to_string());
+                }
+            }
+        }
+        let phone_paused = paused.iter().any(|p| p == "avrcp");
         for manager in &mut self.managers {
+            if phone_paused && manager.name() == "bluealsa-aplay" {
+                continue;
+            }
             if manager.is_running() {
                 match manager.pause().await {
                     Ok(()) => paused.push(manager.name().to_string()),
@@ -273,6 +305,13 @@ impl crate::announcer::Sources for ManagedSources {
     }
 
     async fn resume(&mut self, names: &[String]) {
+        if let Some(bt) = &self.bt {
+            if names.iter().any(|n| n == "avrcp") {
+                if let Err(e) = bt.avrcp("play").await {
+                    eprintln!("audio-player: could not resume the phone: {e}");
+                }
+            }
+        }
         if let Some(mpd) = &self.mpd {
             if names.iter().any(|n| n == "mpd") {
                 if let Err(e) = mpd.set_paused(false).await {

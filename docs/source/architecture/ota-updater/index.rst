@@ -322,3 +322,31 @@ Component pages will be created during the component interview phase.
 
    solution-design
 
+C4 Components
+-------------
+
+The components as implemented (KDS-9ym, 2026-11-11).
+
+.. plantuml::
+   :caption: Components — OTA Updater
+
+   @startuml
+   !include ../../c4/C4_Component.puml
+   LAYOUT_TOP_DOWN()
+
+   Container_Boundary(ou, "OTA Updater") {
+       Component(release, "Release checker", "release.rs, version.rs", "Polls GitHub Releases; compares versions")
+       Component(inst, "Installer", "installer.rs", "Downloads and verifies the bundle; rauc install")
+       Component(reboot, "Reboot scheduler", "reboot.rs", "Reboots inside the night window when no audio plays")
+       Component(st, "State", "state.rs, config.rs", "Idle, downloading, installed; settings")
+       Component(ipco, "IPC server", "ipc.rs", "status, check, reboot")
+   }
+   System_Ext(gh, "GitHub Releases", "manifest and bundle")
+   System_Ext(rauc, "RAUC", "A/B slots")
+   Rel(ipco, release, "check now")
+   Rel(release, gh, "HTTPS")
+   Rel(release, inst, "newer release")
+   Rel(inst, rauc, "install")
+   Rel(inst, st, "progress")
+   Rel(reboot, st, "installed")
+   @enduml

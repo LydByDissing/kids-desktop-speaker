@@ -64,7 +64,21 @@ async fn main() -> anyhow::Result<()> {
     let mut ctx = Context::new(Arc::clone(&connected), Arc::clone(&window));
     ctx.bus = connect_agent(Arc::clone(&window)).await;
     if let Some(bus) = ctx.bus.clone() {
-        join_set.spawn(register_until_done(bus));
+        join_set.spawn(register_until_done(bus.clone()));
+        // Tell the Audio Player when a phone starts or stops streaming, so only
+        // one source plays at a time (DEC-039).
+        join_set.spawn(async move {
+            let report = |active: bool| async move {
+                let state = if active { "active" } else { "inactive" };
+                let request = serde_json::json!({"cmd": "source_event", "source": "bluetooth", "state": state});
+                if let Err(e) = kds_ipc::request("/run/kds/audio.sock", &request).await {
+                    eprintln!("bluetooth-service: could not tell the Audio Player: {e}");
+                }
+            };
+            if let Err(e) = bluez::watch_transports(&bus, "org.bluez", report).await {
+                eprintln!("bluetooth-service: watching audio transports failed: {e}");
+            }
+        });
     }
     join_set.spawn(async move {
         if let Err(e) = ipc::serve("/run/kds/bt.sock", ctx).await {

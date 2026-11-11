@@ -90,6 +90,8 @@ fn services(mpd: &FakeMpd, name: &str) -> Services {
         announcements: None,
         messages_dir: None,
         announcing: None,
+        stopper: None,
+        podcasts: None,
         radio: Some(Arc::new(Radio {
             stations: StationStore::new(temp_path(name)),
             mpd: Mpd::new(&mpd.addr),
@@ -273,6 +275,8 @@ async fn status_survives_mpd_being_down() {
         announcements: None,
         messages_dir: None,
         announcing: None,
+        stopper: None,
+        podcasts: None,
         radio: Some(Arc::new(Radio {
             stations: StationStore::new(temp_path("down")),
             mpd: Mpd::new("127.0.0.1:1"),
@@ -292,6 +296,7 @@ async fn announcements_pause_and_resume_playing_radio() {
     let mut sources = ManagedSources {
         managers: vec![],
         mpd: Some(client.clone()),
+        bt: None,
     };
     let paused = sources.pause_all().await;
     assert_eq!(paused, vec!["mpd".to_string()]);
@@ -306,6 +311,7 @@ async fn announcements_leave_stopped_radio_alone() {
     let mut sources = ManagedSources {
         managers: vec![],
         mpd: Some(Mpd::new(&mpd.addr)),
+        bt: None,
     };
     assert!(sources.pause_all().await.is_empty());
     assert!(!mpd
@@ -314,4 +320,35 @@ async fn announcements_leave_stopped_radio_alone() {
         .unwrap()
         .iter()
         .any(|c| c.starts_with("pause")));
+}
+
+#[tokio::test]
+async fn playing_the_radio_displaces_the_active_source() {
+    use audio_player::arbitrator::Source;
+    use audio_player::switcher::{BoxFuture, Stopper};
+    #[derive(Default)]
+    struct Recorder(StdMutex<Vec<Source>>);
+    impl Stopper for Recorder {
+        fn stop(&self, source: Source) -> BoxFuture<'_, Result<(), String>> {
+            self.0.lock().unwrap().push(source);
+            Box::pin(async { Ok(()) })
+        }
+    }
+    let mpd = fake_mpd().await;
+    let recorder = Arc::new(Recorder::default());
+    let mut s = services(&mpd, "displace");
+    s.stopper = Some(Arc::clone(&recorder) as Arc<dyn Stopper>);
+    let arb = Arc::new(Mutex::new(Arbitrator::new()));
+    arb.lock().await.source_started(Source::Airplay);
+    let r = handle_full(
+        json!({"cmd": "radio_play", "id": "dr-p3"}),
+        Arc::clone(&arb),
+        &s,
+    )
+    .await;
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(*recorder.0.lock().unwrap(), vec![Source::Airplay]);
+    assert_eq!(arb.lock().await.active(), Some(Source::Radio));
+    handle_full(json!({"cmd": "radio_stop"}), Arc::clone(&arb), &s).await;
+    assert_eq!(arb.lock().await.active(), None);
 }

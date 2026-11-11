@@ -2,9 +2,11 @@ use audio_player::announcer::{espeak_voices, AnnounceQueue, Announcer, Aplay, Ch
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{self, Radio, Services};
 use audio_player::manager::{ManagedSources, Supervision};
-use audio_player::mpd::Mpd;
+use audio_player::mpd::{Mpd, PlayState};
+use audio_player::podcasts::{PodcastStore, Podcasts, PODCASTS_DIR};
 use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
+use audio_player::switcher::{BtClient, DeviceStopper};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -21,9 +23,26 @@ const MESSAGES_DIR: &str = "/data/messages";
 const MPD_ADDR: &str = "127.0.0.1:6600";
 /// The shared output in /etc/asound.conf (DEC-033).
 const OUTPUT_DEVICE: &str = "speaker";
+const AUDIO_SOCKET: &str = "/run/kds/audio.sock";
+const BT_SOCKET: &str = "/run/kds/bt.sock";
+
+/// `audio-player notify <source> <event>`: what the receivers' hooks run to
+/// report that they started or stopped playing (DEC-039).
+async fn notify(source: &str, event: &str) -> anyhow::Result<()> {
+    let request = serde_json::json!({"cmd": "source_event", "source": source, "state": event});
+    kds_ipc::request(AUDIO_SOCKET, &request).await?;
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("notify") {
+        let (Some(source), Some(event)) = (args.get(2), args.get(3)) else {
+            anyhow::bail!("usage: audio-player notify <source> <event>");
+        };
+        return notify(source, event).await;
+    }
     println!("audio-player: starting");
 
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
@@ -47,10 +66,44 @@ async fn main() -> anyhow::Result<()> {
         current: std::sync::Mutex::new(None),
     });
 
+    let podcasts = Arc::new(Podcasts {
+        store: PodcastStore::new(PODCASTS_DIR),
+        mpd: mpd.clone(),
+        current: std::sync::Mutex::new(None),
+    });
+    // Keep the listening position of a playing podcast episode (POD_REQ_002).
+    let saver = Arc::clone(&podcasts);
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(Duration::from_secs(15));
+        loop {
+            every.tick().await;
+            if saver.current().is_some()
+                && saver
+                    .mpd
+                    .status()
+                    .await
+                    .is_ok_and(|s| s.state == PlayState::Play)
+            {
+                saver.save_current().await;
+            }
+        }
+    });
+
+    let bt = BtClient {
+        socket: BT_SOCKET.into(),
+    };
     let sources = Arc::new(Mutex::new(ManagedSources {
         managers: vec![airplay, spotify, bluetooth],
         mpd: Some(mpd),
+        bt: Some(bt.clone()),
     }));
+    // When a source starts, the others stop (AUD_REQ_003, DEC-039).
+    let stopper = Arc::new(DeviceStopper {
+        sources: Arc::clone(&sources),
+        radio: Some(Arc::clone(&radio)),
+        podcasts: Some(Arc::clone(&podcasts)),
+        bt,
+    });
 
     // Announcements (TTS_REQ_002). If the cache or chimes can't be set up, the
     // speaker still plays music; announce requests are then refused.
@@ -96,8 +149,10 @@ async fn main() -> anyhow::Result<()> {
             radio: Some(radio),
             messages_dir: Some(MESSAGES_DIR.into()),
             announcing: Some(announcing),
+            stopper: Some(stopper),
+            podcasts: Some(podcasts),
         };
-        if let Err(e) = ipc::serve("/run/kds/audio.sock", arb_clone, services).await {
+        if let Err(e) = ipc::serve(AUDIO_SOCKET, arb_clone, services).await {
             eprintln!("IPC server error: {}", e);
         }
     });

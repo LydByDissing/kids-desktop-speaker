@@ -2563,3 +2563,43 @@ announcement spam). A code allows 5 attempts and is compared in constant time.
 **Rejected**: a code on the boot partition (needs the SD card), the first caller
 after boot becoming admin (anyone on the network could claim the speaker), a
 button (there is none).
+
+DEC-039 — One Source at a Time: Source Events and Stopping the Others
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_039
+   :status: resolved
+   :date: 2026-11-11
+   :tags: audio, bluetooth
+
+**Context**: every receiver writes to the shared output (DEC-033), so nothing
+stopped two senders from playing mixed (AUD_REQ_001). The arbitrator existed but
+was never told what played.
+
+**Decision 1: each source reports when it plays.** The Audio Player accepts
+``source_event {source, state}`` over IPC (``active`` or ``inactive``):
+
+- AirPlay: shairport-sync's ``run_this_before_play_begins`` and
+  ``run_this_after_play_ends`` run ``audio-player notify airplay active|inactive``.
+- Spotify: librespot's ``--onevent`` runs ``kds-spotify-event``, which passes
+  ``$PLAYER_EVENT`` to ``audio-player notify spotify`` (``playing`` is active;
+  ``paused``, ``stopped`` and ``session_disconnected`` are inactive).
+- Bluetooth: the Bluetooth Service watches BlueZ's ``MediaTransport1.State``
+  (``active`` while the phone streams) and reports it.
+- Radio: the Audio Player starts MPD itself.
+
+**Decision 2: the newest wins, and the others are stopped the way each allows.**
+Radio: MPD stops. AirPlay and Spotify: the receiver is restarted, which ends
+the session (neither offers a "stop" a receiver can send). Bluetooth: the
+Bluetooth Service sends AVRCP Pause to the phone through BlueZ's
+``MediaPlayer1`` (``avrcp {action}`` over IPC), so the phone shows it paused.
+
+A sender that reconnects by itself keeps the "newest wins" rule: PipeWire's
+AirPlay sink reconnects to the restarted receiver while it still has audio, and
+then takes over again. An iPhone shows the AirPlay session as ended instead.
+
+**Decision 3: announcements pause a Bluetooth phone over AVRCP** (KDS-9jt.2) and
+send Play afterwards, so it continues where it was. If the phone offers no
+AVRCP player, the Audio Player falls back to stopping ``bluealsa-aplay`` with
+SIGSTOP as before.

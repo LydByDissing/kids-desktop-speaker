@@ -85,6 +85,18 @@ pub async fn handle(request: Value, ctx: &Context) -> Value {
             );
             ok(json!({ "pairing": pairing_status(&ctx.window) }))
         }
+        Some("avrcp") => {
+            let Some(action) = request.get("action").and_then(Value::as_str) else {
+                return error("avrcp needs action");
+            };
+            let Some(bus) = &ctx.bus else {
+                return error("bluetooth unavailable");
+            };
+            match bluez::avrcp(bus, &ctx.bluez, action).await {
+                Ok(()) => ok(Value::Null),
+                Err(e) => error(e),
+            }
+        }
         Some(other) => error(format!("unknown command: {other}")),
         None => error("missing cmd"),
     }

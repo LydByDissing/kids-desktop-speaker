@@ -46,15 +46,15 @@ check "the station is reported" "$(echo "$src" | grep -c '"station":"dr-p3"')" 1
 log "  programme: $(echo "$src" | grep -o '"title":"[^"]*"' | head -1)"
 
 log "=== An announcement pauses the radio"
-# Radio shows as "idle" in the source status while MPD is paused.
-remote "for i in \$(seq 40); do curl -s http://127.0.0.1:8080/api/audio/source | grep -o '\"active\":[^,]*'; sleep 0.25; done | uniq | tr '\n' ' ' > /tmp/kds-mpd-watch" &
+# MPD's own state shows the pause (the radio stays the active source).
+remote "for i in \$(seq 40); do timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/6600; cat <&3 & echo status >&3; sleep 0.2; kill %1' 2>/dev/null | grep -o 'state: [a-z]*'; sleep 0.25; done | uniq | tr '\n' ' ' > /tmp/kds-mpd-watch" &
 watch=$!
 sleep 0.5
 check "POST /api/tts" "$(api POST /api/tts '{"text": "Radio", "lang": "en"}')" 202
 wait $watch
 states=$(remote cat /tmp/kds-mpd-watch)
-log "  active source over time: $states"
-check "the radio was paused during the announcement" "$(echo "$states" | grep -c '"active":null')" 1
+log "  MPD over time: $states"
+check "the radio was paused during the announcement" "$(echo "$states" | grep -c 'state: pause')" 1
 api GET /api/audio/source >/dev/null
 check "the radio plays again afterwards" "$(body | grep -c '"active":"radio"')" 1
 

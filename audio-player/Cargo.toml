@@ -21,3 +21,7 @@ serde_json = "1"
 anyhow = "1"
 thiserror = "1"
 nix = { version = "0.27", features = ["signal"] }
+# Podcast feeds (POD_REQ_001): rustls with ring like the OTA Updater, and a
+# small XML parser.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+roxmltree = "0.20"

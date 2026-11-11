@@ -266,13 +266,22 @@ Open Questions
      may need to fetch it from the stream metadata or RSS feed. For v1,
      show a placeholder if no art is available.
 
+     **Status (2026-11-11)**: Open for the wave 5 design review (KDS-9pb).
+
    - **Responsive breakpoints**: Define specific breakpoints for phone
      (portrait/landscape), tablet, and desktop. Player page should work
      well on a phone held vertically (the primary use case).
 
+     **Status (2026-11-11)**: Drafted: phone first, two columns on a tablet or laptop (User Journeys and Wireframes).
+
    - **Dark mode**: Should the UI support dark mode? Most speaker UIs do.
      Low priority for v1 — light mode only initially.
+
+     **Status (2026-11-11)**: Deferred: light mode first.
 
    - **Internationalization**: The UI is English-only for v1. If we need
      multi-language support later, Leptos has i18n crates available.
      Defer to a future release.
+
+
+     **Status (2026-11-11)**: Superseded: Danish (default) and English from the start (LOC_REQ_001, wave 5).

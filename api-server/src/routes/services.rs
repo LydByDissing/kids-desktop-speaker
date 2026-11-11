@@ -26,7 +26,25 @@ pub async fn send(
     service: Service,
     request: &Value,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
-    match kds_ipc::request(state.socket(service), request).await {
+    send_within(state, service, request, std::time::Duration::from_secs(5)).await
+}
+
+/// As [`send`], allowing the service `limit` to answer: for commands that fetch
+/// from the internet, such as a podcast feed.
+pub async fn send_within(
+    state: &AppState,
+    service: Service,
+    request: &Value,
+    limit: std::time::Duration,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    let reply = kds_ipc::request_with_timeouts(
+        state.socket(service),
+        request,
+        std::time::Duration::from_secs(2),
+        limit,
+    )
+    .await;
+    match reply {
         Ok(mut response) => {
             if let Some(map) = response.as_object_mut() {
                 map.remove("ok");

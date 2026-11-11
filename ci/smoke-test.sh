@@ -207,6 +207,15 @@ else
 fi
 
 echo ""
+echo "--- One source at a time (DEC-039) ---"
+require_executable /usr/local/bin/kds-spotify-event
+if grep -q 'run_this_before_play_begins = "/usr/local/bin/audio-player notify airplay active"' /etc/shairport-sync.conf; then
+    ok "AirPlay reports when it plays"
+else
+    fail "shairport-sync does not report when it plays"
+fi
+
+echo ""
 echo "--- AirPlay (shairport-sync, started by audio-player) ---"
 require_executable /usr/bin/shairport-sync
 require_file /etc/shairport-sync.conf

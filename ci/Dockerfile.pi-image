@@ -144,6 +144,7 @@ COPY ci/device/camilladsp.service /etc/systemd/system/camilladsp.service
 COPY ci/device/snd-aloop.conf /etc/modprobe.d/snd-aloop.conf
 RUN echo snd-aloop > /etc/modules-load.d/snd-aloop.conf
 COPY ci/device/shairport-sync.conf /etc/shairport-sync.conf
+COPY --chmod=755 ci/device/kds-spotify-event /usr/local/bin/kds-spotify-event
 # Bluetooth audio (DEC-035): sink-only BlueALSA, pairings on /data, and the
 # loudspeaker device class, without which iOS won't offer the speaker.
 COPY ci/device/mpd.conf /etc/mpd.conf

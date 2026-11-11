@@ -415,6 +415,8 @@ Open Questions
      defined before implementation. For now, we expose a standard REST
      API and mDNS — HA can use the ``rest`` integration.
 
+     **Status (2026-11-11)**: Planned in wave 6 (KDS-sgt.6): mDNS discovery and the REST API with a token (DEC-038).
+
    - **Port configuration**: Resolved: HTTPS on 443 for the Web UI and API,
      plain HTTP on 8080 for health checks and tests (WEB_REQ_001).
 

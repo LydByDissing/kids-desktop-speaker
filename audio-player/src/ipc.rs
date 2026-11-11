@@ -27,6 +27,10 @@ pub struct Services {
     pub messages_dir: Option<std::path::PathBuf>,
     /// True while an announcement or message plays.
     pub announcing: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// Stops displaced sources (DEC-039).
+    pub stopper: Option<Arc<dyn crate::switcher::Stopper>>,
+    /// Podcast feeds and episodes (POD_REQ_001/002).
+    pub podcasts: Option<Arc<crate::podcasts::Podcasts>>,
 }
 
 /// A message id names a file in the messages directory, so it may only hold
@@ -49,10 +53,7 @@ pub async fn serve(
 }
 
 fn source_name(source: &Source) -> &'static str {
-    match source {
-        Source::Airplay => "airplay",
-        Source::Spotify => "spotify",
-    }
+    source.name()
 }
 
 pub async fn handle(request: Value, arb: Arc<Mutex<Arbitrator>>) -> Value {
@@ -99,7 +100,13 @@ async fn radio_status(radio: &Radio) -> Value {
     }
 }
 
-async fn handle_radio(cmd: &str, request: &Value, radio: &Radio) -> Value {
+async fn handle_radio(
+    cmd: &str,
+    request: &Value,
+    radio: &Radio,
+    arb: &Mutex<Arbitrator>,
+    stopper: Option<&Arc<dyn crate::switcher::Stopper>>,
+) -> Value {
     let result: Result<Value, String> = async {
         match cmd {
             "radio_stations" => Ok(json!({ "stations": radio.stations.list()? })),
@@ -123,6 +130,15 @@ async fn handle_radio(cmd: &str, request: &Value, radio: &Radio) -> Value {
                 if let Ok(mut current) = radio.current.lock() {
                     *current = Some(station.id.clone());
                 }
+                // The radio is now the newest source (DEC-039).
+                match stopper {
+                    Some(stopper) => {
+                        crate::switcher::source_active(arb, stopper.as_ref(), Source::Radio).await;
+                    }
+                    None => {
+                        arb.lock().await.source_started(Source::Radio);
+                    }
+                }
                 Ok(json!({ "station": station }))
             }
             "radio_stop" => {
@@ -130,9 +146,70 @@ async fn handle_radio(cmd: &str, request: &Value, radio: &Radio) -> Value {
                 if let Ok(mut current) = radio.current.lock() {
                     *current = None;
                 }
+                arb.lock().await.source_stopped(Source::Radio);
                 Ok(Value::Null)
             }
             _ => Ok(json!({ "radio": radio_status(radio).await })),
+        }
+    }
+    .await;
+    match result {
+        Ok(data) => ok(data),
+        Err(e) => error(e),
+    }
+}
+
+async fn handle_podcast(
+    cmd: &str,
+    request: &Value,
+    podcasts: &crate::podcasts::Podcasts,
+    radio: Option<&Radio>,
+    arb: &Mutex<Arbitrator>,
+    stopper: Option<&Arc<dyn crate::switcher::Stopper>>,
+) -> Value {
+    use crate::podcasts::{fetch, parse_feed};
+    let result: Result<Value, String> = async {
+        match cmd {
+            "podcast_feeds" => Ok(json!({ "feeds": podcasts.store.feeds()? })),
+            "podcast_add" => {
+                let url = str_arg(request, "url")?;
+                let (title, _) = parse_feed(&fetch(url).await?)?;
+                Ok(json!({ "feed": podcasts.store.add(url, &title)? }))
+            }
+            "podcast_remove" => {
+                podcasts.store.remove(str_arg(request, "id")?)?;
+                Ok(Value::Null)
+            }
+            "podcast_episodes" => {
+                let feed = podcasts.store.feed(str_arg(request, "id")?)?;
+                let (_, episodes) = parse_feed(&fetch(&feed.url).await?)?;
+                Ok(json!({ "feed": feed, "episodes": podcasts.store.with_positions(episodes) }))
+            }
+            "podcast_play" => {
+                let episode = podcasts
+                    .play(str_arg(request, "feed")?, str_arg(request, "episode")?)
+                    .await?;
+                // A station is no longer playing; podcasts are the radio source.
+                if let Some(radio) = radio {
+                    if let Ok(mut current) = radio.current.lock() {
+                        *current = None;
+                    }
+                }
+                match stopper {
+                    Some(stopper) => {
+                        crate::switcher::source_active(arb, stopper.as_ref(), Source::Radio).await;
+                    }
+                    None => {
+                        arb.lock().await.source_started(Source::Radio);
+                    }
+                }
+                Ok(json!({ "episode": episode }))
+            }
+            _ => {
+                podcasts.stop().await?;
+                arb.lock().await.source_stopped(Source::Radio);
+                Ok(Value::Null)
+            }
         }
     }
     .await;
@@ -160,20 +237,79 @@ pub async fn handle_full(
                 .as_ref()
                 .is_some_and(|b| b.load(std::sync::atomic::Ordering::SeqCst));
             let waiting = announcements.map(AnnounceQueue::waiting).unwrap_or(0);
-            ok(json!({ "active": active, "radio": radio, "announcing": playing || waiting > 0 }))
+            let podcast = services
+                .podcasts
+                .as_ref()
+                .and_then(|p| p.current())
+                .map(|(feed, episode)| json!({ "feed": feed, "episode": episode }));
+            ok(
+                json!({ "active": active, "radio": radio, "podcast": podcast, "announcing": playing || waiting > 0 }),
+            )
         }
         Some(
             cmd @ ("radio_stations" | "radio_add" | "radio_remove" | "radio_play" | "radio_stop"
             | "radio_status"),
         ) => match &services.radio {
-            Some(radio) => handle_radio(cmd, &request, radio).await,
+            Some(radio) => {
+                handle_radio(cmd, &request, radio, &arb, services.stopper.as_ref()).await
+            }
             None => error("radio unavailable"),
         },
+        Some(
+            cmd @ ("podcast_feeds" | "podcast_add" | "podcast_remove" | "podcast_episodes"
+            | "podcast_play" | "podcast_stop"),
+        ) => match &services.podcasts {
+            Some(podcasts) => {
+                handle_podcast(
+                    cmd,
+                    &request,
+                    podcasts,
+                    services.radio.as_deref(),
+                    &arb,
+                    services.stopper.as_ref(),
+                )
+                .await
+            }
+            None => error("podcasts unavailable"),
+        },
+        Some("source_event") => {
+            let source = match request.get("source").and_then(Value::as_str) {
+                Some(name) => match Source::parse(name) {
+                    Some(s) => s,
+                    None => return error(format!("unknown source: {name}")),
+                },
+                None => return error("source_event needs source"),
+            };
+            let Some(event) = request.get("state").and_then(Value::as_str) else {
+                return error("source_event needs state");
+            };
+            match crate::switcher::event_state(source, event) {
+                Some(true) => {
+                    let displaced = match &services.stopper {
+                        Some(stopper) => {
+                            crate::switcher::source_active(&arb, stopper.as_ref(), source).await
+                        }
+                        None => {
+                            arb.lock().await.source_started(source);
+                            Vec::new()
+                        }
+                    };
+                    let names: Vec<&str> = displaced.iter().map(|s| s.name()).collect();
+                    ok(json!({ "displaced": names }))
+                }
+                Some(false) => {
+                    arb.lock().await.source_stopped(source);
+                    ok(Value::Null)
+                }
+                None => ok(Value::Null),
+            }
+        }
         Some("mute") => {
             let source = match request.get("source").and_then(Value::as_str) {
-                Some("airplay") => Source::Airplay,
-                Some("spotify") => Source::Spotify,
-                Some(other) => return error(format!("unknown source: {other}")),
+                Some(name) => match Source::parse(name) {
+                    Some(s) => s,
+                    None => return error(format!("unknown source: {name}")),
+                },
                 None => return error("mute needs source"),
             };
             arb.lock().await.source_stopped(source);

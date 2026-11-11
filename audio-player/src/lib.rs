@@ -3,5 +3,7 @@ pub mod arbitrator;
 pub mod ipc;
 pub mod manager;
 pub mod mpd;
+pub mod podcasts;
 pub mod radio;
 pub mod sources;
+pub mod switcher;

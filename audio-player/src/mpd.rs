@@ -30,11 +30,14 @@ pub enum PlayState {
     Stop,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Status {
     pub state: PlayState,
     /// What the stream reports as playing (ICY title), if anything.
     pub title: Option<String>,
+    /// Seconds into the current track, and its length when known (podcasts).
+    pub elapsed: Option<f64>,
+    pub duration: Option<f64>,
 }
 
 /// Quotes an argument: wrapped in double quotes, with `"` and `\` escaped.
@@ -114,6 +117,13 @@ impl Mpd {
             .map(|_| ())
     }
 
+    /// Seeks within the current track (to resume a podcast episode).
+    pub async fn seek(&self, seconds: f64) -> Result<(), MpdError> {
+        self.run(&[format!("seekcur {seconds:.1}")])
+            .await
+            .map(|_| ())
+    }
+
     pub async fn stop(&self) -> Result<(), MpdError> {
         self.run(&["stop".into()]).await.map(|_| ())
     }
@@ -135,6 +145,8 @@ impl Mpd {
         Ok(Status {
             state,
             title: get("Title"),
+            elapsed: get("elapsed").and_then(|v| v.parse().ok()),
+            duration: get("duration").and_then(|v| v.parse().ok()),
         })
     }
 }

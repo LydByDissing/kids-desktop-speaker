@@ -126,6 +126,17 @@ Config & Automation
      - Internet radio stations and playback (RAD_REQ_001)
    * - ``POST /api/bluetooth/pair``
      - Open a 3-minute Bluetooth pairing window (BT_REQ_002)
+   * - ``GET /api/podcasts``, ``POST /api/podcasts``, ``DELETE /api/podcasts/{id}``
+     - Podcast feeds: list, add by RSS URL, remove (POD_REQ_001)
+   * - ``GET /api/podcasts/{id}/episodes``, ``POST /api/podcasts/play``,
+       ``POST /api/podcasts/stop``
+     - The latest 50 episodes with saved positions; play one (continues where it
+       stopped); stop and save the position (POD_REQ_002)
+   * - ``POST /api/setup/start``, ``POST /api/setup``
+     - Ask the speaker to read a setup code aloud; exchange it for an admin token
+       (AUTH_REQ_003, no token needed)
+   * - ``GET /api/tokens``, ``POST /api/tokens``, ``DELETE /api/tokens/{id}``
+     - Manage API tokens (admin token over HTTPS, AUTH_REQ_002)
    * - ``GET /api/tokens``
      - List API tokens (metadata only, no secrets)
    * - ``POST /api/tokens``
@@ -284,3 +295,37 @@ Interfaces
      - External automation control and auto-discovery
 
 Component pages will be created during the component interview phase.
+
+C4 Components
+-------------
+
+The components as implemented (KDS-9ym, 2026-11-11).
+
+.. plantuml::
+   :caption: Components — API Server
+
+   @startuml
+   !include ../../c4/C4_Component.puml
+   LAYOUT_TOP_DOWN()
+
+   Container_Boundary(api, "API Server") {
+       Component(http, "Listeners", "axum, axum-server", "HTTPS on 443 with the device certificate (tls.rs); HTTP on 8080 for health checks; each marks its Transport")
+       Component(auth, "Authentication", "auth.rs", "Bearer tokens (hashed in /data/api/tokens.json); loopback is the device itself; admin guard")
+       Component(setup, "Setup", "setup.rs, routes/setup.rs", "Spoken 6-digit code; reads it until set up; exchanges it for an admin token")
+       Component(routes, "Routes", "routes/*", "audio, radio, podcasts, tts, messages, bluetooth, ota, tokens")
+       Component(msgs, "Message store", "messages.rs", "WAV recordings in /data/messages; 90-day expiry of unnamed ones")
+       Component(ipc, "Service client", "kds-ipc", "One JSON request per connection to /run/kds/*.sock")
+   }
+   Container_Ext(audio, "Audio Player", "audio.sock")
+   Container_Ext(ota, "OTA Updater", "ota.sock")
+   Container_Ext(bt, "Bluetooth Service", "bt.sock")
+   Rel(http, auth, "every request")
+   Rel(auth, routes, "authorised requests")
+   Rel(routes, setup, "/api/setup*")
+   Rel(routes, msgs, "/api/messages")
+   Rel(routes, ipc, "commands")
+   Rel(setup, ipc, "announce the code")
+   Rel(ipc, audio, "IPC")
+   Rel(ipc, ota, "IPC")
+   Rel(ipc, bt, "IPC")
+   @enduml

@@ -239,6 +239,15 @@ own (``audio-player/src/mpd.rs``: ``clear``/``add``/``play``, ``pause``,
 Stations live in ``/data/radio/stations.json`` (DR P1–P3 until changed).
 Announcements pause MPD through the protocol and resume it afterwards.
 
+**Podcasts (2026-11-11, KDS-9jt.4, POD_REQ_001/002)**: feeds live in
+``/data/podcasts/feeds.json`` and listening positions in
+``/data/podcasts/positions.json``. The Audio Player fetches a feed with
+``reqwest`` (rustls and ring, as the OTA Updater) and parses it with
+``roxmltree``, keeping the latest 50 episodes so a reply fits the 64 KiB IPC
+limit. An episode's enclosure URL plays through MPD like a station, then seeks
+to the saved position; while it plays, the position is saved every 15 s and when
+it stops. Podcasts count as the radio source for one-at-a-time (DEC-039).
+
 **Rationale**:
 
 - MPD is proven: Volumio, moOde, and RuneAudio all use it successfully.
@@ -436,10 +445,17 @@ Open Questions
      (ARMv6). May need to test compilation with ``arm-unknown-linux-gnueabihf``
      target.
 
+     **Status (2026-11-11)**: Resolved: librespot 0.8.0 is built for ARMv6 in CI and plays on the Pi (DEC-034).
+
    - **MPD as systemd dependency**: Should MPD be a separate systemd service
      that audio-player.service depends on, or should the Audio Player start
      MPD itself? Recommendation: separate service for clean lifecycle mgmt.
 
+     **Status (2026-11-11)**: Resolved: MPD runs as its own service on localhost (DEC_005, KDS-7ix).
+
    - **CPU budget**: 40% for Audio Player + 50% for CamillaDSP = 90% of a
      single core. Tight. Need real hardware validation. May need to reduce
      CamillaDSP's CPUQuota or simplify the DSP pipeline.
+
+
+     **Status (2026-11-11)**: Resolved by measurement: one source at 8-18 % plus CamillaDSP at 8 % (Hardware Measurements, DEC-036); no CPUQuota needed.

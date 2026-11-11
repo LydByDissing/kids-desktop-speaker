@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod health;
 pub mod messages;
+pub mod podcasts;
 pub mod radio;
 pub mod services;
 pub mod setup;

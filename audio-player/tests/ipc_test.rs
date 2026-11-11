@@ -13,7 +13,7 @@ async fn status_reports_no_active_source_when_idle() {
     let response = handle(json!({"cmd": "status"}), arbitrator()).await;
     assert_eq!(
         response,
-        json!({"ok": true, "active": null, "radio": null, "announcing": false})
+        json!({"ok": true, "active": null, "radio": null, "podcast": null, "announcing": false})
     );
 }
 
@@ -40,10 +40,10 @@ async fn mute_stops_the_source() {
 
 #[tokio::test]
 async fn mute_rejects_unknown_and_missing_sources() {
-    let unknown = handle(json!({"cmd": "mute", "source": "radio"}), arbitrator()).await;
+    let unknown = handle(json!({"cmd": "mute", "source": "cassette"}), arbitrator()).await;
     assert_eq!(
         unknown,
-        json!({"ok": false, "error": "unknown source: radio"})
+        json!({"ok": false, "error": "unknown source: cassette"})
     );
     let missing = handle(json!({"cmd": "mute"}), arbitrator()).await;
     assert_eq!(missing, json!({"ok": false, "error": "mute needs source"}));

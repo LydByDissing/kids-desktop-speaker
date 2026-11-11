@@ -270,3 +270,6 @@ Open Questions
    - **Loopback timing**: Test that the ``snd-aloop`` module reliably creates
      all 6 channels on every boot. If not, we may need a systemd service to
      verify and retry.
+
+
+     **Status (2026-11-11)**: Obsolete: the loopback carries one stereo stream (DEC-036); snd-aloop loads at boot and CamillaDSP retries until the HAT is there.
