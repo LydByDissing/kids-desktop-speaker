@@ -89,6 +89,7 @@ fn services(mpd: &FakeMpd, name: &str) -> Services {
     Services {
         announcements: None,
         messages_dir: None,
+        announcing: None,
         radio: Some(Arc::new(Radio {
             stations: StationStore::new(temp_path(name)),
             mpd: Mpd::new(&mpd.addr),
@@ -271,6 +272,7 @@ async fn status_survives_mpd_being_down() {
     let s = Services {
         announcements: None,
         messages_dir: None,
+        announcing: None,
         radio: Some(Arc::new(Radio {
             stations: StationStore::new(temp_path("down")),
             mpd: Mpd::new("127.0.0.1:1"),

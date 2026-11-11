@@ -11,7 +11,10 @@ fn arbitrator() -> Arc<Mutex<Arbitrator>> {
 #[tokio::test]
 async fn status_reports_no_active_source_when_idle() {
     let response = handle(json!({"cmd": "status"}), arbitrator()).await;
-    assert_eq!(response, json!({"ok": true, "active": null, "radio": null}));
+    assert_eq!(
+        response,
+        json!({"ok": true, "active": null, "radio": null, "announcing": false})
+    );
 }
 
 #[tokio::test]
@@ -187,4 +190,27 @@ mod play_message {
         .await;
         assert_eq!(r, json!({"ok": false, "error": "messages unavailable"}));
     }
+}
+
+#[tokio::test]
+async fn status_reports_when_an_announcement_plays_or_waits() {
+    use audio_player::announcer::{AnnounceQueue, Announcement};
+    use audio_player::ipc::{handle_full, Services};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (queue, _rx) = AnnounceQueue::new();
+    let busy = Arc::new(AtomicBool::new(false));
+    let services = Services {
+        announcements: Some(queue.clone()),
+        announcing: Some(Arc::clone(&busy)),
+        ..Services::default()
+    };
+    let status = || async {
+        handle_full(json!({"cmd": "status"}), arbitrator(), &services).await["announcing"].clone()
+    };
+    assert_eq!(status().await, json!(false));
+    busy.store(true, Ordering::SeqCst);
+    assert_eq!(status().await, json!(true), "playing");
+    busy.store(false, Ordering::SeqCst);
+    queue.submit(Announcement::new("x", None).unwrap()).unwrap();
+    assert_eq!(status().await, json!(true), "waiting in the queue");
 }

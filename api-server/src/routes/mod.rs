@@ -3,5 +3,7 @@ pub mod health;
 pub mod messages;
 pub mod radio;
 pub mod services;
+pub mod setup;
 pub mod system;
+pub mod tokens;
 pub mod tts;

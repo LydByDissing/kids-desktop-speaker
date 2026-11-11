@@ -1,4 +1,6 @@
+use crate::auth::{TokenStore, TOKENS_FILE};
 use crate::messages::{MessageStore, MESSAGES_DIR};
+use crate::setup::Setup;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -11,6 +13,9 @@ pub struct AppState {
     pub run_dir: PathBuf,
     /// Recorded voice messages (DEC-037).
     pub messages: Arc<MessageStore>,
+    /// API tokens and the spoken setup code (DEC-038).
+    pub tokens: Arc<TokenStore>,
+    pub setup: Arc<Setup>,
 }
 
 impl AppState {
@@ -19,6 +24,8 @@ impl AppState {
             vol_limit: Arc::new(RwLock::new(75)),
             run_dir: RUN_DIR.into(),
             messages: Arc::new(MessageStore::new(MESSAGES_DIR)),
+            tokens: Arc::new(TokenStore::load(TOKENS_FILE)),
+            setup: Arc::new(Setup::new()),
         }
     }
 
@@ -29,6 +36,8 @@ impl AppState {
         Self {
             vol_limit: Arc::new(RwLock::new(75)),
             messages: Arc::new(MessageStore::new(run_dir.join("messages"))),
+            tokens: Arc::new(TokenStore::load(run_dir.join("api").join("tokens.json"))),
+            setup: Arc::new(Setup::new()),
             run_dir,
         }
     }

@@ -85,7 +85,9 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
-    let announcer_handle = announcer.map(|a| tokio::spawn(a.run(queue_rx)));
+    let announcing = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let busy = Arc::clone(&announcing);
+    let announcer_handle = announcer.map(|a| tokio::spawn(a.run_tracked(queue_rx, busy)));
 
     let arb_clone = Arc::clone(&arb);
     let ipc_handle = tokio::spawn(async move {
@@ -93,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
             announcements: Some(queue),
             radio: Some(radio),
             messages_dir: Some(MESSAGES_DIR.into()),
+            announcing: Some(announcing),
         };
         if let Err(e) = ipc::serve("/run/kds/audio.sock", arb_clone, services).await {
             eprintln!("IPC server error: {}", e);

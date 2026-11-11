@@ -183,6 +183,40 @@ Software — Audio Streaming
    A named message shall be kept until it is deleted. An unnamed message shall be
    removed 90 days after it was last played (or recorded, if never replayed).
 
+.. req:: AUTH_REQ_001
+   :id: AUTH_REQ_001
+   :status: open
+   :tags: software, security, api
+
+   Every API request shall carry a valid token (``Authorization: Bearer``),
+   except ``/health``, the setup endpoints (AUTH_REQ_003) and requests made on
+   the device itself over the loopback interface. A missing or unknown token is
+   answered with 401 (ref DEC-038).
+
+.. req:: AUTH_REQ_002
+   :id: AUTH_REQ_002
+   :status: open
+   :tags: software, security, api
+
+   Tokens shall be random (256 bits), shown once when created and stored only as
+   a hash on the data partition, with a name, an admin flag, and when they were
+   created and last used. Creating, listing and revoking tokens, and changing
+   credentials, require an admin token over HTTPS (WEB_REQ_001). The last admin
+   token cannot be revoked.
+
+.. req:: AUTH_REQ_003
+   :id: AUTH_REQ_003
+   :status: open
+   :tags: software, security, onboarding
+
+   The first admin token shall be obtained with a setup code that the speaker
+   reads aloud, so only someone in the room can use it; no SD card, screen or
+   button is needed. Until the speaker is set up (no admin token exists), it
+   shall read the code after start-up and repeat it with a pause of 5 to 10
+   seconds until setup is completed. Afterwards a new code can be requested
+   (``POST /api/setup/start``), at most once a minute, to recover a lost admin
+   token. A code allows 5 attempts; then a new code is needed.
+
 Software — DSP
 --------------
 

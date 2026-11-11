@@ -30,6 +30,11 @@ async fn main() -> Result<()> {
             tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
         }
     });
+    // Not set up yet: read the setup code aloud until someone uses it.
+    if !state.tokens.has_admin() {
+        tokio::spawn(api_server::routes::setup::read_until_set_up(state.clone()));
+    }
+
     let http = app(state.clone()).layer(Extension(Transport::Http));
     let https = app(state).layer(Extension(Transport::Https));
 
@@ -51,7 +56,7 @@ async fn main() -> Result<()> {
             let addr = HTTPS_ADDR.parse()?;
             tokio::spawn(async move {
                 if let Err(e) = axum_server::bind_rustls(addr, config)
-                    .serve(https.into_make_service())
+                    .serve(https.into_make_service_with_connect_info::<std::net::SocketAddr>())
                     .await
                 {
                     eprintln!("api-server: HTTPS stopped: {e}");
@@ -64,6 +69,10 @@ async fn main() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(HTTP_ADDR).await?;
     println!("api-server: HTTP on {HTTP_ADDR}");
-    axum::serve(listener, http).await?;
+    axum::serve(
+        listener,
+        http.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

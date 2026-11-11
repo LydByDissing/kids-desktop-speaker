@@ -112,3 +112,15 @@ speaker_unmute() {
     remote "amixer -q -c IQaudIOCODEC sset Lineout on" && log "speaker unmuted"
     SPEAKER_MUTED_BY_TEST=0
 }
+
+# API tokens (AUTH_REQ_001): requests from the Pi itself need none, so a test
+# that calls the API from this host creates a token over loopback first.
+# api_token NAME [admin] -> prints "ID TOKEN"; api_revoke ID removes it.
+api_token() {
+    local admin=false; [ "${2:-}" = admin ] && admin=true
+    remote "curl -s -X POST -H 'content-type: application/json' -d '{\"name\": \"$1\", \"admin\": $admin}' http://127.0.0.1:8080/api/tokens" \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["info"]["id"], d["token"])'
+}
+api_revoke() {
+    remote "curl -s -o /dev/null -X DELETE http://127.0.0.1:8080/api/tokens/$1"
+}

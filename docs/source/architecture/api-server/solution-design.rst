@@ -436,3 +436,26 @@ Implemented 2026-11-10 (KDS-cmt, WEB_REQ_001, DEC-032).
   safe.
 - ``make -C ci hw-https-test`` checks it on a real Pi, connecting by the device's
   ``.local`` name and trusting only the certificate fetched from it.
+
+Authentication
+--------------
+
+Implemented 2026-11-11 (KDS-ebt, AUTH_REQ_001-003, DEC-038).
+
+- Every route needs ``Authorization: Bearer <token>``, except ``/health``,
+  ``POST /api/setup/start``, ``POST /api/setup`` and requests from the device
+  itself (plain HTTP from loopback). Without a valid token: 401.
+- Tokens are ``kds_`` plus 64 hex characters (256 random bits), shown once, and
+  stored as SHA-256 hashes in ``/data/api/tokens.json`` (mode 600) with a name,
+  an admin flag, and when they were created and last used.
+- ``GET/POST /api/tokens`` and ``DELETE /api/tokens/{id}`` need an admin token
+  over HTTPS (or the device itself). The last admin token can't be revoked.
+- Setup: until an admin token exists, the API Server has the Audio Player read
+  a 6-digit code aloud in Danish ("Opsætningskode: 4, 7, ... Jeg gentager: ...")
+  after start-up, and again 8 s after each reading ends (it waits for the Audio
+  Player's ``announcing`` status). ``POST /api/setup {code, name}`` returns an
+  admin token. ``POST /api/setup/start`` asks for a new code (once a minute at
+  most), also to recover a lost admin token. A code allows 5 attempts and
+  expires after 10 minutes unless it is still being read.
+- ``make -C ci hw-install`` sets up a development Pi over loopback so it doesn't
+  read codes; ``make -C ci hw-setup-test`` checks the readings on a real Pi.

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
@@ -256,8 +257,22 @@ impl<O: Output, S: Sources> Announcer<O, S> {
 
     /// Plays queued announcements and messages one at a time until the queue
     /// closes.
-    pub async fn run(self, mut queue: mpsc::Receiver<Item>) {
+    pub async fn run(self, queue: mpsc::Receiver<Item>) {
+        self.run_tracked(queue, Arc::default()).await
+    }
+
+    /// As [`Announcer::run`], with `busy` true while an item plays, so the IPC
+    /// status can report it (the setup code waits for each reading to end).
+    pub async fn run_tracked(self, mut queue: mpsc::Receiver<Item>, busy: Arc<AtomicBool>) {
         while let Some(item) = queue.recv().await {
+            busy.store(true, Ordering::SeqCst);
+            self.play_item(item).await;
+            busy.store(false, Ordering::SeqCst);
+        }
+    }
+
+    async fn play_item(&self, item: Item) {
+        {
             match item {
                 Item::Speech(announcement) => match self.speak(&announcement).await {
                     Ok(lookup) => println!(
@@ -305,6 +320,11 @@ impl AnnounceQueue {
     /// Queues a recorded voice message and returns its position.
     pub fn submit_recording(&self, path: PathBuf) -> Result<usize, String> {
         self.submit_item(Item::Recording(path))
+    }
+
+    /// How many items wait to be played (not counting one playing now).
+    pub fn waiting(&self) -> usize {
+        QUEUE_MAX - self.tx.capacity()
     }
 
     fn submit_item(&self, item: Item) -> Result<usize, String> {

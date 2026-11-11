@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -112,6 +112,10 @@ hw-https-test:
 ## hw-messages-test — Recorded voice messages on a real Pi (MSG_REQ_001-003): make hw-messages-test PI_HOST=root@host
 hw-messages-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-messages-test.sh
+
+## hw-setup-test — The spoken setup code on a real Pi (AUTH_REQ_003): make hw-setup-test PI_HOST=root@host
+hw-setup-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-setup-test.sh
 
 ## hw-install — Install the current build on a development Pi: make hw-install PI_HOST=root@host
 hw-install:

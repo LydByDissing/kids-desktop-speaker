@@ -1,4 +1,4 @@
-use api_server::app;
+use api_server::local_app as app;
 use api_server::state::AppState;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

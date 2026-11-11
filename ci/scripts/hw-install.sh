@@ -32,3 +32,19 @@ remote "rauc install /data/kds.raucb >/tmp/install.log 2>&1; echo \$? >/tmp/inst
 id=$(boot_id); reboot_pi
 wait_for_reboot "$id" 420 || { log "Pi did not come back"; exit 1; }
 log "running $(remote cat /etc/kds-version) from $(remote rauc status | sed -n 's/^Booted from: //p')"
+
+# A speaker that isn't set up reads its setup code aloud until it is
+# (AUTH_REQ_003). A development Pi is set up over loopback instead, unless
+# KDS_HW_LEAVE_UNCONFIGURED=1. The token itself is not kept.
+if [ "${KDS_HW_LEAVE_UNCONFIGURED:-0}" != 1 ]; then
+    for _ in $(seq 30); do
+        remote "curl -s -o /dev/null http://127.0.0.1:8080/health" && break
+        sleep 2
+    done
+    if remote "curl -s http://127.0.0.1:8080/api/tokens" | grep -q '"admin":true'; then
+        log "already set up"
+    else
+        remote "curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{\"name\": \"development\", \"admin\": true}' http://127.0.0.1:8080/api/tokens" \
+            && log "set up as a development speaker (admin token 'development', not kept)"
+    fi
+fi

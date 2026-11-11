@@ -1,5 +1,7 @@
+pub mod auth;
 pub mod messages;
 pub mod routes;
+pub mod setup;
 pub mod state;
 pub mod tls;
 pub mod transport;
@@ -53,5 +55,36 @@ pub fn app(state: AppState) -> Router {
             "/api/audio/volume-limit",
             get(routes::audio::get_volume_limit).post(routes::audio::set_volume_limit),
         )
+        .route("/api/setup/start", post(routes::setup::start))
+        .route("/api/setup", post(routes::setup::complete))
+        .merge(
+            Router::new()
+                .route(
+                    "/api/tokens",
+                    get(routes::tokens::list).post(routes::tokens::create),
+                )
+                .route(
+                    "/api/tokens/:id",
+                    axum::routing::delete(routes::tokens::revoke),
+                )
+                .route_layer(axum::middleware::from_fn(auth::require_admin)),
+        )
+        // Every route needs a token except /health, setup and the device itself
+        // (AUTH_REQ_001). The listener's Transport and the peer address are
+        // added outside this, in main.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::authenticate,
+        ))
         .with_state(state)
+}
+
+/// The API as a process on the device sees it: over loopback HTTP, with full
+/// access. For tests of the routes themselves.
+pub fn local_app(state: AppState) -> Router {
+    app(state)
+        .layer(axum::Extension(transport::Transport::Http))
+        .layer(axum::extract::connect_info::MockConnectInfo(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 9)),
+        ))
 }

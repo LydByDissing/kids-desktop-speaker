@@ -14,15 +14,18 @@ set -uo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=$(mktemp -d)
 source "$REPO/ci/scripts/hw-lib.sh"
-trap 'rm -rf "$WORK"; speaker_unmute' EXIT
 remote true || { echo "error: cannot reach $PI_HOST" >&2; exit 2; }
+read -r TOKEN_ID TOKEN < <(api_token "hw-messages-test")
+[ -n "${TOKEN:-}" ] || { echo "error: could not create an API token on the Pi" >&2; exit 2; }
+trap 'rm -rf "$WORK"; speaker_unmute; api_revoke "$TOKEN_ID"' EXIT
 speaker_mute
 
 host=$(remote cat /proc/sys/kernel/hostname)
 "${SCP[@]}" "$PI_HOST:/data/tls/cert.pem" "$WORK/device.pem"
 api() { # method path [curl args...] -> body in $WORK/out, prints the status
     local method=$1 path=$2; shift 2
-    curl -s --cacert "$WORK/device.pem" -o "$WORK/out" -w '%{http_code}' -X "$method" "$@" "https://$host.local$path"
+    curl -s --cacert "$WORK/device.pem" -H "Authorization: Bearer $TOKEN" -o "$WORK/out" -w '%{http_code}' \
+        -X "$method" "$@" "https://$host.local$path"
 }
 field() { python3 -c "import json,sys; d=json.load(open('$WORK/out')); print($1)"; }
 
@@ -47,6 +50,9 @@ for _ in $(seq 20); do
     sleep 1
 done
 check "the Audio Player played it" "$played" 1
+
+check "without a token the API refuses" \
+    "$(curl -s --cacert "$WORK/device.pem" -o /dev/null -w '%{http_code}' "https://$host.local/api/messages")" 401
 
 log "=== Manage it"
 check "GET /api/messages" "$(api GET /api/messages)" 200

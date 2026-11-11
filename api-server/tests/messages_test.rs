@@ -1,7 +1,7 @@
 //! Recorded voice messages (MSG_REQ_001-003): WAV checks, the store, expiry and
 //! the HTTP routes against a stand-in Audio Player.
 
-use api_server::app;
+use api_server::local_app as app;
 use api_server::messages::{wav_info, MessageStore, MAX_BYTES, UNNAMED_TTL};
 use api_server::state::AppState;
 use axum::body::Body;

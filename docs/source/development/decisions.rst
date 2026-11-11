@@ -2531,3 +2531,35 @@ out chime, resume.
 only allow the microphone on secure pages, so the Web UI is served over HTTPS
 (WEB_REQ_001). A message is not a credential, so the API accepts it on either
 listener.
+
+DEC-038 — API Tokens and a Spoken Setup Code
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_038
+   :status: resolved
+   :date: 2026-11-11
+   :tags: security, api, onboarding
+
+**Decision 1: every request needs a token** (decided with the user), except
+``/health`` (the update health check uses it and it reveals only "ok" and the
+version), the two setup endpoints, and requests from the device itself over
+loopback (anything on the Pi already runs as root; on-device scripts and the
+hardware tests use this). Tokens are 256-bit random strings, shown once and
+stored as SHA-256 hashes in ``/data/api/tokens.json`` with a name, an admin
+flag, the creation time and when they were last used. Managing tokens (and,
+later, credentials) needs an admin token over HTTPS.
+
+**Decision 2: the first admin token comes from a spoken code** (decided with
+the user). The speaker has no screen or buttons, and the SD card should not be
+needed. So the speaker reads a 6-digit code aloud, in Danish, through the
+announcement queue (DEC-033): only someone in the room hears it. Until an admin
+token exists the speaker reads it after every start-up and repeats it, 8 s after
+each reading ends, until setup is completed. ``POST /api/setup {code, name}``
+exchanges the code for an admin token. Later, ``POST /api/setup/start`` asks
+for a new code to recover a lost admin token (once a minute at most, to stop
+announcement spam). A code allows 5 attempts and is compared in constant time.
+
+**Rejected**: a code on the boot partition (needs the SD card), the first caller
+after boot becoming admin (anyone on the network could claim the speaker), a
+button (there is none).

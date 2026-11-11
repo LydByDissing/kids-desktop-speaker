@@ -25,6 +25,8 @@ pub struct Services {
     pub radio: Option<Arc<Radio>>,
     /// Where the API Server keeps recorded voice messages (DEC-037).
     pub messages_dir: Option<std::path::PathBuf>,
+    /// True while an announcement or message plays.
+    pub announcing: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 /// A message id names a file in the messages directory, so it may only hold
@@ -153,7 +155,12 @@ pub async fn handle_full(
                 Some(radio) => radio_status(radio).await,
                 None => Value::Null,
             };
-            ok(json!({ "active": active, "radio": radio }))
+            let playing = services
+                .announcing
+                .as_ref()
+                .is_some_and(|b| b.load(std::sync::atomic::Ordering::SeqCst));
+            let waiting = announcements.map(AnnounceQueue::waiting).unwrap_or(0);
+            ok(json!({ "active": active, "radio": radio, "announcing": playing || waiting > 0 }))
         }
         Some(
             cmd @ ("radio_stations" | "radio_add" | "radio_remove" | "radio_play" | "radio_stop"

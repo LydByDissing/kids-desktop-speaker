@@ -1,6 +1,6 @@
 //! The API Server against stand-in services on real sockets (IPC_REQ_004).
 
-use api_server::app;
+use api_server::local_app as app;
 use api_server::state::AppState;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
