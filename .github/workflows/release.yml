@@ -108,6 +108,31 @@ jobs:
           path: target/arm-unknown-linux-gnueabihf/release/bluetooth-service
           retention-days: 7
 
+  build-wifi-setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-arm-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - run: cross build --target arm-unknown-linux-gnueabihf --release -p wifi-setup
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kds-wifi-setup-arm
+          path: target/arm-unknown-linux-gnueabihf/release/kds-wifi-setup
+          retention-days: 7
+
   # ── Image pipeline (sequential, depends on all above) ─────
   build-image:
     needs:
@@ -115,6 +140,7 @@ jobs:
       - build-audio-player
       - build-ota-updater
       - build-bluetooth-service
+      - build-wifi-setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

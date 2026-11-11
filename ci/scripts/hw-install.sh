@@ -24,8 +24,14 @@ hw_cleanup; mkdir -p "$WORK"
 make_test_identity || exit 1
 trust_test_identity || exit 1
 make_bundle dev "$VERSION" none || exit 1
-log "copying the bundle to the Pi..."
-"${SCP[@]}" "$WORK/dev/image.raucb" "$PI_HOST:/data/kds.raucb" || exit 1
+size=$(stat -c %s "$WORK/dev/image.raucb")
+free=$(remote "df --output=avail -B1 /data | tail -1")
+if [ "${free:-0}" -lt $((size + 50 * 1024 * 1024)) ]; then
+    log "not enough space on the Pi's /data: $((free / 1048576)) MB free, the bundle is $((size / 1048576)) MB"
+    exit 1
+fi
+log "copying the bundle to the Pi ($((size / 1048576)) MB)..."
+"${SCP[@]}" "$WORK/dev/image.raucb" "$PI_HOST:/data/kds.raucb" || { log "copy failed"; remote "rm -f /data/kds.raucb"; exit 1; }
 log "installing..."
 remote "rauc install /data/kds.raucb >/tmp/install.log 2>&1; echo \$? >/tmp/install.rc; rm -f /data/kds.raucb"
 [ "$(remote cat /tmp/install.rc)" = 0 ] || { log "install failed:"; remote tail -5 /tmp/install.log; exit 1; }

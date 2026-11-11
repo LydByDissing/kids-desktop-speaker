@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-sources-test hw-podcasts-test hw-volume-test hw-schedule-test hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-sources-test hw-podcasts-test hw-volume-test hw-schedule-test hw-wifi-setup-test hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -132,6 +132,10 @@ hw-volume-test:
 ## hw-schedule-test — Alarms and the sleep timer on a real Pi (ALM_REQ_001, SLP_REQ_001): make hw-schedule-test PI_HOST=root@host
 hw-schedule-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-schedule-test.sh
+
+## hw-wifi-setup-test — The Wi-Fi setup access point on a real Pi (NET_ONB_001/002): make hw-wifi-setup-test PI_HOST=root@host
+hw-wifi-setup-test:
+	@PI_HOST=$(PI_HOST) bash scripts/hw-wifi-setup-test.sh
 
 ## hw-install — Install the current build on a development Pi: make hw-install PI_HOST=root@host
 hw-install:

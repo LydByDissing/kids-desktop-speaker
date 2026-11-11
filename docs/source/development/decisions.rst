@@ -2703,3 +2703,38 @@ configuration. A dedicated Home Assistant integration is not needed for v1.
 checks on or off, so with the speaker's self-signed certificate it needs
 ``verify_ssl: false``: still encrypted, but without proof of the speaker's
 identity, which is acceptable on the home network.
+
+DEC-044 — Wi-Fi Onboarding: Never Forget the Network, Always Come Back
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_044
+   :status: resolved
+   :date: 2026-11-11
+   :tags: onboarding, wifi, networking
+
+Refines DEC-012 (NET_ONB_001/002).
+
+**Decision 1: saved Wi-Fi is never deleted.** DEC-012 cleared the credentials
+after 5 failed connections; a router down for a few minutes would then leave
+the speaker waiting for setup. Instead, after 5 failed checks (30 s apart, after
+a 2-minute grace at boot) the speaker opens its setup access point for 10
+minutes and then tries the saved network again, alternating until one works.
+With no saved network it opens the access point at once and keeps it open.
+
+**Decision 2: systemd bounds the access point.** The access point is a systemd
+service (``kds-setup-ap.service``: hostapd, dnsmasq, the address 192.168.4.1)
+with ``RuntimeMaxSec`` of 10 minutes when a network is saved, and an
+``ExecStopPost`` that restores normal Wi-Fi. Even if the onboarding program
+dies, the speaker returns to its network.
+
+**Decision 3: the setup page writes the boot partition.** The captive portal
+(``http://192.168.4.1``, every DNS name answered with that address so phones
+open it) saves the network to ``/boot/firmware/kds/wifi.conf``, the file
+``setup-sd.sh`` writes and ``kds-device-config`` applies at boot (DEC-025). It
+survives updates and there is one source of truth.
+
+**Decision 4: the speaker says what to do.** Entering setup mode, it announces
+(in Danish) "Forbind til netværket KidsSpeaker-xxxx for at sætte højttaleren
+op". The access point is open, as DEC-012 decided: only Wi-Fi credentials can be
+set through it, and they are only useful to someone in range.

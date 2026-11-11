@@ -195,6 +195,9 @@ COPY ${BIN_DIR}/api-server /usr/local/bin/api-server
 COPY ${BIN_DIR}/audio-player /usr/local/bin/audio-player
 COPY ${BIN_DIR}/ota-updater /usr/local/bin/ota-updater
 COPY ${BIN_DIR}/bluetooth-service /usr/local/bin/bluetooth-service
+# Wi-Fi onboarding: the setup access point and its portal (DEC-044).
+COPY ${BIN_DIR}/kds-wifi-setup /usr/local/bin/kds-wifi-setup
+COPY --chmod=755 ci/device/kds-setup-ap.sh /usr/local/bin/kds-setup-ap.sh
 # Spotify Connect: librespot built from its pinned crates.io release by
 # make -C ci librespot (DEC-034); audio-player starts it.
 COPY ci/librespot/out/librespot /usr/bin/librespot
@@ -202,7 +205,8 @@ COPY ci/librespot/out/LICENSE /usr/share/doc/librespot/copyright
 RUN chmod +x /usr/local/bin/api-server \
              /usr/local/bin/audio-player \
              /usr/local/bin/ota-updater \
-             /usr/local/bin/bluetooth-service
+             /usr/local/bin/bluetooth-service \
+             /usr/local/bin/kds-wifi-setup
 
 # Record the running system version so the OTA Updater can compare against the
 # latest GitHub Release (OTA_REQ_005). Set from the release tag in CI.
@@ -303,7 +307,8 @@ RUN systemctl enable \
         ota-updater.service \
         bluetooth-service.service \
         mpd.service \
-        camilladsp.service && \
+        camilladsp.service \
+        wifi-setup.service && \
     systemctl disable dnsmasq.service hostapd.service shairport-sync.service bluealsa-aplay.service && \
     # Socket activation would listen on every interface; MPD binds localhost.
     systemctl disable mpd.socket && \
