@@ -237,3 +237,21 @@ async fn restarting_a_receiver_ends_its_session() {
         .contains("no source"));
     sources.stop_all().await.unwrap();
 }
+
+#[tokio::test]
+async fn stop_all_stops_every_playing_source() {
+    let stopper = Arc::new(FakeStopper::default());
+    let s = services(&stopper);
+    let arb = Arc::new(Mutex::new(Arbitrator::new()));
+    arb.lock().await.source_started(Source::Bluetooth);
+    let r = handle_full(json!({"cmd": "stop_all"}), Arc::clone(&arb), &s).await;
+    assert_eq!(r, json!({"ok": true, "stopped": ["bluetooth"]}));
+    assert_eq!(*stopper.stopped.lock().unwrap(), vec![Source::Bluetooth]);
+    assert_eq!(arb.lock().await.active(), None);
+    let r = handle_full(json!({"cmd": "stop_all"}), Arc::clone(&arb), &s).await;
+    assert_eq!(
+        r,
+        json!({"ok": true, "stopped": []}),
+        "nothing playing: nothing to stop"
+    );
+}

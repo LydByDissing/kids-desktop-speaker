@@ -7,6 +7,7 @@ use audio_player::podcasts::{PodcastStore, Podcasts, PODCASTS_DIR};
 use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
 use audio_player::switcher::{BtClient, DeviceStopper};
+use audio_player::volume::{Camilla, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -89,6 +90,19 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // The device volume and limit (VOL_REQ_001, DEC-040), applied once
+    // CamillaDSP answers.
+    let store = VolumeStore::new(VOLUME_FILE);
+    let volume = Arc::new(Volume {
+        settings: std::sync::Mutex::new(store.load()),
+        store,
+        camilla: Camilla {
+            addr: CAMILLA_ADDR.into(),
+        },
+    });
+    let applier = Arc::clone(&volume);
+    tokio::spawn(async move { applier.apply_when_ready().await });
+
     let bt = BtClient {
         socket: BT_SOCKET.into(),
     };
@@ -151,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
             announcing: Some(announcing),
             stopper: Some(stopper),
             podcasts: Some(podcasts),
+            volume: Some(volume),
         };
         if let Err(e) = ipc::serve(AUDIO_SOCKET, arb_clone, services).await {
             eprintln!("IPC server error: {}", e);

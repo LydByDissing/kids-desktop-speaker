@@ -1,0 +1,30 @@
+[package]
+name = "wifi-setup"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Wi-Fi onboarding: a setup access point with a captive portal (NET_ONB_001/002, DEC-044)"
+
+[lib]
+name = "wifi_setup"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kds-wifi-setup"
+path = "src/main.rs"
+
+[dependencies]
+kds-ipc = { path = "../kds-ipc" }
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+# The WPA key from the password, as wpa_passphrase computes it, so no
+# plaintext password is stored.
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha1 = "0.10"
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"

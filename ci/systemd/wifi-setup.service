@@ -1,0 +1,13 @@
+[Unit]
+Description=Kids Desktop Speaker — Wi-Fi setup (NET_ONB_001/002, DEC-044)
+After=kds-device-config.service network.target
+Wants=kds-device-config.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/kds-wifi-setup
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

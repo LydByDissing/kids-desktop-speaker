@@ -7,3 +7,4 @@ pub mod podcasts;
 pub mod radio;
 pub mod sources;
 pub mod switcher;
+pub mod volume;

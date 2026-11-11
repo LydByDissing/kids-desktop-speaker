@@ -150,10 +150,11 @@ Containers
 
        Container(webui, "Web Interface", "Leptos WASM + Axum", "Player (playback, volume, sleep timer) and Config (radio, podcasts, alarms, API tokens)")
        Container(api, "API Server", "Axum (Rust)", "Local-network REST + WebSocket API with token auth; also hosts Leptos frontend")
-       Container(player, "Audio Player", "Rust + librespot", "Audio sources, source switching, TTS ducking, sleep timer; fades via CamillaDSP")
-       Container(bt, "Bluetooth Service", "Rust + bluer + BlueZ", "AVRCP remote control from paired keypad/knob; optional A2DP audio input (TBD)")
-       Container(dsp, "CamillaDSP", "Rust (external) + systemd", "Master volume, EQ profiles, DSP pipeline; 2ch loopback mixer for TTS ducking")
-       Container(tts, "TTS Engine", "Piper + piper-tts-rs", "Offline TTS: text → speech on dedicated ALSA ch; queued, multi-voice")
+       Container(player, "Audio Player", "Rust", "Supervises shairport-sync, librespot, bluealsa-aplay; radio and podcasts via MPD; one source at a time; announcements and messages; device volume via CamillaDSP")
+       Container(bt, "Bluetooth Service", "Rust + zbus + BlueZ", "Pairing agent and window; AVRCP pause/play of phones; remote buttons from input events; A2DP via BlueALSA")
+       Container(dsp, "CamillaDSP", "Rust (external, built in CI) + systemd", "One stereo stream from the loopback to the HAT; device volume; limiter at -1 dBFS; EQ to come")
+       Container(tts, "TTS Engine", "Rust library + espeak-ng", "Danish and English speech with a 90-day disk cache; used by the Audio Player's announcer")
+       Container(wifisetup, "Wi-Fi Setup", "Rust + hostapd + dnsmasq", "Setup access point and captive portal when Wi-Fi is missing or failing (DEC-044)")
        Container(ota, "OTA Updater", "Rust + RAUC", "Atomic system updates via RAUC A/B partitions; GitHub Releases; auto-rollback")
        Container(hatdrv, "HAT Audio Driver", "ALSA / Linux kernel", "Kernel driver for IQaudIO Pi-Codec Zero (DA7213 codec)")
 
@@ -165,16 +166,17 @@ Containers
 
    Rel(webui, api, "Playback commands, state queries", "REST / WebSocket")
    Rel(api, player, "Play, pause, skip, volume, source", "Internal API")
-   Rel(api, dsp, "Volume, EQ config", "CamillaDSP TCP API")
-   Rel(api, tts, "TTS requests", "Internal API")
+   Rel(player, dsp, "Device volume", "CamillaDSP websocket")
+   Rel(player, tts, "Synthesise announcements", "Rust library")
+   Rel(parent, wifisetup, "Enters the home Wi-Fi", "Captive portal on the setup AP")
    Rel(api, ota, "Trigger update check", "Internal API")
    Rel(api, bt, "Bluetooth status", "Internal API")
-   Rel(api, ha, "Control & status", "TBD (mDNS, REST, auth)")
+   Rel(api, ha, "Control & status", "HTTPS REST with a token; found over mDNS (DEC-043)")
 
    Rel(player, dsp, "Audio pipeline", "ALSA loopback")
    Rel(player, spotify, "Spotify Connect receiver", "Spotify Connect protocol")
    Rel(player, airplay, "AirPlay receiver", "AirPlay 1 protocol")
-   Rel(bt, api, "Volume & playback control", "Internal API")
+   Rel(bt, player, "Remote buttons, phone streaming state", "IPC")
 
    Rel(dsp, hatdrv, "Processed audio output", "ALSA PCM (hw:0,0)")
    Rel(hatdrv, hat, "Analogue audio output", "I²S / I²C")
@@ -248,6 +250,7 @@ Zero W:
    camilladsp/index
    tts-engine/index
    ota-updater/index
+   wifi-setup/index
    hat-audio-driver/index
 
 .. toctree::

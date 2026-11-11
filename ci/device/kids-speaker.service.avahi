@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Advertises the speaker's HTTPS API and Web UI over mDNS (FEAT_REQ_005,
+     Auto-Discovery, DEC-043). %h is the hostname, e.g. kidsspeaker-2df5. -->
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service>
+    <type>_kidsspeaker._tcp</type>
+    <port>443</port>
+    <txt-record>path=/api</txt-record>
+    <txt-record>auth=bearer</txt-record>
+    <txt-record>api=1</txt-record>
+  </service>
+  <service>
+    <type>_https._tcp</type>
+    <port>443</port>
+    <txt-record>path=/</txt-record>
+  </service>
+</service-group>

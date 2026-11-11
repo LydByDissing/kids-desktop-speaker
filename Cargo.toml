@@ -1,5 +1,5 @@
 [workspace]
-members = ["api-server", "audio-player", "ota-updater", "bluetooth-service", "kds-ipc", "tts-engine"]
+members = ["api-server", "audio-player", "ota-updater", "bluetooth-service", "kds-ipc", "tts-engine", "wifi-setup"]
 resolver = "2"
 # librespot and CamillaDSP are built from their own releases (ci/scripts/build-*.sh).
 exclude = ["ci/librespot", "ci/camilladsp"]

@@ -8,6 +8,7 @@ streaming speaker for children, built on Raspberry Pi Zero W.
    :maxdepth: 2
    :caption: Contents:
 
+   user/guide
    architecture/index
    requirements/requirements
    development/getting_started

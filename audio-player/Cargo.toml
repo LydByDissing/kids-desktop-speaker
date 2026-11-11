@@ -25,3 +25,9 @@ nix = { version = "0.27", features = ["signal"] }
 # small XML parser.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 roxmltree = "0.20"
+# CamillaDSP's websocket, for the device volume (DEC-040).
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.30"

@@ -26,8 +26,19 @@ PORT=$((20000 + RANDOM % 10000))
 ssh -o BatchMode=yes "${SSH_EXTRA[@]}" -p "${HW_SSH_PORT:-22}" -f -N -o ExitOnForwardFailure=yes \
     -L "$PORT:127.0.0.1:1234" "$PI_HOST" || { echo "error: cannot open a tunnel to CamillaDSP" >&2; exit 2; }
 tunnel=$(pgrep -f "[-]L $PORT:127.0.0.1:1234" | head -1)
-trap 'kill $tunnel 2>/dev/null; rm -rf "$WORK"; speaker_unmute' EXIT
+# The level checks need the device volume at 0 dB (DEC-040); restored after.
+volume_before=$(remote "curl -s http://127.0.0.1:8080/api/audio/volume")
+restore_volume() {
+    local v l
+    v=$(echo "$volume_before" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volume"])' 2>/dev/null) || return
+    l=$(echo "$volume_before" | python3 -c 'import json,sys; print(json.load(sys.stdin)["limit"])')
+    remote "curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{\"limit\": $l}' http://127.0.0.1:8080/api/audio/volume-limit"
+    remote "curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{\"volume\": $v}' http://127.0.0.1:8080/api/audio/volume"
+}
+trap 'kill $tunnel 2>/dev/null; rm -rf "$WORK"; restore_volume; speaker_unmute' EXIT
 speaker_mute
+remote "curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{\"limit\": 100}' http://127.0.0.1:8080/api/audio/volume-limit"
+remote "curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{\"volume\": 100}' http://127.0.0.1:8080/api/audio/volume"
 
 ws() { python3 "$REPO/ci/scripts/cdsp-ws.py" "127.0.0.1:$PORT" "$@"; }
 value() { # command -> the reply's value; for a pair of channels, the left one

@@ -195,6 +195,11 @@ if grep -q -- "-a 127.0.0.1" /etc/systemd/system/camilladsp.service; then
 else
     fail "CamillaDSP's websocket is not limited to localhost"
 fi
+if grep -q -- "-s /data/camilladsp/statefile.yml" /etc/systemd/system/camilladsp.service; then
+    ok "CamillaDSP keeps the volume in a statefile on /data"
+else
+    fail "CamillaDSP has no statefile"
+fi
 if grep -q "^StartLimitIntervalSec=0" /etc/systemd/system/camilladsp.service; then
     ok "CamillaDSP keeps retrying until the HAT is there"
 else
@@ -213,6 +218,39 @@ if grep -q 'run_this_before_play_begins = "/usr/local/bin/audio-player notify ai
     ok "AirPlay reports when it plays"
 else
     fail "shairport-sync does not report when it plays"
+fi
+
+echo ""
+echo "--- Wi-Fi onboarding (DEC-044) ---"
+require_executable /usr/local/bin/kds-wifi-setup
+require_executable /usr/local/bin/kds-setup-ap.sh
+require_cmd hostapd
+require_cmd dnsmasq
+if [ -e /etc/systemd/system/multi-user.target.wants/wifi-setup.service ]; then
+    ok "wifi-setup starts at boot"
+else
+    fail "wifi-setup.service is not enabled"
+fi
+if ls /etc/systemd/system/*.wants/hostapd.service /etc/systemd/system/*.wants/dnsmasq.service >/dev/null 2>&1; then
+    fail "hostapd or dnsmasq start by themselves (only the setup AP should run them)"
+else
+    ok "hostapd and dnsmasq only run for the setup access point"
+fi
+
+echo ""
+echo "--- Discovery (DEC-043) ---"
+if grep -q "<type>_kidsspeaker._tcp</type>" /etc/avahi/services/kids-speaker.service; then
+    ok "the API is advertised over mDNS"
+else
+    fail "no mDNS service for the API"
+fi
+
+echo ""
+echo "--- Local time (DEC-041) ---"
+if [ "$(readlink /etc/localtime)" = /usr/share/zoneinfo/Europe/Copenhagen ]; then
+    ok "the time zone is Europe/Copenhagen"
+else
+    fail "the time zone is $(readlink /etc/localtime)"
 fi
 
 echo ""

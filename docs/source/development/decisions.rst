@@ -2603,3 +2603,138 @@ then takes over again. An iPhone shows the AirPlay session as ended instead.
 send Play afterwards, so it continues where it was. If the phone offers no
 AVRCP player, the Audio Player falls back to stopping ``bluealsa-aplay`` with
 SIGSTOP as before.
+
+DEC-040 — Device Volume and the Volume Limit in CamillaDSP
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_040
+   :status: resolved
+   :date: 2026-11-11
+   :tags: audio, dsp, parental
+
+**Decision**: the device volume (VOL_REQ_001) is CamillaDSP's main volume, which
+every source passes through (DEC-036), so one setting covers AirPlay, Spotify,
+Bluetooth, radio, podcasts and announcements alike. The Audio Player owns it:
+it keeps the volume and the limit in ``/data/audio/volume.json`` and sets
+CamillaDSP over its localhost websocket (``SetVolume``, ``SetMute``) at start-up
+and on every change. CamillaDSP's statefile (``/data/camilladsp/statefile.yml``)
+restores the level if CamillaDSP restarts on its own.
+
+**Default**: the volume starts at the limit, 75 % (-15 dB).
+
+**Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
+an even curve in loudness. The limit caps the percentage: asking for more than
+the limit gives the limit, and lowering the limit lowers a higher volume.
+
+**Context**: the volume limit was a number held in the API Server's memory and
+enforced nowhere. Each sender's own volume still applies before this one, so a
+phone at half volume and the device at 75 % play at both.
+
+DEC-041 — Sleep Timer and Alarms: Fades, Fallback and Local Time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_041
+   :status: resolved
+   :date: 2026-11-11
+   :tags: audio, alarm, timer
+
+Implements DEC-021 (SLP_REQ_001, ALM_REQ_001). As DEC-021 says, the API Server
+schedules both and drives the Audio Player over IPC.
+
+- **Sleep timer**: ``POST /api/timer {minutes}`` (1-240), ``GET`` and ``DELETE``.
+  At the end the API Server steps the device volume (DEC-040) down to 0 over
+  30 s, asks the Audio Player to ``stop_all`` (radio and podcasts stop, AirPlay
+  and Spotify sessions end, a Bluetooth phone pauses, as in DEC-039), then puts
+  the volume back so the next listen isn't silent.
+- **Alarms**: ``/api/alarms`` (list, add, change, remove), kept in
+  ``/data/api/alarms.json``. The scheduler checks every 15 s whether an alarm's
+  time fell since the last check, so a busy moment doesn't skip one. It never
+  catches up more than 2 minutes, so the jump when the clock is first set after
+  boot (the Pi has no RTC, DEC-019) doesn't fire a morning's alarms at once.
+  When an alarm goes off: volume to half the alarm's volume, play the
+  station, then rise to the alarm's volume over a minute. If the station fails
+  (no internet), the speaker says "Godmorgen" with the chimes.
+- **Local time**: the image's time zone is Europe/Copenhagen; alarm times are
+  local time, so they follow summer time.
+
+DEC-042 — A Bluetooth Remote Through Linux Input Events
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_042
+   :status: resolved
+   :date: 2026-11-11
+   :tags: bluetooth, controls
+
+**Decision**: when a Bluetooth remote sends AVRCP buttons, BlueZ turns them into
+key presses on a Linux input device (``/dev/input/eventN`` with bus type
+Bluetooth). The Bluetooth Service watches for such devices, reads their key
+events (``KEY_PLAYPAUSE``, ``KEY_NEXTSONG``, ``KEY_PREVIOUSSONG``,
+``KEY_VOLUMEUP``, ``KEY_VOLUMEDOWN`` and the CD variants) and sends the Audio
+Player ``remote {action}`` over IPC, which acts on it (RMT_REQ_001). Held
+volume keys repeat.
+
+**Context**: the first design expected ``bluetoothctl`` to print ``Key:`` lines;
+it prints property changes, not key presses. That monitor stays in place until
+a real remote confirms the input path, then goes.
+
+**Status**: unit-tested with recorded input events; not yet tried with a real
+remote.
+
+DEC-043 — Discovery over mDNS and Home Assistant through the REST API
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_043
+   :status: resolved
+   :date: 2026-11-11
+   :tags: networking, integration
+
+**Decision**: avahi, which already advertises AirPlay and Spotify, also
+advertises ``_kidsspeaker._tcp`` (TXT: ``path=/api``, ``auth=bearer``,
+``api=1``) and ``_https._tcp`` on port 443 (DSC_REQ_001), from a static service
+file. Home Assistant uses its ``rest`` and ``rest_command`` integrations with a
+token created for it (AUTH_REQ_002); the API reference documents a working
+configuration. A dedicated Home Assistant integration is not needed for v1.
+
+**Context**: Home Assistant's ``rest`` integration only switches certificate
+checks on or off, so with the speaker's self-signed certificate it needs
+``verify_ssl: false``: still encrypted, but without proof of the speaker's
+identity, which is acceptable on the home network.
+
+DEC-044 — Wi-Fi Onboarding: Never Forget the Network, Always Come Back
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_044
+   :status: resolved
+   :date: 2026-11-11
+   :tags: onboarding, wifi, networking
+
+Refines DEC-012 (NET_ONB_001/002).
+
+**Decision 1: saved Wi-Fi is never deleted.** DEC-012 cleared the credentials
+after 5 failed connections; a router down for a few minutes would then leave
+the speaker waiting for setup. Instead, after 5 failed checks (30 s apart, after
+a 2-minute grace at boot) the speaker opens its setup access point for 10
+minutes and then tries the saved network again, alternating until one works.
+With no saved network it opens the access point at once and keeps it open.
+
+**Decision 2: systemd bounds the access point.** The access point is a systemd
+service (``kds-setup-ap.service``: hostapd, dnsmasq, the address 192.168.4.1)
+with ``RuntimeMaxSec`` of 10 minutes when a network is saved, and an
+``ExecStopPost`` that restores normal Wi-Fi. Even if the onboarding program
+dies, the speaker returns to its network.
+
+**Decision 3: the setup page writes the boot partition.** The captive portal
+(``http://192.168.4.1``, every DNS name answered with that address so phones
+open it) saves the network to ``/boot/firmware/kds/wifi.conf``, the file
+``setup-sd.sh`` writes and ``kds-device-config`` applies at boot (DEC-025). It
+survives updates and there is one source of truth.
+
+**Decision 4: the speaker says what to do.** Entering setup mode, it announces
+(in Danish) "Forbind til netværket KidsSpeaker-xxxx for at sætte højttaleren
+op". The access point is open, as DEC-012 decided: only Wi-Fi credentials can be
+set through it, and they are only useful to someone in range.
