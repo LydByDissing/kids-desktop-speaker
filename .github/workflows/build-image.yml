@@ -84,6 +84,13 @@ jobs:
       - name: Set weekly cache scope
         run: echo "CACHE_SCOPE=pi-image-$(date +%G-%V)" >> "$GITHUB_ENV"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+
       - name: Build image
         run: make build
         working-directory: ci

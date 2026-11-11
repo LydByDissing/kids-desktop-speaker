@@ -2738,3 +2738,33 @@ survives updates and there is one source of truth.
 (in Danish) "Forbind til netværket KidsSpeaker-xxxx for at sætte højttaleren
 op". The access point is open, as DEC-012 decided: only Wi-Fi credentials can be
 set through it, and they are only useful to someone in range.
+
+DEC-045 — The Web UI: Preact, TypeScript and Storybook
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_045
+   :status: resolved
+   :date: 2026-11-11
+   :tags: web, ui
+
+Decided with the user (wave 5, KDS-9pb review).
+
+**Decision 1: Preact and TypeScript, built in CI.** The Web UI is a small
+Preact app written in TypeScript and built with Vite in CI into static files.
+The API Server (Rust, unchanged) serves them at ``/`` over HTTPS; nothing is
+built or rendered on the Pi. This replaces the Leptos plan in the solution
+design, because the user wants a Storybook to validate the UI, and Storybook
+needs a JavaScript UI.
+
+**Decision 2: Storybook for validation.** Every screen and component has
+stories for its states (empty, playing, errors, setup, a child's device),
+rendered with mocked API data, so the UI can be checked in a browser without a
+speaker. CI builds the Storybook with every change; component tests run with
+Vitest.
+
+**Decision 3: from the design review.** Four tabs (Afspiller, Radio, Beskeder,
+Indstillinger). A child's device (a non-admin token) sees only the Player and
+Radio. Sharing access shows the token once with a Copy button and a QR code
+linking ``https://<hostname>.local/#token=...``; the URL fragment never reaches
+the server. Danish by default, English as an option (LOC_REQ_001).

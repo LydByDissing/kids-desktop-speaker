@@ -3,8 +3,10 @@ User Journeys and Wireframes
 
 .. note::
 
-   **Draft for review** (KDS-9pb, 2026-11-11). The Web UI (wave 5) is built from
-   this page once it is approved. Open questions are listed at the end.
+   **Reviewed** (KDS-9pb, 2026-11-11). The open questions were answered by the
+   user and are recorded in DEC-045: Preact and TypeScript with a Storybook,
+   four tabs, a reduced UI for children's devices, and QR codes for sharing
+   access.
 
 The Web UI is a phone-first web app served by the speaker over HTTPS
 (WEB_REQ_001) at ``https://<hostname>.local``. It talks only to the HTTP API,
@@ -184,22 +186,10 @@ Phone-width sketches; the layout widens to two columns on a tablet or laptop.
    }
    @endsalt
 
-Technology (proposed change)
-----------------------------
+Decisions
+---------
 
-The section above this page chose Leptos with server-side rendering. Rendering
-on the Pi Zero W costs CPU the audio needs, and SSR needs ``cargo-leptos`` and a
-server build target. **Proposed**: Leptos **client-side only**: the UI is
-compiled to a static WebAssembly bundle in CI (``trunk``) and the API Server
-serves the files; nothing renders on the Pi. The UI and API share their JSON
-types through a small Rust crate, so a field rename breaks the build instead of
-the page. To be recorded as a decision once approved.
-
-Open questions for review
--------------------------
-
-1. Are the four tabs right, or should the Player and Radio be one screen?
-2. Should children's devices get a reduced UI (Player and Radio only, no
-   Settings) when their token is not an admin token?
-3. QR codes for sharing access (journey 6): wanted?
-4. Client-side Leptos (above), or plain HTML and JavaScript with no build step?
+1. Four tabs as drawn.
+2. A child's device (a non-admin token) sees only **Afspiller** and **Radio**.
+3. Sharing access shows a QR code and a Copy button.
+4. Technology: Preact and TypeScript, built in CI, with a Storybook (DEC-045).

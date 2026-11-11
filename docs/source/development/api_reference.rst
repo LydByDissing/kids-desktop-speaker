@@ -19,6 +19,18 @@ Finding the speaker and connecting
   required (managing tokens, the volume limit). It exists for health checks and
   the device itself; use HTTPS from other devices.
 
+The Web UI
+----------
+
+The speaker serves its Web UI at ``/`` (DEC-045), without a token: the page is
+public, the data behind it isn't. Any path the API doesn't route gets the page,
+so the app can use its own paths; unknown ``/api/...`` paths answer a JSON
+``404``. The page is sent with a Content-Security-Policy that allows only the
+speaker's own scripts, ``X-Content-Type-Options: nosniff`` and
+``Referrer-Policy: no-referrer``. A link of the form
+``https://<hostname>.local/#token=<token>`` signs a device in; the token stays
+in the fragment, so it never reaches the server's logs.
+
 Authentication
 --------------
 
@@ -66,7 +78,9 @@ Endpoints
      - Body and reply
    * - GET
      - ``/health``
-     - No token. ``{"status": "ok", "version": "..."}``
+     - No token. ``{"status": "ok", "version": "...", "set_up": true}``;
+       ``set_up`` is false until the first admin token exists (the Web UI then
+       shows setup).
    * - GET
      - ``/api/system/time``
      - The speaker's clock.

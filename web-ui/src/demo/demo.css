@@ -1,0 +1,64 @@
+/* The review page around the app. The app's own colours come from
+   styles.css; these are the frame's. Layout: scenario list beside a phone. */
+:root {
+  --d-bg: #e9ecf4;
+  --d-fg: #1c2030;
+  --d-muted: #5f667a;
+  --d-frame: #1c2030;
+  --d-on: #1d4ed8;
+  --d-on-text: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --d-bg: #0b0d13; --d-fg: #eef0f6; --d-muted: #a3a9bb; --d-frame: #3a4157; --d-on: #7aa2ff; --d-on-text: #0d1430; }
+}
+:root[data-theme="dark"] { --d-bg: #0b0d13; --d-fg: #eef0f6; --d-muted: #a3a9bb; --d-frame: #3a4157; --d-on: #7aa2ff; --d-on-text: #0d1430; }
+
+body.demo-body { background: var(--d-bg); color: var(--d-fg); }
+.demo {
+  display: grid;
+  grid-template-columns: minmax(0, 22rem) auto;
+  grid-template-areas: "head stage" "list stage";
+  align-items: start;
+  gap: 1rem 2.5rem;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding-block: 1.5rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.demo-head { grid-area: head; }
+.demo-head h1 { font-size: 1.5rem; margin: 0 0 0.5rem; text-wrap: balance; }
+.demo-head p { margin: 0; color: var(--d-muted); line-height: 1.5; }
+.demo-list { grid-area: list; min-width: 0; }
+.demo-list ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; counter-reset: s; }
+.demo-list li { counter-increment: s; }
+.demo-list li button {
+  width: 100%; text-align: left; min-height: 0; padding: 0.5rem 0.75rem; font-size: 0.95rem;
+  background: transparent; color: var(--d-fg); border: 1px solid transparent; border-radius: 8px;
+}
+.demo-list li button::before { content: counter(s) ". "; color: var(--d-muted); font-variant-numeric: tabular-nums; }
+.demo-list li button:hover { border-color: var(--d-frame); }
+.demo-list li button.on { background: var(--d-on); color: var(--d-on-text); }
+.demo-list li button.on::before { color: inherit; }
+.demo-list button:focus-visible, .demo-tools select:focus-visible { outline: 2px solid var(--d-on); outline-offset: 2px; }
+.demo-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+.demo-tools label { margin: 0 0 0 auto; font-weight: 400; color: var(--d-muted); }
+.demo-tools select { width: auto; padding: 0.4rem; font-size: 0.95rem; }
+.demo-tools button { min-height: 0; padding: 0.4rem 0.8rem; font-size: 0.95rem; }
+
+.demo-stage { grid-area: stage; position: sticky; top: 1rem; }
+/* The transform makes the app's fixed tab bar and toasts stay inside the phone. */
+.phone {
+  width: min(390px, calc(100vw - 32px)); height: min(780px, calc(100vh - 5rem)); min-height: 520px;
+  border: 10px solid var(--d-frame); border-radius: 36px; overflow: hidden; transform: translateZ(0);
+  background: var(--bg);
+}
+.phone-scroll { height: 100%; overflow-y: auto; }
+.phone .app { min-height: 100%; }
+.phone .toast { max-width: 90%; }
+.demo-caption { text-align: center; color: var(--d-muted); font-size: 0.9rem; margin: 0.5rem 0 0; }
+
+@media (max-width: 760px) {
+  .demo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "stage" "list"; }
+  .demo-stage { position: static; justify-self: center; }
+}

@@ -199,6 +199,13 @@ jobs:
           path: ci/base/raspbian-bookworm-armhf.tar
           key: raspbian-base-${{ hashFiles('ci/base/build-base.sh', 'ci/base/raspbian.public.key') }}
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+
       - name: Build image
         run: make -C ci build BIN_DIR=ci/binaries VERSION=${{ github.ref_name }}
 
