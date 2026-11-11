@@ -10,6 +10,7 @@ API Server. Provides two main sections: **Player** and **Config**.
    :maxdepth: 2
 
    solution-design
+   journeys
 
 Technology Choice
 -----------------
