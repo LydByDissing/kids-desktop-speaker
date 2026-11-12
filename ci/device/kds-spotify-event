@@ -1,4 +1,8 @@
 #!/bin/sh
 # librespot runs this on every player event with $PLAYER_EVENT set (playing,
 # paused, stopped, ...). The Audio Player keeps one source at a time (DEC-039).
+# A volume change ($VOLUME, 0-65535) sets the speaker's one volume (DEC-049).
+if [ "${PLAYER_EVENT:-}" = volume_changed ]; then
+    exec /usr/local/bin/audio-player notify spotify volume "${VOLUME:-0}"
+fi
 exec /usr/local/bin/audio-player notify spotify "${PLAYER_EVENT:-unknown}"

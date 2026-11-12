@@ -270,6 +270,11 @@ Software — DSP
    The system shall integrate CamillaDSP as the DSP engine to enhance sound
    quality, particularly in the bass region.
 
+   The speaker has one driver: CamillaDSP shall mix left and right to mono
+   before its EQ and limiter, keep headroom for the bass boost so nothing
+   clips with the amplifier at full gain, and every source shall pass through
+   it (KDS-9jt.6).
+
    Reference: https://github.com/HEnquist/camilladsp
 
 Software — User Interface
@@ -450,10 +455,21 @@ Software — Features
    :tags: software, audio, parental
 
    The speaker shall have one device volume, 0-100 % (0 is muted), applied to
-   everything it plays after each sender's own volume, and a maximum volume
+   everything it plays, and a maximum volume
    (FEAT_REQ_007, 75 % by default) that the device volume can never exceed.
    Both shall survive restarts and updates. Anyone with a token may change the
    volume; only an admin token may change the maximum (ref DEC-040).
+
+.. req:: VOL_REQ_002
+   :id: VOL_REQ_002
+   :status: open
+   :tags: software, audio
+
+   A phone's volume (AirPlay, Spotify or Bluetooth) shall set the device volume
+   instead of scaling its own audio, so every source, announcements included,
+   plays at the same volume and the next source starts where the last one was
+   left. The phone's whole range shall map onto 0 to the maximum volume, in
+   steps no coarser than 1 % (ref DEC-049).
 
 .. req:: FEAT_REQ_008
    :id: FEAT_REQ_008

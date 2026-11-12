@@ -2,7 +2,9 @@
 
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{handle_full, Services};
-use audio_player::volume::{to_db, Camilla, Settings, Volume, VolumeStore};
+use audio_player::volume::{
+    from_sender, sender_fraction, to_db, Camilla, Settings, Volume, VolumeStore,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -207,4 +209,73 @@ async fn remote_volume_buttons_step_by_five_within_the_limit() {
     assert_eq!(press("volume_up").await["volume"], 75);
     assert_eq!(press("volume_up").await["volume"], 75, "not past the limit");
     assert_eq!(press("volume_down").await["volume"], 70);
+}
+
+#[test]
+fn each_sender_reports_its_volume_its_own_way() {
+    let close = |a: Option<f64>, b: f64| (a.unwrap() - b).abs() < 1e-9;
+    // AirPlay: dB from -30 to 0, -144 for mute.
+    assert!(close(sender_fraction("airplay", "0.00"), 1.0));
+    assert!(close(sender_fraction("airplay", "-15.00"), 0.5));
+    assert!(close(sender_fraction("airplay", "-144.00"), 0.0));
+    // Spotify: 0-65535; Bluetooth AVRCP: 0-127.
+    assert!(close(sender_fraction("spotify", "65535"), 1.0));
+    assert!(close(
+        sender_fraction("spotify", "32768"),
+        32768.0 / 65535.0
+    ));
+    assert!(close(sender_fraction("bluetooth", "127"), 1.0));
+    assert!(close(sender_fraction("bluetooth", "0"), 0.0));
+    assert!(close(sender_fraction("bluetooth", "300"), 1.0), "clamped");
+    assert_eq!(sender_fraction("radio", "10"), None);
+    assert_eq!(sender_fraction("airplay", "loud"), None);
+    assert_eq!(sender_fraction("spotify", "NaN"), None);
+}
+
+#[test]
+fn a_senders_whole_range_maps_onto_zero_to_the_limit() {
+    assert_eq!(
+        from_sender(1.0, 75),
+        75,
+        "all the way up plays at the limit"
+    );
+    assert_eq!(from_sender(0.5, 75), 38);
+    assert_eq!(from_sender(0.0, 75), 0);
+    // Many increments: a Bluetooth phone's 128 steps give distinct volumes.
+    let distinct: std::collections::BTreeSet<u8> = (0..=127)
+        .map(|v| from_sender(f64::from(v) / 127.0, 100))
+        .collect();
+    assert!(distinct.len() > 95, "{}", distinct.len());
+}
+
+#[tokio::test]
+async fn a_phone_changing_its_volume_sets_the_speaker_volume() {
+    let (addr, log) = fake_camilla().await;
+    let v = volume(&addr, "sender");
+    let services = Services {
+        volume: Some(Arc::clone(&v)),
+        ..Services::default()
+    };
+    let arb = Arc::new(Mutex::new(Arbitrator::new()));
+    let call = |request: Value| handle_full(request, Arc::clone(&arb), &services);
+
+    // Bluetooth at 64 of 127, limit 75: about half of 75.
+    let r = call(json!({"cmd": "source_volume", "source": "bluetooth", "value": 64})).await;
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["volume"], 38);
+    assert_eq!(v.store.load().volume, 38, "kept for the next source");
+    assert!(log
+        .lock()
+        .unwrap()
+        .contains(&json!({"SetVolume": -60.0 * (1.0 - 0.38)})));
+    // AirPlay all the way up: the limit.
+    let r = call(json!({"cmd": "source_volume", "source": "airplay", "value": "0.00"})).await;
+    assert_eq!(r["volume"], 75);
+    for bad in [
+        json!({"cmd": "source_volume", "source": "airplay"}),
+        json!({"cmd": "source_volume", "source": "radio", "value": "5"}),
+        json!({"cmd": "source_volume", "source": "spotify", "value": "loud"}),
+    ] {
+        assert_eq!(call(bad.clone()).await["ok"], false, "{bad}");
+    }
 }

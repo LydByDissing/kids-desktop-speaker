@@ -2,7 +2,7 @@
 //! D-Bus (DEC-039). Skipped when dbus-daemon is not installed. Multi-threaded,
 //! as the service runs.
 
-use bluetooth_service::bluez::{avrcp, players, watch_transports};
+use bluetooth_service::bluez::{avrcp, players, watch_transports, TransportEvent};
 use bluetooth_service::ipc::{handle, Context};
 use bluetooth_service::pairing::PairingWindow;
 use serde_json::json;
@@ -169,8 +169,12 @@ async fn avrcp_over_ipc() {
 }
 
 async fn emit_state(bluez: &Connection, state: &str) {
+    emit_change(bluez, "State", Value::from(state)).await;
+}
+
+async fn emit_change(bluez: &Connection, name: &str, value: Value<'_>) {
     let mut changed: HashMap<&str, Value> = HashMap::new();
-    changed.insert("State", Value::from(state));
+    changed.insert(name, value);
     bluez
         .emit_signal(
             None::<&str>,
@@ -184,9 +188,9 @@ async fn emit_state(bluez: &Connection, state: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn streaming_starts_and_stops_are_reported() {
+async fn streaming_and_the_phones_volume_are_reported() {
     let Some(s) = setup(None).await else { return };
-    let seen: Arc<Mutex<Vec<bool>>> = Arc::default();
+    let seen: Arc<Mutex<Vec<TransportEvent>>> = Arc::default();
     let log = Arc::clone(&seen);
     let speaker = s.speaker.clone();
     tokio::spawn(async move {
@@ -197,18 +201,25 @@ async fn streaming_starts_and_stops_are_reported() {
         .await;
     });
     tokio::time::sleep(Duration::from_millis(200)).await;
-    for state in ["pending", "active", "idle"] {
+    for state in ["pending", "active"] {
         emit_state(&s.bluez, state).await;
     }
+    // The phone's volume buttons (AVRCP absolute volume, DEC-049).
+    emit_change(&s.bluez, "Volume", Value::from(90u16)).await;
+    emit_state(&s.bluez, "idle").await;
     for _ in 0..50 {
-        if seen.lock().unwrap().len() >= 2 {
+        if seen.lock().unwrap().len() >= 3 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert_eq!(
         *seen.lock().unwrap(),
-        vec![true, false],
+        vec![
+            TransportEvent::Streaming(true),
+            TransportEvent::Volume(90),
+            TransportEvent::Streaming(false)
+        ],
         "pending is not reported"
     );
 }

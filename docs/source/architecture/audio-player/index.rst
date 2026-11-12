@@ -293,7 +293,7 @@ The components as implemented (KDS-9ym, 2026-11-11).
        Component(ann, "Announcer", "announcer.rs", "Queue of speech and recordings: pause, chime, play, chime, resume")
        Component(radio, "Radio and podcasts", "radio.rs, podcasts.rs", "Stations and feeds on /data; keeps podcast positions")
        Component(player, "Stream player", "stream/*.rs", "HTTP in (ICY titles, ranges), symphonia decodes MP3/AAC/M4A/Ogg/FLAC, aplay out (DEC-048)")
-       Component(ipcs, "IPC server", "ipc.rs", "status, announce, play_message, source_event, radio_*, podcast_*")
+       Component(ipcs, "IPC server", "ipc.rs", "status, announce, play_message, source_volume, source_event, radio_*, podcast_*")
    }
    Container_Ext(tts, "TTS Engine", "tts-engine crate")
    System_Ext(net, "Stations and podcast hosts", "HTTP(S)")

@@ -28,9 +28,17 @@ const AUDIO_SOCKET: &str = "/run/kds/audio.sock";
 const BT_SOCKET: &str = "/run/kds/bt.sock";
 
 /// `audio-player notify <source> <event>`: what the receivers' hooks run to
-/// report that they started or stopped playing (DEC-039).
-async fn notify(source: &str, event: &str) -> anyhow::Result<()> {
-    let request = serde_json::json!({"cmd": "source_event", "source": source, "state": event});
+/// report that they started or stopped playing (DEC-039), and
+/// `audio-player notify <source> volume <value>` when the phone changes its
+/// volume (DEC-049).
+async fn notify(source: &str, event: &str, value: Option<&str>) -> anyhow::Result<()> {
+    let request = match (event, value) {
+        ("volume", Some(value)) => {
+            serde_json::json!({"cmd": "source_volume", "source": source, "value": value})
+        }
+        ("volume", None) => anyhow::bail!("usage: audio-player notify <source> volume <value>"),
+        _ => serde_json::json!({"cmd": "source_event", "source": source, "state": event}),
+    };
     kds_ipc::request(AUDIO_SOCKET, &request).await?;
     Ok(())
 }
@@ -42,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         let (Some(source), Some(event)) = (args.get(2), args.get(3)) else {
             anyhow::bail!("usage: audio-player notify <source> <event>");
         };
-        return notify(source, event).await;
+        return notify(source, event, args.get(4).map(String::as_str)).await;
     }
     println!("audio-player: starting");
 

@@ -29,6 +29,8 @@ pub fn airplay() -> Manager {
 
 /// librespot arguments: the shared `speaker` output in its native S16 format,
 /// credentials on the data partition, and no audio cache to spare the SD card.
+/// Its volume doesn't scale the audio: the phone's volume becomes the
+/// speaker's one volume through the event hook (DEC-049).
 pub fn spotify_args(name: &str) -> Vec<String> {
     [
         "--name",
@@ -46,6 +48,11 @@ pub fn spotify_args(name: &str) -> Vec<String> {
         "--system-cache",
         SPOTIFY_STATE_DIR,
         "--disable-audio-cache",
+        "--volume-ctrl",
+        "fixed",
+        // Fine steps for volume buttons in the Spotify app.
+        "--volume-steps",
+        "100",
         // Reports playing/paused to the Audio Player (DEC-039).
         "--onevent",
         SPOTIFY_EVENT_HOOK,

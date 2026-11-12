@@ -2477,6 +2477,17 @@ HAT's (``enable_rate_adjust``). A ``camilladsp`` ALSA plugin was not needed.
 The speaker's bass EQ (DSP_REQ_001) comes with DSP tuning, measured on the
 speaker.
 
+**Update (2026-11-12, KDS-9jt.6): mono, headroom, room to breathe.** The
+speaker has one driver and the amplifier runs at full gain, so the pipeline is
+now: left plus right (-6 dB each) to one channel, a headroom cut (-10 dB, at
+least the voicing EQ's largest boost), the voicing EQ (to come), the limiter,
+then the same signal to both HAT channels. The codec's own mono mix is off; it
+would add the two identical channels again after the limiter. Against
+Spotify's pauses as a track starts: the shared dmix buffer is 340 ms (was
+170), CamillaDSP's target level four chunks (85 ms, was 43) and it runs with
+real-time scheduling. Tuning is live with ``make -C ci dsp-tune`` (CamillaGUI
+on a laptop through an SSH tunnel; nothing is saved on the speaker).
+
 **Decision 3: built from source.** CamillaDSP is GPL-3.0. CI builds it from the
 pinned v4.1.3 release archive (SHA-256 checked) with our own ``Cargo.lock``
 (the tag ships none), cross-compiled like librespot (DEC-034) with the shared
@@ -2897,4 +2908,41 @@ that drops reconnects 3 times; the image loses MPD's packages. symphonia is
 MPL-2.0 (file-level copyleft), now allowed in ``deny.toml``: it is used
 unmodified and its source is the published crate, as for librespot's MPL-2.0
 crates (DEC-034).
+
+DEC-049 — One Volume: the Phone's Volume Sets the Speaker's
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_049
+   :status: resolved
+   :date: 2026-11-12
+   :tags: audio, volume
+
+Decided with the user (KDS-9jt.6, VOL_REQ_002).
+
+**Context**: every source already plays through CamillaDSP and its device
+volume (DEC-040), but AirPlay and Spotify also scaled their audio by the
+phone's volume (librespot at 50 % by default), so music sat well below the
+chimes and messages that interrupted it, and each source kept its own level.
+
+**Decision**: senders play at full level and their volume becomes the device
+volume:
+
+- **AirPlay**: shairport-sync ignores the volume for the audio
+  (``ignore_volume_control``) and runs
+  ``audio-player notify airplay volume <dB>`` on each change (-30 to 0 dB,
+  -144 for mute).
+- **Spotify**: librespot's volume is fixed (``--volume-ctrl fixed``, 100
+  steps); its ``volume_changed`` event (0-65535) goes through the event hook.
+- **Bluetooth**: BlueALSA uses native volume (``--a2dp-volume``), so it doesn't
+  scale the audio; the Bluetooth Service watches BlueZ's
+  ``MediaTransport1.Volume`` (AVRCP, 0-127) and reports it.
+
+The Audio Player's ``source_volume {source, value}`` maps the sender's whole
+range onto 0 to the maximum volume (a phone all the way up plays at the limit,
+and every step of its slider counts) and sets the device volume, which the
+next source keeps. The Web UI's slider moves in 1 % steps.
+
+**Not yet**: the speaker's volume isn't sent back to the phone, so a phone's
+slider shows its own last value until it is moved.
 

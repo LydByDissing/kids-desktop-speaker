@@ -130,8 +130,8 @@ if grep -q "^Class = 0x240414" /etc/bluetooth/main.conf; then
 else
     fail "main.conf does not set the loudspeaker class"
 fi
-if grep -q "ExecStart=/usr/bin/bluealsa -p a2dp-sink$" /etc/systemd/system/bluealsa.service.d/sink-only.conf; then
-    ok "BlueALSA runs as an A2DP sink only"
+if grep -q "ExecStart=/usr/bin/bluealsa -p a2dp-sink --a2dp-volume$" /etc/systemd/system/bluealsa.service.d/sink-only.conf; then
+    ok "BlueALSA runs as an A2DP sink only, without scaling by the phone's volume"
 else
     fail "BlueALSA is not sink-only"
 fi
@@ -151,6 +151,14 @@ if [ -e /etc/systemd/system/bluetooth.target.wants/bluealsa.service ]; then
 else
     fail "bluealsa is not enabled"
 fi
+
+echo ""
+echo "--- One volume (DEC-049) ---"
+grep -q 'ignore_volume_control = "yes"' /etc/shairport-sync.conf || fail "AirPlay scales the audio by the phone's volume"
+grep -q 'run_this_when_volume_is_set = "/usr/local/bin/audio-player notify airplay volume "' /etc/shairport-sync.conf \
+    || fail "AirPlay doesn't report the phone's volume"
+grep -q 'notify spotify volume' /usr/local/bin/kds-spotify-event || fail "Spotify doesn't report its volume"
+ok "AirPlay, Spotify and Bluetooth report their volume instead of scaling the audio"
 
 echo ""
 echo "--- Internet radio (RAD_REQ_001, DEC-048) ---"

@@ -369,6 +369,27 @@ pub async fn handle_full(
             }
             None => error("podcasts unavailable"),
         },
+        Some("source_volume") => {
+            // A phone changed its volume: that is the speaker's one volume, so
+            // the next source plays at it too (DEC-049).
+            let Some(volume) = &services.volume else {
+                return error("volume unavailable");
+            };
+            let source = request.get("source").and_then(Value::as_str).unwrap_or("");
+            let raw = match request.get("value") {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Number(n)) => n.to_string(),
+                _ => return error("source_volume needs value"),
+            };
+            let Some(fraction) = crate::volume::sender_fraction(source, &raw) else {
+                return error(format!("cannot read a {source} volume from {raw:?}"));
+            };
+            let target = crate::volume::from_sender(fraction, volume.current().limit);
+            match volume.set_volume(target).await {
+                Ok((settings, _)) => ok(crate::volume::describe(&settings)),
+                Err(e) => error(e),
+            }
+        }
         Some(cmd @ ("volume" | "set_volume" | "set_limit")) => {
             let Some(volume) = &services.volume else {
                 return error("volume unavailable");

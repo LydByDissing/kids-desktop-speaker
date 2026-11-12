@@ -194,6 +194,28 @@ impl Volume {
     }
 }
 
+/// How loud a sender (a phone over AirPlay, Spotify or Bluetooth) asks to be,
+/// from 0.0 to 1.0, from the value its receiver reports: AirPlay's volume in
+/// dB (-30 to 0, -144 for mute), Spotify's 0-65535, Bluetooth's AVRCP 0-127.
+pub fn sender_fraction(source: &str, raw: &str) -> Option<f64> {
+    let value: f64 = raw.trim().parse().ok().filter(|v: &f64| v.is_finite())?;
+    let fraction = match source {
+        "airplay" if value <= -30.0 => 0.0,
+        "airplay" => (value + 30.0) / 30.0,
+        "spotify" => value / 65535.0,
+        "bluetooth" => value / 127.0,
+        _ => return None,
+    };
+    Some(fraction.clamp(0.0, 1.0))
+}
+
+/// The device volume for a sender's volume: its whole range maps onto 0 to
+/// the limit, so a phone turned all the way up plays at the limit and every
+/// step of its slider counts (DEC-049).
+pub fn from_sender(fraction: f64, limit: u8) -> u8 {
+    (fraction.clamp(0.0, 1.0) * f64::from(limit)).round() as u8
+}
+
 /// The JSON a volume reply carries.
 pub fn describe(settings: &Settings) -> Value {
     json!({

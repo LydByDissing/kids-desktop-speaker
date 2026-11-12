@@ -18,7 +18,9 @@ set_control() { amixer -q -c "$CARD" cset name="$1" "$2"; }
 
 set_control 'DAC Left Source MUX' 2        # DAI Input Left
 set_control 'DAC Right Source MUX' 3       # DAI Input Right
-set_control 'DAC Mono Switch' on,on        # one speaker: mix left and right
+# One speaker: CamillaDSP mixes left and right before its limiter and sends
+# the same signal to both channels, so the codec mustn't add them again.
+set_control 'DAC Mono Switch' off,off
 set_control 'DAC Soft Mute Switch' off
 set_control 'DAC Volume' 112,112
 set_control 'Mixout Left DAC Left Switch' on

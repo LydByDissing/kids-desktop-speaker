@@ -141,12 +141,41 @@ pub async fn avrcp(bus: &Connection, bluez: &str, action: &str) -> Result<(), St
     Ok(())
 }
 
-/// Watches BlueZ's audio transports and calls `report(true)` when a phone
-/// starts streaming (State "active") and `report(false)` when it stops
-/// ("idle"). Returns when the bus closes.
+/// What a phone's audio transport reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransportEvent {
+    /// Started (State "active") or stopped ("idle") streaming.
+    Streaming(bool),
+    /// Its AVRCP absolute volume, 0-127: the phone's volume buttons (DEC-049).
+    Volume(u16),
+}
+
+/// The events in one `MediaTransport1` PropertiesChanged.
+pub fn transport_events(
+    changed: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+) -> Vec<TransportEvent> {
+    let mut events = Vec::new();
+    if let Some(state) = changed
+        .get("State")
+        .and_then(|v| String::try_from(v.clone()).ok())
+    {
+        match state.as_str() {
+            "active" => events.push(TransportEvent::Streaming(true)),
+            "idle" => events.push(TransportEvent::Streaming(false)),
+            _ => {}
+        }
+    }
+    if let Some(volume) = changed.get("Volume").and_then(|v| u16::try_from(v).ok()) {
+        events.push(TransportEvent::Volume(volume.min(127)));
+    }
+    events
+}
+
+/// Watches BlueZ's audio transports and reports when a phone starts or stops
+/// streaming and when it changes its volume. Returns when the bus closes.
 pub async fn watch_transports<F, Fut>(bus: &Connection, bluez: &str, report: F) -> zbus::Result<()>
 where
-    F: Fn(bool) -> Fut,
+    F: Fn(TransportEvent) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     use futures_util::StreamExt;
@@ -170,16 +199,54 @@ where
         if interface != "org.bluez.MediaTransport1" {
             continue;
         }
-        if let Some(state) = changed
-            .get("State")
-            .and_then(|v| String::try_from(v.clone()).ok())
-        {
-            match state.as_str() {
-                "active" => report(true).await,
-                "idle" => report(false).await,
-                _ => {}
-            }
+        for event in transport_events(&changed) {
+            report(event).await;
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use std::collections::HashMap;
+    use zbus::zvariant::{OwnedValue, Value};
+
+    fn changed(pairs: &[(&str, Value<'_>)]) -> HashMap<String, OwnedValue> {
+        pairs
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.to_string(),
+                    OwnedValue::try_from(v.try_clone().unwrap()).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn streaming_and_volume_are_reported() {
+        assert_eq!(
+            transport_events(&changed(&[("State", Value::from("active"))])),
+            vec![TransportEvent::Streaming(true)]
+        );
+        assert_eq!(
+            transport_events(&changed(&[("State", Value::from("idle"))])),
+            vec![TransportEvent::Streaming(false)]
+        );
+        // The phone's volume buttons: BlueZ's Volume is a uint16 (0-127).
+        assert_eq!(
+            transport_events(&changed(&[("Volume", Value::from(64u16))])),
+            vec![TransportEvent::Volume(64)]
+        );
+        assert_eq!(
+            transport_events(&changed(&[
+                ("State", Value::from("active")),
+                ("Volume", Value::from(200u16))
+            ])),
+            vec![TransportEvent::Streaming(true), TransportEvent::Volume(127)]
+        );
+        assert!(transport_events(&changed(&[("State", Value::from("pending"))])).is_empty());
+        assert!(transport_events(&changed(&[("Delay", Value::from(5u16))])).is_empty());
+    }
 }

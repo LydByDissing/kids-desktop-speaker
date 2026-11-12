@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build web-ui test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-sources-test hw-podcasts-test hw-volume-test hw-schedule-test hw-wifi-setup-test hw-web-test hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build web-ui test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-sources-test hw-podcasts-test hw-volume-test hw-schedule-test hw-wifi-setup-test hw-web-test dsp-tune hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -145,6 +145,10 @@ hw-wifi-setup-test:
 ## hw-web-test — The Web UI over HTTPS on a real Pi (DEC-045): make hw-web-test PI_HOST=root@host
 hw-web-test:
 	@PI_HOST=$(PI_HOST) bash scripts/hw-web-test.sh
+
+## dsp-tune — Tune the speaker's DSP live with CamillaGUI on this computer: make dsp-tune PI_HOST=root@host
+dsp-tune:
+	@PI_HOST=$(PI_HOST) bash scripts/dsp-tune.sh
 
 ## hw-install — Install the current build on a development Pi: make hw-install PI_HOST=root@host
 hw-install:

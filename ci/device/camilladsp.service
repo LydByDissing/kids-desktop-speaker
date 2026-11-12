@@ -17,8 +17,12 @@ ExecStartPre=/bin/mkdir -p /data/camilladsp
 ExecStart=/usr/bin/camilladsp -p 1234 -a 127.0.0.1 -s /data/camilladsp/statefile.yml /etc/camilladsp/config.yml
 Restart=always
 RestartSec=2
-# Audio processing must not be starved by downloads or synthesis.
+# Audio processing must not be starved by downloads, synthesis or a sender
+# starting a track: real-time scheduling on the single core (the kernel still
+# keeps 5 % for everything else).
 Nice=-10
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=20
 
 [Install]
 WantedBy=multi-user.target

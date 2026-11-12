@@ -5,9 +5,13 @@
 # stereo stream and plays it on the HAT. The loopback runs on its own clock, so
 # CamillaDSP adjusts the loopback's rate to match the HAT's (rate adjust).
 #
-# The pipeline is flat for now: a limiter just under full scale stops clipping
-# whatever the sources and their volumes do. The speaker's bass EQ comes with
-# DSP tuning (KDS-1o1 follow-up).
+# One speaker, so the pipeline is mono (KDS-9jt.6): left and right are added
+# (-6 dB each, so a centred signal keeps its level), then a fixed headroom cut
+# makes room for the voicing EQ's bass boost, and a limiter just under full
+# scale stops clipping whatever the sources and their volumes do. The result
+# goes to both HAT channels; the codec's own mono mix is off (kds-hat-init).
+# The amplifier runs at full gain; the device volume (DEC-040) and the headroom
+# set the level. Tune live with make -C ci dsp-tune.
 title: Kids Desktop Speaker
 devices:
   samplerate: 48000
@@ -16,12 +20,31 @@ devices:
   enable_rate_adjust: true
   # The defaults (a buffer of one chunk, corrected every 10 s) let the HAT run
   # dry every 30-50 s on the single-core Pi Zero: 15 underruns in 10 minutes
-  # of radio. Two chunks (43 ms) corrected every 3 s gave none.
-  target_level: 2048
+  # of radio. Two chunks (43 ms) corrected every 3 s gave none. Four chunks
+  # (85 ms) ride out the CPU spike when Spotify starts a new track.
+  target_level: 4096
   adjust_period: 3
   capture: {type: Alsa, channels: 2, device: "hw:Loopback,1,0", format: S16_LE}
   playback: {type: Alsa, channels: 2, device: "hw:IQaudIOCODEC,0", format: S32_LE}
+mixers:
+  to_mono:
+    channels: {in: 2, out: 1}
+    mapping:
+      - dest: 0
+        sources:
+          - {channel: 0, gain: -6.02, inverted: false}
+          - {channel: 1, gain: -6.02, inverted: false}
+  to_both:
+    channels: {in: 1, out: 2}
+    mapping:
+      - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
+      - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
 filters:
+  # At least as much as the voicing EQ's largest boost, so it can't clip.
+  headroom: {type: Gain, parameters: {gain: -10.0}}
   limiter: {type: Limiter, parameters: {clip_limit: -1.0, soft_clip: false}}
 pipeline:
-  - {type: Filter, channels: [0, 1], names: [limiter]}
+  - {type: Mixer, name: to_mono}
+  # The voicing EQ (bass boost) goes between headroom and limiter.
+  - {type: Filter, channels: [0], names: [headroom, limiter]}
+  - {type: Mixer, name: to_both}
