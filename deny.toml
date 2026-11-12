@@ -10,6 +10,10 @@ allow = [
     "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
+    # File-level copyleft: symphonia, the stream player's decoders (DEC-048),
+    # used unmodified; its source is the published crate. librespot already
+    # ships MPL-2.0 crates on the same terms (DEC-034).
+    "MPL-2.0",
     "Unicode-3.0",
     "Unlicense",
 ]

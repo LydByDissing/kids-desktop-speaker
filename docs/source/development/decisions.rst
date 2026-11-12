@@ -2893,5 +2893,8 @@ pause, stop, status).
 supported (symphonia has no Opus decoder); none of the default stations use it.
 
 **Consequences**: no MPD service, port 6600 or configuration; a live stream
-that drops reconnects 3 times; the image loses MPD's packages.
+that drops reconnects 3 times; the image loses MPD's packages. symphonia is
+MPL-2.0 (file-level copyleft), now allowed in ``deny.toml``: it is used
+unmodified and its source is the published crate, as for librespot's MPL-2.0
+crates (DEC-034).
 
