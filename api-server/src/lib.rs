@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod events;
 pub mod messages;
 pub mod routes;
 pub mod schedule;
@@ -18,6 +19,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(routes::health::get_health))
         .route("/api/system/time", get(routes::system::get_time))
+        .route("/api/events", get(events::stream))
         .route("/api/audio/source", get(routes::audio::get_source))
         .route("/api/tts", post(routes::tts::post_tts))
         .route(
@@ -104,6 +106,11 @@ pub fn app(state: AppState) -> Router {
                 )
                 .route_layer(axum::middleware::from_fn(auth::require_admin)),
         )
+        // A change through the API is pushed to live subscribers at once.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            events::nudge_after_changes,
+        ))
         // Every route needs a token except /health, setup and the device itself
         // (AUTH_REQ_001). The listener's Transport and the peer address are
         // added outside this, in main.

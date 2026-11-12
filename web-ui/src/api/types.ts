@@ -71,6 +71,10 @@ export interface OtaStatus {
   state: string | { error: string };
   detail: string | null;
   version: string;
+  /** An installed version waiting for a reboot. */
+  pending?: string | null;
+  /** While a reboot waits out its grace period: when, in Unix seconds (OTA_REQ_010). */
+  reboot_at?: number | null;
 }
 
 export interface Timer {

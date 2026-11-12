@@ -2,6 +2,7 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import type { ApiClient } from "./api/client";
 import type { Lang } from "./i18n";
+import type { Live } from "./live";
 import type { Recorder } from "./wav";
 
 export interface AppServices {
@@ -17,6 +18,8 @@ export interface AppServices {
   signOut: () => void;
   /** The address other devices use, e.g. https://kidsspeaker-2df5.local */
   origin: string;
+  /** Live updates from the speaker (DEC-046). */
+  live: Live;
 }
 
 export const AppContext = createContext<AppServices | null>(null);

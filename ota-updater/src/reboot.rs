@@ -71,6 +71,28 @@ pub async fn audio_playing(socket: &str) -> bool {
     }
 }
 
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Waits out the grace period before a reboot, showing when it will happen in
+/// the status (`reboot_at`) meanwhile. Returns true if `reboot_now` cut it
+/// short.
+pub async fn grace_period(status: &SharedStatus, grace: Duration, reboot_now: &Notify) -> bool {
+    status
+        .set_reboot_at(Some(unix_now() + grace.as_secs()))
+        .await;
+    let forced = tokio::select! {
+        _ = reboot_now.notified() => true,
+        _ = tokio::time::sleep(grace) => false,
+    };
+    status.set_reboot_at(None).await;
+    forced
+}
+
 async fn run_reboot(command: &str) {
     println!("ota: rebooting to activate the update ({command})");
     let mut parts = command.split_whitespace();
@@ -108,14 +130,10 @@ pub async fn reboot_loop(cfg: OtaConfig, status: SharedStatus, reboot_now: Arc<N
             "ota: rebooting in {} s unless audio starts",
             cfg.reboot_grace.as_secs()
         );
-        tokio::select! {
-            _ = reboot_now.notified() => {}
-            _ = tokio::time::sleep(cfg.reboot_grace) => {
-                if !allowed(audio_playing(&cfg.audio_socket).await) {
-                    println!("ota: reboot postponed");
-                    continue;
-                }
-            }
+        let forced = grace_period(&status, cfg.reboot_grace, &reboot_now).await;
+        if !forced && !allowed(audio_playing(&cfg.audio_socket).await) {
+            println!("ota: reboot postponed");
+            continue;
         }
         run_reboot(&cfg.reboot_command).await;
     }
@@ -170,6 +188,37 @@ mod tests {
         assert!(!may_reboot(false, true, false));
         assert!(!may_reboot(true, false, false));
         assert!(!may_reboot(true, true, true));
+    }
+
+    #[tokio::test]
+    async fn the_grace_period_shows_when_the_reboot_happens() {
+        let status = SharedStatus::new();
+        let notify = Arc::new(Notify::new());
+        let (s, n) = (status.clone(), Arc::clone(&notify));
+        let wait =
+            tokio::spawn(async move { grace_period(&s, Duration::from_secs(300), &n).await });
+        // Wait until the grace period has started.
+        let mut at = None;
+        for _ in 0..100 {
+            at = status.get().await.reboot_at;
+            if at.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let at = at.expect("reboot_at is set during the grace period");
+        assert!((unix_now() + 295..=unix_now() + 300).contains(&at), "{at}");
+        notify.notify_one();
+        assert!(wait.await.unwrap(), "reboot now cuts it short");
+        assert_eq!(status.get().await.reboot_at, None, "and clears it");
+    }
+
+    #[tokio::test]
+    async fn after_the_grace_period_reboot_at_is_cleared() {
+        let status = SharedStatus::new();
+        let forced = grace_period(&status, Duration::from_millis(20), &Notify::new()).await;
+        assert!(!forced);
+        assert_eq!(status.get().await.reboot_at, None);
     }
 
     #[tokio::test]

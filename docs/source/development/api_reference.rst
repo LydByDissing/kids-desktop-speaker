@@ -82,6 +82,12 @@ Endpoints
        ``set_up`` is false until the first admin token exists (the Web UI then
        shows setup).
    * - GET
+     - ``/api/events``
+     - Live updates (DEC-046): a ``text/event-stream`` that stays open. First
+       every topic, then each topic when it changes: ``source``, ``volume``,
+       ``timer``, ``bluetooth``, ``ota``, each with the JSON of its endpoint.
+       Try ``curl -N -H 'Authorization: Bearer ...' https://.../api/events``.
+   * - GET
      - ``/api/system/time``
      - The speaker's clock.
    * - GET
@@ -149,7 +155,9 @@ Endpoints
        (``{"seconds"}`` optional).
    * - GET, POST
      - ``/api/ota/status``, ``/api/ota/check``, ``/api/ota/reboot``
-     - Update state; check now; reboot now (OTA_REQ_007).
+     - Update state ``{"state", "detail", "version", "pending", "reboot_at"}``;
+       check now; reboot now (OTA_REQ_007). ``reboot_at`` (Unix seconds) is
+       set while an update's reboot waits out its grace period (OTA_REQ_010).
    * - POST
      - ``/api/setup/start``, ``/api/setup``
      - No token: see Authentication.

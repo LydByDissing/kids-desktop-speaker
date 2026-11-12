@@ -47,6 +47,7 @@ pub async fn handle(request: Value, status: SharedStatus, controls: &Controls) -
                 "detail": detail,
                 "version": current.version,
                 "pending": current.pending,
+                "reboot_at": current.reboot_at,
             }))
         }
         Some("install") => {

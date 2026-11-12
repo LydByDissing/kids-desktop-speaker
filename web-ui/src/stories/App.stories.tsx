@@ -33,6 +33,7 @@ export const Messages = story("messages");
 export const NoMessages = story("no-messages");
 export const Settings = story("settings");
 export const UpdateReady = story("update");
+export const RebootCountdown = story("reboot");
 export const ChildDevice = story("child");
 export const English = story("english");
 export const SlowSpeaker = story("slow");

@@ -93,7 +93,7 @@ flag and when it was last used, with **Fjern**.
 
 Settings, **Software**: the running version, the update state (idle,
 downloading, installed and waiting for the night-time restart), **Søg efter
-opdatering** and **Genstart nu**. Changes arrive live (WebSocket, KDS-u1v).
+opdatering** and **Genstart nu**. Changes arrive live (Server-Sent Events, DEC-046).
 
 8. Sign in on a new browser
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

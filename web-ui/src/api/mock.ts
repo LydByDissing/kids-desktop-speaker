@@ -1,4 +1,5 @@
 import type { ApiClient } from "./client";
+import { OnConnected, OnEvent, same, Topic, TOPICS } from "../live";
 import {
   Alarm, AlarmInput, ApiError, BluetoothStatus, Episode, Feed, Health, Message, NewToken, OtaStatus,
   Source, Station, Timer, TokenInfo, Volume,
@@ -20,6 +21,10 @@ export interface MockOptions {
   ota?: OtaStatus;
   /** Calls answer after this many milliseconds, to show loading states. */
   delay?: number;
+  /** An update reboots in this many seconds (the grace period, OTA_REQ_010). */
+  rebootIn?: number;
+  /** Live updates; off shows how the app copes without them. Default on. */
+  live?: boolean;
 }
 
 const DAY = 86_400;
@@ -68,6 +73,7 @@ export class MockClient implements ApiClient {
   announced: { text: string; lang: string }[] = [];
   played: string[] = [];
   delay: number;
+  live: boolean;
   private next = 1;
 
   constructor(o: MockOptions = {}) {
@@ -87,6 +93,10 @@ export class MockClient implements ApiClient {
       { id: "t2", name: "Idas iPad", admin: false, created: now() - 10 * DAY, last_used: now() - DAY },
     ];
     this.delay = o.delay ?? 0;
+    this.live = o.live ?? true;
+    if (o.rebootIn !== undefined) {
+      this.otaStatus = { ...this.otaStatus, state: "done", pending: "v0.5.0", reboot_at: now() + o.rebootIn };
+    }
   }
 
   private async answer<T>(value: T | (() => T)): Promise<T> {
@@ -253,4 +263,41 @@ export class MockClient implements ApiClient {
       return this.alarmList[i];
     });
   removeAlarm = (id: string) => this.answer<void>(() => { this.alarmList = this.alarmList.filter((a) => a.id !== id); });
+
+  private topic(topic: Topic): Promise<unknown> {
+    switch (topic) {
+      case "source": return this.source();
+      case "volume": return this.volume();
+      case "timer": return this.timer();
+      case "bluetooth": return this.bluetooth();
+      case "ota": return this.ota();
+    }
+  }
+
+  /** Like the speaker's Event Hub: every topic, then each change, looked for
+   *  every 300 ms. A change made directly on the mock shows up too. */
+  events = (onEvent: OnEvent, onConnected: OnConnected) => {
+    if (!this.live) {
+      onConnected(false);
+      return () => {};
+    }
+    const last = new Map<Topic, [unknown, number]>();
+    let stopped = false;
+    const look = async () => {
+      for (const topic of TOPICS) {
+        const value = await this.topic(topic);
+        const prev = last.get(topic);
+        if (stopped || (prev && same(prev[0], value, Date.now() - prev[1]))) continue;
+        last.set(topic, [value, Date.now()]);
+        onEvent(topic, value);
+      }
+    };
+    onConnected(true);
+    look();
+    const id = setInterval(look, 300);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  };
 }

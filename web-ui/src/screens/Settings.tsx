@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "preact/hooks";
 import type { AlarmInput, NewToken } from "../api/types";
 import { ApiError } from "../api/types";
 import { useApp } from "../context";
-import { formatDuration, usePoll } from "../hooks";
+import { formatDuration, useCountdown, usePoll, useTopic } from "../hooks";
 import { Lang } from "../i18n";
 import { accessLink } from "../share";
 import { QrCode } from "../components/QrCode";
@@ -33,13 +33,14 @@ export function Settings() {
 
 function BluetoothSection() {
   const { client, t, notify } = useApp();
-  const status = usePoll(useCallback(() => client.bluetooth(), [client]), 5000);
+  const status = useTopic("bluetooth", useCallback(() => client.bluetooth(), [client]), 5000);
   const open = status.data?.pairing.open;
+  const left = useCountdown(open ? status.data?.pairing.remaining_s : 0, status.at);
   return (
     <div class="card">
       <h2>{t("bt.title")}</h2>
       {open ? (
-        <p aria-live="polite">{t("bt.open", { time: formatDuration(status.data?.pairing.remaining_s ?? 0) })}</p>
+        <p aria-live="polite">{t("bt.open", { time: formatDuration(left) })}</p>
       ) : (
         <button onClick={async () => { await client.pair().catch(() => notify(t("error.generic"))); await status.reload(); }}>{t("bt.pair")}</button>
       )}
@@ -222,7 +223,7 @@ function AlarmsSection() {
 
 function SoftwareSection() {
   const { client, t, notify } = useApp();
-  const ota = usePoll(useCallback(() => client.ota(), [client]), 15000);
+  const ota = useTopic("ota", useCallback(() => client.ota(), [client]), 15000);
   return (
     <div class="card">
       <h2>{t("ota.title")}</h2>

@@ -100,10 +100,8 @@ a login form and stores the returned token.
 Offline Behaviour
 -----------------
 
-When the API Server is unreachable the UI shows a "Connecting…" overlay with
-an automatic retry. Cached server-side rendered content remains visible but
-controls are disabled. The WebSocket reconnects automatically when the server
-comes back.
+When the API Server is unreachable the UI says so and offers a retry. Live updates reconnect by themselves when the server
+comes back; until then the screens poll (DEC-046).
 
 Interfaces
 ----------
@@ -119,8 +117,8 @@ Interfaces
      - REST (HTTPS)
      - Playback commands, config changes, source browsing, TTS, OTA
    * - API Server
-     - WebSocket
-     - Real-time state updates (now playing, volume, queue, service status)
+     - Server-Sent Events (HTTPS)
+     - Live state: what plays, volume, sleep timer, Bluetooth, updates (DEC-046)
 
 User Journeys & Wireframes
 ---------------------------

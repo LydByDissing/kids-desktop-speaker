@@ -33,6 +33,7 @@ export const SCENARIOS: Scenario[] = [
   { id: "no-messages", name: "Messages: none yet", args: { initialTab: "messages", messages: [] } },
   { id: "settings", name: "Settings: Bluetooth, access, limit, alarms, software", args: { initialTab: "settings" } },
   { id: "update", name: "Settings: an update is ready for tonight", args: { initialTab: "settings", ota: { state: "done", detail: null, version: "v0.4.0" } } },
+  { id: "reboot", name: "An update restarts the speaker in 5 minutes", args: { rebootIn: 300, playing: null } },
   { id: "child", name: "A child's device: Player and Radio only", args: { admin: false, playing: "dr-p3", programme: "Go' Morgen P3" } },
   { id: "english", name: "English", args: { english: true, playing: "dr-p2", programme: "Klassisk" } },
   { id: "slow", name: "A slow speaker (1.5 s per answer)", args: { delay: 1500 } },
