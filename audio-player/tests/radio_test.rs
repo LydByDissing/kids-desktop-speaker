@@ -1,83 +1,20 @@
-//! Radio: the MPD client, the station list and the radio IPC commands, against a
-//! fake MPD on a local TCP port (RAD_REQ_001).
+//! Radio: the station list and the radio IPC commands, against the stream
+//! player and a local test server (RAD_REQ_001, DEC-048).
+
+mod common;
 
 use audio_player::announcer::Sources;
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{handle_full, Radio, Services};
 use audio_player::manager::ManagedSources;
-use audio_player::mpd::{quote, Mpd, MpdError, PlayState};
-use audio_player::radio::{default_stations, slug, validate_url, StationStore};
+use audio_player::radio::{default_stations, slug, validate_url, Station, StationStore};
+use audio_player::stream::sink::PacedSink;
+use audio_player::stream::{PlayState, Player};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
+use std::time::Duration;
 use tokio::sync::Mutex;
-
-/// A fake MPD: keeps a play state, records every command, and answers
-/// `status`/`currentsong`. `add` of a URL containing "broken" fails like MPD.
-struct FakeMpd {
-    addr: String,
-    log: Arc<StdMutex<Vec<String>>>,
-    state: Arc<StdMutex<String>>,
-}
-
-async fn fake_mpd() -> FakeMpd {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap().to_string();
-    let log: Arc<StdMutex<Vec<String>>> = Arc::default();
-    let state = Arc::new(StdMutex::new("stop".to_string()));
-    let (l, st) = (Arc::clone(&log), Arc::clone(&state));
-    tokio::spawn(async move {
-        loop {
-            let (sock, _) = listener.accept().await.unwrap();
-            let (l, st) = (Arc::clone(&l), Arc::clone(&st));
-            tokio::spawn(async move {
-                let (r, mut w) = sock.into_split();
-                w.write_all(b"OK MPD 0.23.5\n").await.unwrap();
-                let mut lines = BufReader::new(r).lines();
-                let mut reply = String::new();
-                let mut in_list = false;
-                while let Ok(Some(line)) = lines.next_line().await {
-                    match line.as_str() {
-                        "command_list_begin" => {
-                            in_list = true;
-                            continue;
-                        }
-                        "command_list_end" => in_list = false,
-                        cmd => {
-                            l.lock().unwrap().push(cmd.to_string());
-                            let mut s = st.lock().unwrap();
-                            match cmd.split(' ').next().unwrap() {
-                                "play" => *s = "play".into(),
-                                "stop" => *s = "stop".into(),
-                                "pause" => {
-                                    *s = if cmd.ends_with('1') { "pause" } else { "play" }.into()
-                                }
-                                "status" => reply.push_str(&format!("volume: 100\nstate: {s}\n")),
-                                "currentsong" if *s != "stop" => {
-                                    reply.push_str("file: http://x\nTitle: Go' Morgen P3\n")
-                                }
-                                "add" if cmd.contains("broken") => {
-                                    reply = "ACK [50@1] {add} No such directory\n".into();
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    if !in_list {
-                        if !reply.starts_with("ACK") {
-                            reply.push_str("OK\n");
-                        }
-                        w.write_all(reply.as_bytes()).await.unwrap();
-                        return;
-                    }
-                }
-            });
-        }
-    });
-    FakeMpd { addr, log, state }
-}
 
 fn temp_path(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("kds-radio-{name}-{}", std::process::id()));
@@ -85,19 +22,36 @@ fn temp_path(name: &str) -> PathBuf {
     dir.join("radio").join("stations.json")
 }
 
-fn services(mpd: &FakeMpd, name: &str) -> Services {
+fn test_player() -> Player {
+    Player::new(Arc::new(PacedSink::new(4.0)))
+}
+
+/// DR's three stations, but streamed by the local test server.
+fn local_stations(server: &common::AudioServer, name: &str) -> StationStore {
+    let path = temp_path(name);
+    let stations: Vec<Station> = default_stations()
+        .into_iter()
+        .map(|s| Station {
+            url: server.url(&format!(
+                "/live/tone.mp3?title={}%20live",
+                s.name.replace(' ', "%20")
+            )),
+            ..s
+        })
+        .collect();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_vec(&stations).unwrap()).unwrap();
+    StationStore::new(path)
+}
+
+fn services(server: &common::AudioServer, name: &str) -> Services {
     Services {
-        announcements: None,
-        messages_dir: None,
-        announcing: None,
-        stopper: None,
-        podcasts: None,
-        volume: None,
         radio: Some(Arc::new(Radio {
-            stations: StationStore::new(temp_path(name)),
-            mpd: Mpd::new(&mpd.addr),
+            stations: local_stations(server, name),
+            player: test_player(),
             current: StdMutex::new(None),
         })),
+        ..Services::default()
     }
 }
 
@@ -105,50 +59,20 @@ async fn ipc(services: &Services, request: Value) -> Value {
     handle_full(request, Arc::new(Mutex::new(Arbitrator::new())), services).await
 }
 
-#[test]
-fn arguments_are_quoted_and_escaped() {
-    assert_eq!(quote("http://a/b"), "\"http://a/b\"");
-    assert_eq!(quote(r#"a"b\c"#), r#""a\"b\\c""#);
+/// Waits until `check` holds for the radio part of `status`.
+async fn wait_radio(s: &Services, check: impl Fn(&Value) -> bool) -> Value {
+    for _ in 0..200 {
+        let status = ipc(s, json!({"cmd": "status"})).await;
+        if check(&status["radio"]) {
+            return status["radio"].clone();
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("timed out: {}", ipc(s, json!({"cmd": "status"})).await);
 }
 
-#[tokio::test]
-async fn play_url_replaces_the_queue_and_plays() {
-    let mpd = fake_mpd().await;
-    Mpd::new(&mpd.addr)
-        .play_url("http://live-icy.dr.dk/A/A05H.mp3")
-        .await
-        .unwrap();
-    assert_eq!(
-        *mpd.log.lock().unwrap(),
-        vec!["clear", "add \"http://live-icy.dr.dk/A/A05H.mp3\"", "play"]
-    );
-    assert_eq!(*mpd.state.lock().unwrap(), "play");
-}
-
-#[tokio::test]
-async fn status_reports_state_and_stream_title() {
-    let mpd = fake_mpd().await;
-    let client = Mpd::new(&mpd.addr);
-    assert_eq!(client.status().await.unwrap().state, PlayState::Stop);
-    client.play_url("http://x").await.unwrap();
-    let status = client.status().await.unwrap();
-    assert_eq!(status.state, PlayState::Play);
-    assert_eq!(status.title.as_deref(), Some("Go' Morgen P3"));
-}
-
-#[tokio::test]
-async fn mpd_errors_are_reported() {
-    let mpd = fake_mpd().await;
-    let err = Mpd::new(&mpd.addr)
-        .play_url("http://broken")
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&err, MpdError::Ack(m) if m == "No such directory"),
-        "{err}"
-    );
-    let err = Mpd::new("127.0.0.1:1").status().await.unwrap_err();
-    assert!(matches!(err, MpdError::Io(_)), "{err}");
+async fn player_state(player: &Player) -> PlayState {
+    player.status().await.unwrap().state
 }
 
 #[test]
@@ -208,15 +132,15 @@ fn a_damaged_station_file_is_reported_not_replaced() {
 
 #[tokio::test]
 async fn ipc_plays_a_station_and_reports_it() {
-    let mpd = fake_mpd().await;
-    let s = services(&mpd, "ipc-play");
+    let server = common::start();
+    let s = services(&server, "ipc-play");
     let r = ipc(&s, json!({"cmd": "radio_play", "id": "dr-p3"})).await;
     assert_eq!(r["ok"], true, "{r}");
     assert_eq!(r["station"]["name"], "DR P3");
-    let status = ipc(&s, json!({"cmd": "status"})).await;
+    let radio = wait_radio(&s, |r| r["title"].is_string()).await;
     assert_eq!(
-        status["radio"],
-        json!({"state": "playing", "station": "dr-p3", "title": "Go' Morgen P3"})
+        radio,
+        json!({"state": "playing", "station": "dr-p3", "title": "DR P3 live"})
     );
     let r = ipc(&s, json!({"cmd": "radio_stop"})).await;
     assert_eq!(r, json!({"ok": true}));
@@ -227,8 +151,8 @@ async fn ipc_plays_a_station_and_reports_it() {
 
 #[tokio::test]
 async fn ipc_manages_the_station_list() {
-    let mpd = fake_mpd().await;
-    let s = services(&mpd, "ipc-list");
+    let server = common::start();
+    let s = services(&server, "ipc-list");
     let r = ipc(
         &s,
         json!({"cmd": "radio_add", "name": "Radio 4", "url": "http://example.com/r4"}),
@@ -271,57 +195,53 @@ async fn radio_commands_without_radio_are_unavailable() {
 }
 
 #[tokio::test]
-async fn status_survives_mpd_being_down() {
-    let s = Services {
-        announcements: None,
-        messages_dir: None,
-        announcing: None,
-        stopper: None,
-        podcasts: None,
-        volume: None,
-        radio: Some(Arc::new(Radio {
-            stations: StationStore::new(temp_path("down")),
-            mpd: Mpd::new("127.0.0.1:1"),
-            current: StdMutex::new(None),
-        })),
-    };
+async fn a_station_that_cannot_play_is_reported() {
+    let server = common::start();
+    let s = services(&server, "broken");
+    let r = ipc(
+        &s,
+        json!({"cmd": "radio_add", "name": "Gone", "url": server.url("/missing.mp3")}),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let r = ipc(&s, json!({"cmd": "radio_play", "id": "gone"})).await;
+    assert_eq!(r["ok"], false, "{r}");
+    assert!(r["error"].as_str().unwrap().contains("404"), "{r}");
     let status = ipc(&s, json!({"cmd": "status"})).await;
-    assert_eq!(status["ok"], true);
-    assert_eq!(status["radio"]["state"], "unavailable");
+    assert_eq!(status["radio"]["state"], "stopped");
 }
 
 #[tokio::test]
 async fn announcements_pause_and_resume_playing_radio() {
-    let mpd = fake_mpd().await;
-    let client = Mpd::new(&mpd.addr);
-    client.play_url("http://x").await.unwrap();
+    let server = common::start();
+    let player = test_player();
+    player
+        .play_url(&server.url("/live/tone.mp3"))
+        .await
+        .unwrap();
     let mut sources = ManagedSources {
         managers: vec![],
-        mpd: Some(client.clone()),
+        player: Some(player.clone()),
         bt: None,
     };
     let paused = sources.pause_all().await;
-    assert_eq!(paused, vec!["mpd".to_string()]);
-    assert_eq!(*mpd.state.lock().unwrap(), "pause");
+    assert_eq!(paused, vec!["player".to_string()]);
+    assert_eq!(player_state(&player).await, PlayState::Pause);
     sources.resume(&paused).await;
-    assert_eq!(*mpd.state.lock().unwrap(), "play");
+    assert_eq!(player_state(&player).await, PlayState::Play);
+    player.stop().await.unwrap();
 }
 
 #[tokio::test]
 async fn announcements_leave_stopped_radio_alone() {
-    let mpd = fake_mpd().await;
+    let player = test_player();
     let mut sources = ManagedSources {
         managers: vec![],
-        mpd: Some(Mpd::new(&mpd.addr)),
+        player: Some(player.clone()),
         bt: None,
     };
     assert!(sources.pause_all().await.is_empty());
-    assert!(!mpd
-        .log
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|c| c.starts_with("pause")));
+    assert_eq!(player_state(&player).await, PlayState::Stop);
 }
 
 #[tokio::test]
@@ -336,9 +256,9 @@ async fn playing_the_radio_displaces_the_active_source() {
             Box::pin(async { Ok(()) })
         }
     }
-    let mpd = fake_mpd().await;
+    let server = common::start();
     let recorder = Arc::new(Recorder::default());
-    let mut s = services(&mpd, "displace");
+    let mut s = services(&server, "displace");
     s.stopper = Some(Arc::clone(&recorder) as Arc<dyn Stopper>);
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
     arb.lock().await.source_started(Source::Airplay);
@@ -357,8 +277,8 @@ async fn playing_the_radio_displaces_the_active_source() {
 
 #[tokio::test]
 async fn a_remote_starts_pauses_and_steps_through_stations() {
-    let mpd = fake_mpd().await;
-    let s = services(&mpd, "remote");
+    let server = common::start();
+    let s = services(&server, "remote");
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
     let remote = |action: &str| {
         handle_full(
@@ -378,7 +298,8 @@ async fn a_remote_starts_pauses_and_steps_through_stations() {
         remote("play_pause").await,
         json!({"ok": true, "radio": "paused"})
     );
-    assert_eq!(*mpd.state.lock().unwrap(), "pause");
+    let player = s.radio.as_ref().unwrap().player.clone();
+    assert_eq!(player_state(&player).await, PlayState::Pause);
     assert_eq!(
         remote("play_pause").await,
         json!({"ok": true, "radio": "playing"})

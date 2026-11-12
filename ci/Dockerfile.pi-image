@@ -48,8 +48,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     espeak-ng \
     # Bluetooth audio input: A2DP sink (DEC-035)
     bluez-alsa-utils \
-    # Internet radio (DEC_005)
-    mpd \
     # Bluetooth
     bluez \
     # RAUC
@@ -150,7 +148,6 @@ COPY ci/device/shairport-sync.conf /etc/shairport-sync.conf
 COPY --chmod=755 ci/device/kds-spotify-event /usr/local/bin/kds-spotify-event
 # Bluetooth audio (DEC-035): sink-only BlueALSA, pairings on /data, and the
 # loudspeaker device class, without which iOS won't offer the speaker.
-COPY ci/device/mpd.conf /etc/mpd.conf
 # Discovery of the API and Web UI over mDNS (DEC-043).
 COPY ci/device/kids-speaker.service.avahi /etc/avahi/services/kids-speaker.service
 COPY ci/device/bluealsa-sink-only.conf /etc/systemd/system/bluealsa.service.d/sink-only.conf
@@ -308,12 +305,9 @@ RUN systemctl enable \
         audio-player.service \
         ota-updater.service \
         bluetooth-service.service \
-        mpd.service \
         camilladsp.service \
         wifi-setup.service && \
     systemctl disable dnsmasq.service hostapd.service shairport-sync.service bluealsa-aplay.service && \
-    # Socket activation would listen on every interface; MPD binds localhost.
-    systemctl disable mpd.socket && \
     ln -sf /dev/null /etc/systemd/system/zram.service && \
     ln -sf /dev/null /etc/systemd/system/zramswap.service
 

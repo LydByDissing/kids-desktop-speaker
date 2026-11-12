@@ -212,66 +212,48 @@ HAT's buffer. The roughly 2 s from pause to silence is the sender's latency
    shairport-sync advertises itself via mDNS/Bonjour. iOS devices discover
    it automatically. No additional discovery configuration needed.
 
-Internet Radio / Podcast Backend — Decision
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Internet Radio and Podcasts — the Stream Player
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. meta::
-   :decision-id: DEC_005
-   :status: resolved
-   :date: 2026-05-25
-   :tags: audio, radio, podcast
+Radio and podcasts play in the Audio Player itself (DEC-048, which replaced
+MPD, DEC_005). ``audio-player/src/stream/`` holds:
 
-**Decision**: Use **MPD** (Music Player Daemon) as a backend, controlled
-from the Audio Player via the MPD protocol.
+- ``http.rs``: the stream as a seekable source. Live streams ask for ICY
+  metadata; a file with a length is seekable, and a seek asks the server for
+  the rest from that byte (``Range``), or reads ahead for a short skip. A
+  stalled connection fails after 15 s.
+- ``icy.rs``: strips the metadata blocks and keeps the latest ``StreamTitle``
+  (UTF-8 or Latin-1).
+- ``mod.rs``: the ``Player`` (``play_url``, ``seek``, ``set_paused``,
+  ``stop``, ``status``, the same operations the code used on MPD). Each
+  playback runs on its own thread: symphonia probes and decodes MP3, AAC
+  (ADTS and ``.m4a``), Ogg Vorbis, FLAC and WAV; ``play_url`` returns once the
+  stream is recognised, or with the reason it can't play. A live stream that
+  drops reconnects up to 3 times (after 1, 2 and 4 s); a file ends at its end.
+- ``sink.rs``: ``aplay -D speaker`` reading raw 16-bit samples, the shared
+  output that converts any rate for the HAT (DEC-033), as announcements use.
+  aplay blocks while its buffer is full, which paces decoding. Pausing closes
+  it; resuming opens it again.
 
-**Confirmed on hardware (2026-11-10)**: playing the DR P3 MP3 stream, MPD
-0.23.12 uses 7.9 % CPU and 40 MB, against 8.3 % and 22 MB for GStreamer and
-23.3 % and 49 MB for mpv (see Hardware Measurements). It takes 6.7 s to start,
-so it runs from boot. Its output is the ``speaker`` device (DEC-033), not a
-loopback.
+**Measured on the Pi Zero W (2026-11-12, DR P1, 128 kbit/s MP3)**: 9.3 % CPU for
+decoding plus 4.3 % for aplay, 5 MB of memory; MPD used 12.3 % and 39 MB, and
+needed 144 packages (~140 MB) for plugins the speaker never used.
 
-**Implemented (2026-11-10, KDS-7ix, RAD_REQ_001)**: MPD runs as its packaged
-service, listening on ``127.0.0.1:6600`` only (``mpd.socket``, which listens on
-every interface, is disabled) and with no state file, so it doesn't resume by
-itself after a reboot. The Audio Player talks to it with a small client of its
-own (``audio-player/src/mpd.rs``: ``clear``/``add``/``play``, ``pause``,
-``stop``, ``status``/``currentsong``) rather than the ``mpd_client`` crate.
-Stations live in ``/data/radio/stations.json`` (DR P1–P3 until changed).
-Announcements pause MPD through the protocol and resume it afterwards.
+**Stations** live in ``/data/radio/stations.json`` (DR P1–P3 until changed).
+Announcements pause the player and resume it afterwards.
 
-**Podcasts (2026-11-11, KDS-9jt.4, POD_REQ_001/002)**: feeds live in
+**Podcasts (KDS-9jt.4, POD_REQ_001/002)**: feeds live in
 ``/data/podcasts/feeds.json`` and listening positions in
 ``/data/podcasts/positions.json``. The Audio Player fetches a feed with
-``reqwest`` (rustls and ring, as the OTA Updater) and parses it with
-``roxmltree``, keeping the latest 50 episodes so a reply fits the 64 KiB IPC
-limit. An episode's enclosure URL plays through MPD like a station, then seeks
-to the saved position; while it plays, the position is saved every 15 s and when
-it stops. Podcasts count as the radio source for one-at-a-time (DEC-039).
+``reqwest`` and parses it with ``roxmltree``, keeping the latest 50 episodes so
+a reply fits the 64 KiB IPC limit. An episode's enclosure plays like a station,
+then seeks to the saved position; while it plays, the position is saved every
+15 s and when it stops. Podcasts count as the radio source for one-at-a-time
+(DEC-039).
 
-**Rationale**:
-
-- MPD is proven: Volumio, moOde, and RuneAudio all use it successfully.
-- It handles HTTP stream playback (internet radio) natively.
-- Podcasts are managed as MPD playlists with RSS feed URLs.
-- The Rust ecosystem has a mature MPD client crate (``mpd_client`` v1.4.1,
-  63k downloads).
-- MPD runs as a separate daemon, keeping the Audio Player process lean.
-
-**Integration**:
-
-.. code-block:: text
-
-   Audio Player (source manager)
-       └── mpd_client → MPD daemon (localhost:6600)
-           └── ALSA output → speaker (DEC-033)
-
-MPD is configured to output to the loopback device. The Audio Player controls
-it via the MPD protocol (play, pause, stop, playlist management).
-
-.. note::
-
-   MPD's playlist and stored playlist data lives on the data partition
-   (``/data/mpd/``) to survive OTA updates.
+**Tests**: ``tests/stream_test.rs`` plays every format, a live stream with
+titles, pause, seek, stop, failures and reconnects against a local HTTP server
+(``tests/common``), with an output that keeps time faster than real time.
 
 ALSA Output
 -----------
@@ -405,7 +387,6 @@ Startup Dependencies
        └── audio-player.service
            └── (spotify backend ready — mDNS advertising starts)
            └── (shairport-sync child process — mDNS advertising starts)
-           └── (mpd.service — if managed separately)
 
 Interfaces
 ----------
@@ -432,9 +413,9 @@ Interfaces
    * - shairport-sync
      - Child process (stdout/stderr)
      - AirPlay audio (started/stopped by Audio Player)
-   * - MPD
-     - MPD protocol ``localhost:6600``
-     - Internet radio / podcast playback
+   * - Stations and podcast hosts
+     - HTTP(S), ICY metadata, ``Range``
+     - Internet radio and podcast streams (stream player, DEC-048)
 
 Open Questions
 --------------
@@ -451,7 +432,7 @@ Open Questions
      that audio-player.service depends on, or should the Audio Player start
      MPD itself? Recommendation: separate service for clean lifecycle mgmt.
 
-     **Status (2026-11-11)**: Resolved: MPD runs as its own service on localhost (DEC_005, KDS-7ix).
+     **Status (2026-11-12)**: Superseded: MPD is gone; the Audio Player plays radio and podcasts itself (DEC-048).
 
    - **CPU budget**: 40% for Audio Player + 50% for CamillaDSP = 90% of a
      single core. Tight. Need real hardware validation. May need to reduce

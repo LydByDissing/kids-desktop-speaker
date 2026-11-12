@@ -61,7 +61,7 @@ sleep 5
 log "=== AirPlay starts again: the radio stops"
 airplay
 check "AirPlay is the active source again" "$(wait_active airplay)" airplay
-check "MPD stopped" "$(remote "echo status | timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/6600; cat <&3 & echo status >&3; sleep 0.5; kill %1'" 2>/dev/null | grep -o 'state: [a-z]*')" "state: stop"
+check "the radio stopped" "$(remote "pgrep -f '[a]play -q -D speaker -t raw' | wc -l")" 0
 journal=$(remote "journalctl -u audio-player --since -3min -o cat --no-pager")
 check "the log shows each switch" "$(echo "$journal" | grep -cE 'radio started; stopped airplay|airplay started; stopped radio')" 2
 

@@ -98,7 +98,7 @@ impl Stopper for DeviceStopper {
                         podcasts.release().await;
                     }
                     let radio = self.radio.as_ref().ok_or("radio unavailable")?;
-                    radio.mpd.stop().await.map_err(|e| e.to_string())?;
+                    radio.player.stop().await.map_err(|e| e.to_string())?;
                     if let Ok(mut current) = radio.current.lock() {
                         *current = None;
                     }

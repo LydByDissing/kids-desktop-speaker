@@ -1,16 +1,20 @@
 //! Podcasts (POD_REQ_001/002): feed parsing, the store, positions, and the IPC
-//! commands against a local feed server and a fake MPD.
+//! commands against a local feed server and the stream player (DEC-048).
+
+mod common;
 
 use audio_player::arbitrator::{Arbitrator, Source};
 use audio_player::ipc::{handle_full, Services};
-use audio_player::mpd::Mpd;
 use audio_player::podcasts::{
     parse_duration, parse_feed, short_id, PodcastStore, Podcasts, MAX_EPISODES,
 };
+use audio_player::stream::sink::PacedSink;
+use audio_player::stream::Player;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
@@ -119,17 +123,22 @@ fn feeds_and_positions_are_kept() {
     assert!(store.remove(&feed.id).is_err());
 }
 
-/// Serves FEED over HTTP for any request.
-async fn feed_server() -> String {
+/// Serves FEED over HTTP for any request, with episode 2's audio on `audio`.
+async fn feed_server(audio: &common::AudioServer) -> String {
+    let feed = FEED.replace(
+        "http://example.com/ep2.mp3",
+        &audio.url("/file/episode.mp3"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         loop {
             let (mut sock, _) = listener.accept().await.unwrap();
+            let feed = feed.clone();
             tokio::spawn(async move {
                 let mut buf = [0u8; 2048];
                 let _ = sock.read(&mut buf).await;
-                let body = FEED.as_bytes();
+                let body = feed.as_bytes();
                 let head = format!("HTTP/1.1 200 OK\r\nContent-Type: application/rss+xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
                 let _ = sock.write_all(head.as_bytes()).await;
                 let _ = sock.write_all(body).await;
@@ -139,73 +148,28 @@ async fn feed_server() -> String {
     format!("http://{addr}/feed.xml")
 }
 
-/// A fake MPD that plays, pauses, stops and seeks, reporting `elapsed`.
-async fn fake_mpd() -> (String, Arc<StdMutex<Vec<String>>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap().to_string();
-    let log: Arc<StdMutex<Vec<String>>> = Arc::default();
-    let state = Arc::new(StdMutex::new(("stop".to_string(), 0.0f64)));
-    let l = Arc::clone(&log);
-    tokio::spawn(async move {
-        loop {
-            let (sock, _) = listener.accept().await.unwrap();
-            let (l, st) = (Arc::clone(&l), Arc::clone(&state));
-            tokio::spawn(async move {
-                let (r, mut w) = sock.into_split();
-                w.write_all(b"OK MPD 0.23.5\n").await.unwrap();
-                let mut lines = BufReader::new(r).lines();
-                let (mut reply, mut in_list) = (String::new(), false);
-                while let Ok(Some(line)) = lines.next_line().await {
-                    match line.as_str() {
-                        "command_list_begin" => {
-                            in_list = true;
-                            continue;
-                        }
-                        "command_list_end" => in_list = false,
-                        cmd => {
-                            l.lock().unwrap().push(cmd.to_string());
-                            let mut s = st.lock().unwrap();
-                            let verb = cmd.split(' ').next().unwrap();
-                            match verb {
-                                "play" => {
-                                    s.0 = "play".into();
-                                    s.1 = 0.0;
-                                }
-                                "stop" => s.0 = "stop".into(),
-                                "seekcur" => s.1 = cmd[8..].parse().unwrap(),
-                                "status" => reply.push_str(&format!(
-                                    "state: {}\nelapsed: {}\nduration: 3723.0\n",
-                                    s.0,
-                                    s.1 + 300.0
-                                )),
-                                _ => {}
-                            }
-                        }
-                    }
-                    if !in_list {
-                        reply.push_str("OK\n");
-                        w.write_all(reply.as_bytes()).await.unwrap();
-                        return;
-                    }
-                }
-            });
-        }
-    });
-    (addr, log)
-}
-
-async fn podcasts_with(name: &str) -> (Services, Arc<StdMutex<Vec<String>>>, Arc<Podcasts>) {
-    let (addr, log) = fake_mpd().await;
+/// Podcasts on a player whose output runs 4× faster than real time.
+async fn podcasts_with(name: &str) -> (Services, Arc<Podcasts>) {
     let podcasts = Arc::new(Podcasts {
         store: PodcastStore::new(temp_dir(name)),
-        mpd: Mpd::new(&addr),
+        player: Player::new(Arc::new(PacedSink::new(4.0))),
         current: StdMutex::new(None),
     });
     let services = Services {
         podcasts: Some(Arc::clone(&podcasts)),
         ..Services::default()
     };
-    (services, log, podcasts)
+    (services, podcasts)
+}
+
+async fn elapsed(podcasts: &Podcasts) -> f64 {
+    podcasts
+        .player
+        .status()
+        .await
+        .unwrap()
+        .elapsed
+        .unwrap_or(0.0)
 }
 
 async fn ipc(s: &Services, arb: &Arc<Mutex<Arbitrator>>, request: Value) -> Value {
@@ -214,8 +178,9 @@ async fn ipc(s: &Services, arb: &Arc<Mutex<Arbitrator>>, request: Value) -> Valu
 
 #[tokio::test]
 async fn feeds_are_added_by_url_and_list_their_episodes() {
-    let url = feed_server().await;
-    let (s, _, _) = podcasts_with("ipc-add").await;
+    let audio = common::start();
+    let url = feed_server(&audio).await;
+    let (s, _) = podcasts_with("ipc-add").await;
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
     let r = ipc(&s, &arb, json!({"cmd": "podcast_add", "url": url})).await;
     assert_eq!(r["feed"]["title"], "Børneradio", "{r}");
@@ -240,8 +205,9 @@ async fn feeds_are_added_by_url_and_list_their_episodes() {
 
 #[tokio::test]
 async fn an_episode_resumes_where_it_stopped() {
-    let url = feed_server().await;
-    let (s, log, podcasts) = podcasts_with("ipc-play").await;
+    let audio = common::start();
+    let url = feed_server(&audio).await;
+    let (s, podcasts) = podcasts_with("ipc-play").await;
     let arb = Arc::new(Mutex::new(Arbitrator::new()));
     let feed = ipc(&s, &arb, json!({"cmd": "podcast_add", "url": url})).await["feed"]["id"]
         .as_str()
@@ -255,7 +221,7 @@ async fn an_episode_resumes_where_it_stopped() {
         json!({"cmd": "podcast_play", "feed": feed, "episode": episode}),
     )
     .await;
-    assert_eq!(r["episode"]["url"], "http://example.com/ep2.mp3", "{r}");
+    assert_eq!(r["episode"]["url"], audio.url("/file/episode.mp3"), "{r}");
     assert_eq!(
         arb.lock().await.active(),
         Some(Source::Radio),
@@ -263,28 +229,33 @@ async fn an_episode_resumes_where_it_stopped() {
     );
     let status = ipc(&s, &arb, json!({"cmd": "status"})).await;
     assert_eq!(status["podcast"], json!({"feed": feed, "episode": episode}));
-    // Stopping saves the position (the fake reports 300 s in).
+    // Listen a while (4× fast), then stop: that saves the position.
+    for _ in 0..200 {
+        if elapsed(&podcasts).await >= 4.0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
     assert_eq!(
         ipc(&s, &arb, json!({"cmd": "podcast_stop"})).await,
         json!({"ok": true})
     );
-    assert_eq!(podcasts.store.positions().get(&episode), Some(&300.0));
+    let saved = *podcasts.store.positions().get(&episode).expect("saved");
+    assert!(saved >= 4.0, "{saved}");
     assert_eq!(arb.lock().await.active(), None);
 
-    // Playing it again seeks to where it stopped.
-    log.lock().unwrap().clear();
+    // Playing it again seeks to where it stopped: from the start, 4× fast,
+    // it would take a second to get there.
     let r = ipc(
         &s,
         &arb,
         json!({"cmd": "podcast_play", "feed": feed, "episode": episode}),
     )
     .await;
-    assert_eq!(r["episode"]["position_s"], 300.0);
-    assert!(
-        log.lock().unwrap().iter().any(|c| c == "seekcur 300.0"),
-        "{:?}",
-        log.lock().unwrap()
-    );
+    assert_eq!(r["episode"]["position_s"], saved);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let now = elapsed(&podcasts).await;
+    assert!(now >= saved - 0.5, "resumed at {now}, saved {saved}");
     let r = ipc(
         &s,
         &arb,

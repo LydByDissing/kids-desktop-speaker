@@ -28,10 +28,6 @@ api() { # method path [json] -> body in /tmp/kds-api.out on the Pi, prints statu
     remote "curl -s -o /tmp/kds-api.out -w '%{http_code}' -X $1 -H 'content-type: application/json' ${3:+-d '$3'} http://127.0.0.1:8080$2"
 }
 field() { remote cat /tmp/kds-api.out | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
-mpd_elapsed() {
-    remote "timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/6600; cat <&3 & echo status >&3; sleep 0.5; kill %1'" 2>/dev/null \
-        | sed -n 's/^elapsed: //p'
-}
 
 log "=== Feed: $FEED_URL"
 check "POST /api/podcasts adds it" "$(api POST /api/podcasts "{\"url\": \"$FEED_URL\"}")" 201
@@ -51,10 +47,14 @@ saved=$(field 'd["episodes"][0]["position_s"]')
 log "  saved position: $saved s"
 check "the position was saved (over 15 s)" "$(python3 -c "print('yes' if ($saved or 0) > 15 else 'no')")" yes
 check "playing it again" "$(api POST /api/podcasts/play "{\"feed\": \"$feed\", \"episode\": \"$episode\"}")" 200
-sleep 4
-elapsed=$(mpd_elapsed)
-log "  MPD position after resuming: ${elapsed:-?} s"
-check "it continues where it stopped" "$(python3 -c "print('yes' if ${elapsed:-0} >= $saved - 2 else 'no')")" yes
+# From where it stopped, 8 s more puts it past that point; from the start it
+# would be at about 8 s.
+sleep 8
+check "POST /api/podcasts/stop" "$(api POST /api/podcasts/stop)" 200
+api GET "/api/podcasts/$feed/episodes" >/dev/null
+again=$(field 'd["episodes"][0]["position_s"]')
+log "  position after resuming and stopping: $again s"
+check "it continued where it stopped" "$(python3 -c "print('yes' if ($again or 0) >= ($saved or 0) + 4 else 'no')")" yes
 
 if [ "$fail" = 0 ]; then log "All podcast tests passed."; else log "Some podcast tests FAILED."; fi
 exit "$fail"

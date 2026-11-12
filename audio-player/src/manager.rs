@@ -226,8 +226,8 @@ fn describe(status: ExitStatus) -> String {
 /// The streaming sources, shared by the supervision loop and the announcer.
 pub struct ManagedSources {
     pub managers: Vec<Manager>,
-    /// MPD runs as its own service, so it is paused through its protocol.
-    pub mpd: Option<crate::mpd::Mpd>,
+    /// The radio and podcast player (DEC-048), paused for announcements.
+    pub player: Option<crate::stream::Player>,
     /// The Bluetooth Service, to pause a phone over AVRCP (DEC-039).
     pub bt: Option<crate::switcher::BtClient>,
 }
@@ -291,11 +291,11 @@ impl crate::announcer::Sources for ManagedSources {
                 }
             }
         }
-        if let Some(mpd) = &self.mpd {
-            if let Ok(status) = mpd.status().await {
-                if status.state == crate::mpd::PlayState::Play {
-                    match mpd.set_paused(true).await {
-                        Ok(()) => paused.push("mpd".to_string()),
+        if let Some(player) = &self.player {
+            if let Ok(status) = player.status().await {
+                if status.state == crate::stream::PlayState::Play {
+                    match player.set_paused(true).await {
+                        Ok(()) => paused.push("player".to_string()),
                         Err(e) => eprintln!("audio-player: {e}"),
                     }
                 }
@@ -312,9 +312,9 @@ impl crate::announcer::Sources for ManagedSources {
                 }
             }
         }
-        if let Some(mpd) = &self.mpd {
-            if names.iter().any(|n| n == "mpd") {
-                if let Err(e) = mpd.set_paused(false).await {
+        if let Some(player) = &self.player {
+            if names.iter().any(|n| n == "player") {
+                if let Err(e) = player.set_paused(false).await {
                     eprintln!("audio-player: {e}");
                 }
             }

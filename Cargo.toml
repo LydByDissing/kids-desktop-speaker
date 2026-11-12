@@ -12,3 +12,6 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+# Dependencies are optimised even in dev builds: the stream player's decoder
+# (symphonia) can't keep up with real time on a Pi Zero unoptimised (DEC-048).
+opt-level = 2

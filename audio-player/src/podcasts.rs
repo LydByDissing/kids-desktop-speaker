@@ -1,5 +1,5 @@
 //! Podcasts (POD_REQ_001/002): RSS feeds on the data partition, episodes played
-//! through MPD, and how far each episode got.
+//! through the stream player, and how far each episode got.
 
 use crate::radio::validate_url;
 use serde::{Deserialize, Serialize};
@@ -251,7 +251,7 @@ impl PodcastStore {
 /// Podcasts as the IPC commands and the position saver see them.
 pub struct Podcasts {
     pub store: PodcastStore,
-    pub mpd: crate::mpd::Mpd,
+    pub player: crate::stream::Player,
     /// The episode playing now: (feed id, episode id).
     pub current: std::sync::Mutex<Option<(String, String)>>,
 }
@@ -272,7 +272,7 @@ impl Podcasts {
         let Some((_, episode)) = self.current() else {
             return;
         };
-        if let Ok(status) = self.mpd.status().await {
+        if let Ok(status) = self.player.status().await {
             if let Some(elapsed) = status.elapsed {
                 let _ = self.store.save_position(&episode, elapsed, status.duration);
             }
@@ -290,18 +290,16 @@ impl Podcasts {
             .find(|e| e.id == episode_id)
             .ok_or_else(|| format!("no episode {episode_id}"))?;
         self.save_current().await;
-        self.mpd
+        self.player
             .play_url(&episode.url)
             .await
             .map_err(|e| e.to_string())?;
         if let Some(position) = episode.position_s {
-            // MPD seeks once the stream is open; give it a few tries.
-            for _ in 0..20 {
-                if self.mpd.seek(position).await.is_ok() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(250)).await;
-            }
+            // The stream is open once play_url returns.
+            self.player
+                .seek(position)
+                .await
+                .map_err(|e| e.to_string())?;
         }
         self.set_current(Some((feed.id, episode.id.clone())));
         Ok(episode)
@@ -311,11 +309,11 @@ impl Podcasts {
     pub async fn stop(&self) -> Result<(), String> {
         self.save_current().await;
         self.set_current(None);
-        self.mpd.stop().await.map_err(|e| e.to_string())
+        self.player.stop().await.map_err(|e| e.to_string())
     }
 
     /// Forgets the current episode after saving its position, when something
-    /// else takes over MPD (a station, or another source).
+    /// else takes over the player (a station, or another source).
     pub async fn release(&self) {
         self.save_current().await;
         self.set_current(None);

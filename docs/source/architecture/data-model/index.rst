@@ -39,11 +39,11 @@ Data Partition Layout
    │   └── tokens.json          # API token hashes
    ├── spotify/
    │   └── credentials.json     # Spotify Connect credentials (librespot)
-   ├── mpd/
-   │   ├── database             # MPD music database
-   │   ├── playlists/           # MPD stored playlists
-   │   ├── state                # MPD state file
-   │   └── sticker.sql          # MPD stickers (ratings, etc.)
+   ├── radio/
+   │   └── stations.json        # Radio stations (DEC-048)
+   ├── podcasts/
+   │   ├── feeds.json           # Podcast feeds
+   │   └── positions.json       # Where each episode got to
    ├── piper/
    │   └── models/              # Piper TTS voice models (.onnx + .json)
    ├── ota/

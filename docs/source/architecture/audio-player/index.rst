@@ -147,7 +147,7 @@ All audio flows through a dual-channel ALSA loopback pipeline:
    package "Audio Sources" as sources {
        component [librespot\n"Spotify Connect"] as spotify
        component [AirPlay receiver\n"AirPlay 1"] as airplay
-       component [MPD / stream\n"Radio, Podcasts"] as mpd
+       component [Stream player\n"Radio, Podcasts"] as mpd
        component [TTS Engine\n"Announcements"] as tts
    }
 
@@ -269,9 +269,9 @@ Interfaces
    * - AirPlay receiver
      - Internal (Rust or C child process)
      - AirPlay audio receiver (TBD: rairplay or shairport-sync)
-   * - MPD / stream player
-     - Internal or TCP
-     - Internet radio and podcast playback (TBD: MPD or custom)
+   * - Stream player
+     - Internal (Rust), aplay
+     - Internet radio and podcast playback, in the Audio Player (DEC-048)
 
 Component pages will be created during the component interview phase.
 
@@ -291,11 +291,13 @@ The components as implemented (KDS-9ym, 2026-11-11).
        Component(mgr, "Source manager", "manager.rs, sources.rs", "Starts and supervises shairport-sync, librespot, bluealsa-aplay; restarts with backoff")
        Component(switch, "Switcher", "switcher.rs, arbitrator.rs", "One source at a time: newest wins, others stopped (DEC-039)")
        Component(ann, "Announcer", "announcer.rs", "Queue of speech and recordings: pause, chime, play, chime, resume")
-       Component(radio, "Radio and podcasts", "mpd.rs, radio.rs, podcasts.rs", "Stations and feeds on /data; plays through MPD; keeps podcast positions")
+       Component(radio, "Radio and podcasts", "radio.rs, podcasts.rs", "Stations and feeds on /data; keeps podcast positions")
+       Component(player, "Stream player", "stream/*.rs", "HTTP in (ICY titles, ranges), symphonia decodes MP3/AAC/M4A/Ogg/FLAC, aplay out (DEC-048)")
        Component(ipcs, "IPC server", "ipc.rs", "status, announce, play_message, source_event, radio_*, podcast_*")
    }
    Container_Ext(tts, "TTS Engine", "tts-engine crate")
-   System_Ext(mpd, "MPD", "localhost:6600")
+   System_Ext(net, "Stations and podcast hosts", "HTTP(S)")
+   System_Ext(alsa, "Shared output", "ALSA device speaker (aplay)")
    System_Ext(rx, "Receivers", "shairport-sync, librespot, bluealsa-aplay")
    System_Ext(bt, "Bluetooth Service", "bt.sock")
    Rel(ipcs, switch, "source events")
@@ -305,5 +307,8 @@ The components as implemented (KDS-9ym, 2026-11-11).
    Rel(switch, bt, "AVRCP pause")
    Rel(ann, tts, "synthesise via the cache")
    Rel(mgr, rx, "spawn, SIGSTOP/SIGCONT")
-   Rel(radio, mpd, "MPD protocol")
+   Rel(radio, player, "play, seek, pause, stop, status")
+   Rel(ann, player, "pause and resume around announcements")
+   Rel(player, net, "streams")
+   Rel(player, alsa, "PCM through aplay")
    @enduml

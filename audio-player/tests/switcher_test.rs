@@ -178,7 +178,7 @@ async fn announcements_pause_a_playing_phone_over_avrcp() {
     let pid = aplay.pid().unwrap();
     let mut sources = ManagedSources {
         managers: vec![aplay],
-        mpd: None,
+        player: None,
         bt: Some(BtClient { socket }),
     };
     let paused = sources.pause_all().await;
@@ -201,7 +201,7 @@ async fn without_avrcp_the_player_is_frozen_instead() {
     let pid = aplay.pid().unwrap();
     let mut sources = ManagedSources {
         managers: vec![aplay],
-        mpd: None,
+        player: None,
         bt: Some(BtClient { socket }),
     };
     let paused = sources.pause_all().await;
@@ -224,7 +224,7 @@ async fn restarting_a_receiver_ends_its_session() {
     let before = m.pid().unwrap();
     let mut sources = ManagedSources {
         managers: vec![m],
-        mpd: None,
+        player: None,
         bt: None,
     };
     sources.restart("shairport-sync").await.unwrap();
