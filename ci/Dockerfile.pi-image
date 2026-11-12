@@ -333,11 +333,13 @@ RUN mkdir -p /etc/systemd/system/serial-getty@ttyAMA0.service.d && \
 # partition it is downloaded to. Docker exports the final filesystem, so this
 # layer shrinks the rootfs and the bundle even though earlier layers keep it.
 # Each package's copyright file stays: the SBOM and license inventory read them.
+# So do symlinks: some packages share another's doc directory (libgcc-s1 ->
+# gcc-12-base), and that is where their copyright file is.
 # ---------------------------------------------------------------------------
 
 RUN apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin /var/cache/debconf/*-old \
-    && find /usr/share/doc -mindepth 1 ! -type d ! -name copyright -delete \
+    && find /usr/share/doc -mindepth 1 ! -type d ! -type l ! -name copyright -delete \
     && find /usr/share/doc -mindepth 1 -type d -empty -delete \
     && rm -rf /usr/share/man/* /usr/share/info/* /usr/share/lintian /usr/share/linda \
     && find /usr/share/locale -mindepth 1 -maxdepth 1 -type d \

@@ -287,9 +287,12 @@ echo "--- Trimmed for the bundle size (KDS-sgt.8) ---"
 ls /var/cache/apt/archives/*.deb >/dev/null 2>&1 && fail "the apt cache is still in the image"
 [ -z "$(ls -A /usr/share/man 2>/dev/null)" ] || fail "man pages are still in the image"
 [ -d /usr/share/locale/fr ] && fail "translations other than Danish and English are still in the image"
-copyrights=$(ls /usr/share/doc/*/copyright 2>/dev/null | wc -l)
-[ "$copyrights" -gt 100 ] || fail "copyright files are missing ($copyrights)"
-ok "apt cache, man pages and other languages removed; $copyrights copyright files kept"
+# Every installed package keeps its copyright file (the license inventory).
+missing=$(dpkg-query -W -f '${Package}\n' | while read -r p; do
+    [ -e "/usr/share/doc/$p/copyright" ] || echo "$p"; done | tr '\n' ' ')
+[ -z "$missing" ] || fail "packages without a copyright file: $missing"
+copyrights=$(dpkg-query -W -f 'x\n' | wc -l)
+ok "apt cache, man pages and other languages removed; all $copyrights packages keep their copyright file"
 
 echo ""
 echo "--- Web UI ---"
