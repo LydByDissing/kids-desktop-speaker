@@ -137,6 +137,7 @@ const da: Dict = {
   "ota.check": "Søg efter opdatering",
   "ota.checking": "Søger efter opdatering …",
   "ota.reboot": "Genstart nu",
+  "reboot.banner": "Højttaleren genstarter om {time} for at blive opdateret.",
   "ota.confirm": "Genstarte højttaleren nu? Det tager omkring et minut.",
 };
 
@@ -273,6 +274,7 @@ const en: Dict = {
   "ota.check": "Check for updates",
   "ota.checking": "Checking for updates …",
   "ota.reboot": "Restart now",
+  "reboot.banner": "The speaker restarts in {time} to finish an update.",
   "ota.confirm": "Restart the speaker now? It takes about a minute.",
 };
 

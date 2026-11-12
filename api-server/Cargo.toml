@@ -29,6 +29,8 @@ sha2 = "0.10"
 # The Web UI's static files (DEC-045).
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
 tower = { version = "0.5", features = ["util"] }
+# Live updates as Server-Sent Events (DEC-046).
+futures-util = "0.3"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

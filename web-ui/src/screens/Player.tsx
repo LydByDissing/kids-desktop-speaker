@@ -1,6 +1,6 @@
 import { useCallback } from "preact/hooks";
 import { useApp } from "../context";
-import { formatDuration, usePoll } from "../hooks";
+import { formatDuration, useCountdown, usePoll, useTopic } from "../hooks";
 import { VolumeSlider } from "../components/VolumeSlider";
 
 const SOURCE_KEYS: Record<string, string> = {
@@ -14,10 +14,12 @@ const SOURCE_KEYS: Record<string, string> = {
  *  (journey 2, UI_REQ_002). */
 export function Player() {
   const { client, t, notify } = useApp();
-  const source = usePoll(useCallback(() => client.source(), [client]), 5000);
-  const volume = usePoll(useCallback(() => client.volume(), [client]), 10000);
+  // Pushed live (DEC-046); polled only while live updates are down.
+  const source = useTopic("source", useCallback(() => client.source(), [client]), 5000);
+  const volume = useTopic("volume", useCallback(() => client.volume(), [client]), 10000);
   const stations = usePoll(useCallback(() => client.stations(), [client]));
-  const timer = usePoll(useCallback(() => client.timer(), [client]), 15000);
+  const timer = useTopic("timer", useCallback(() => client.timer(), [client]), 15000);
+  const timerLeft = useCountdown(timer.data?.running ? timer.data.remaining_s : 0, timer.at);
 
   const active = source.data?.active ?? null;
   const radio = source.data?.sources.radio;
@@ -72,7 +74,7 @@ export function Player() {
       <h2>{t("timer.title")}</h2>
       {timer.data?.running ? (
         <p>
-          {t("timer.left", { time: formatDuration(timer.data.remaining_s ?? 0) })}{" "}
+          {t("timer.left", { time: formatDuration(timerLeft) })}{" "}
           <button class="link" onClick={async () => { await client.cancelTimer(); await timer.reload(); }}>{t("timer.cancel")}</button>
         </p>
       ) : (

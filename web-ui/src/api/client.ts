@@ -2,6 +2,7 @@ import {
   Alarm, AlarmInput, ApiError, BluetoothStatus, Episode, Feed, Health, Message, NewToken, OtaStatus,
   Source, Station, Timer, TokenInfo, Volume,
 } from "./types";
+import { OnConnected, OnEvent, subscribe } from "../live";
 
 /** Everything the UI asks of the speaker. HttpClient talks to the real API;
  *  MockClient (mock.ts) stands in for it in Storybook and the tests. */
@@ -56,6 +57,10 @@ export interface ApiClient {
   addAlarm(alarm: AlarmInput): Promise<Alarm>;
   updateAlarm(id: string, alarm: AlarmInput): Promise<Alarm>;
   removeAlarm(id: string): Promise<void>;
+
+  /** Live updates (DEC-046): calls `onEvent` with every topic, then with each
+   *  change, until the returned function is called. */
+  events(onEvent: OnEvent, onConnected: OnConnected): () => void;
 }
 
 const TOKEN_KEY = "kds-token";
@@ -99,6 +104,9 @@ export class HttpClient implements ApiClient {
     if (!response.ok) throw new ApiError(response.status, json.error ?? response.statusText, json);
     return json as T;
   }
+
+  events = (onEvent: OnEvent, onConnected: OnConnected) =>
+    subscribe(this.base + "/api/events", this.token, onEvent, onConnected);
 
   health = () => this.request<Health>("GET", "/health");
   setupStart = () => this.request<void>("POST", "/api/setup/start");

@@ -1,4 +1,5 @@
 use crate::auth::{TokenStore, TOKENS_FILE};
+use crate::events::EventHub;
 use crate::messages::{MessageStore, MESSAGES_DIR};
 use crate::schedule::{AlarmStore, SleepTimer, ALARMS_FILE};
 use crate::setup::Setup;
@@ -19,6 +20,8 @@ pub struct AppState {
     /// The sleep timer and alarms (DEC-041).
     pub sleep: Arc<SleepTimer>,
     pub alarms: Arc<AlarmStore>,
+    /// Live updates (DEC-046).
+    pub events: Arc<EventHub>,
 }
 
 impl AppState {
@@ -30,6 +33,7 @@ impl AppState {
             setup: Arc::new(Setup::new()),
             sleep: Arc::new(SleepTimer::default()),
             alarms: Arc::new(AlarmStore::new(ALARMS_FILE)),
+            events: Arc::new(EventHub::new()),
         }
     }
 
@@ -43,6 +47,7 @@ impl AppState {
             setup: Arc::new(Setup::new()),
             sleep: Arc::new(SleepTimer::default()),
             alarms: Arc::new(AlarmStore::new(run_dir.join("api").join("alarms.json"))),
+            events: Arc::new(EventHub::new()),
             run_dir,
         }
     }

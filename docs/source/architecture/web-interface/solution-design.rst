@@ -3,285 +3,120 @@ Solution Design — Web Interface
 
 .. meta::
    :component: Web Interface
-   :status: draft
-   :version: 0.1.0
-   :author: architecture-session-2026-05-25
+   :status: implemented
+   :version: 0.2.0
+   :author: wave 5 (DEC-045, DEC-046)
 
-This document describes the solution design for the Web Interface component.
-It covers the Leptos architecture, page structure, state management,
-API client, and the build/deployment model.
+This document describes the Web Interface as built: a Preact and TypeScript
+app (``web-ui/``), built in CI and served by the API Server (DEC-045), with
+live updates from the API Server (DEC-046). The screens follow the reviewed
+:doc:`journeys`.
 
 Design Goals
 ------------
 
-1. **Single binary** — Frontend compiled to WASM, embedded in the API
-   Server binary. No separate web server or build pipeline.
-2. **Mobile-first** — Primary use case is controlling the speaker from a
-   phone. Touch-friendly UI with large controls.
-3. **Real-time** — WebSocket connection for instant state updates.
-   No polling.
-4. **Offline-aware** — Graceful handling when the API Server is unreachable.
+1. **Phone first** — the main use is a parent's phone; large touch targets,
+   one column, a tab bar at the bottom. Light and dark follow the phone.
+2. **Nothing built on the Pi** — static files from CI; the Pi Zero only serves
+   them (DEC-045).
+3. **Live** — changes made elsewhere show within 2 s (UI_REQ_004, DEC-046);
+   polling keeps it working when live updates are down.
+4. **Reviewable without a speaker** — every screen runs against a mocked
+   speaker in Storybook and on a single-file review page.
 
-Architecture Overview
----------------------
-
-The Web Interface is a Leptos (Rust → WASM) application that:
-
-1. Is served by the API Server via SSR (server-side rendering)
-2. Hydrates on the client for reactive interactivity
-3. Connects to the API Server via WebSocket for real-time state
-4. Calls REST endpoints for commands
+Architecture
+------------
 
 .. plantuml::
-   :caption: Web Interface — Architecture
+   :caption: Web Interface — Components
    :name: fig-webui-arch
 
    @startuml
    skinparam componentStyle rectangle
    skinparam backgroundColor white
 
-   title Web Interface — Architecture
+   title Web Interface — Components
 
-   package "Browser" as browser {
-       package "Leptos WASM\n(client-side)" as wasm {
-           component ["Page Router"] as router
-           component ["State Store\nreactive signals"] as store
-           component ["API Client\nREST + WebSocket"] as client
-           component ["Pages"] as pages
-       }
+   package "Browser (web-ui/src)" as browser {
+       component ["App\nphases, tabs, toasts"] as app
+       component ["Screens\nSetup, SignIn, Player,\nRadio, Messages, Settings"] as screens
+       component ["Live State\nlast event per topic"] as live
+       component ["ApiClient\nHttpClient | MockClient"] as client
+       component ["Recorder\nWAV 24 kHz"] as rec
    }
 
-   package "API Server\n(server-side)" as server {
-       component ["Leptos SSR\nrenderer"] as ssr
-       component ["Static Assets\nembedded"] as assets
-       component ["REST API\n/api/*"] as rest
-       component ["WebSocket\n/ws"] as ws
+   package "API Server" as server {
+       component ["REST\n/api/*"] as rest
+       component ["Event Hub\n/api/events (SSE)"] as hub
+       component ["Static files\n/usr/share/kds/web"] as files
    }
 
-   browser --> server : HTTPS request
-   server --> ssr : render HTML
-   ssr --> assets : include WASM bundle
-   assets --> browser : WASM + JS
-   wasm --> client : hydrate
-   client --> rest : REST calls (commands)
-   client --> ws : WebSocket (state updates)
-   ws --> store : push state
-   store --> pages : reactive re-render
+   files --> browser : index.html, JS, CSS
+   app --> screens
+   screens --> client : commands, lists
+   screens --> live : topics
+   client --> rest : fetch + Bearer token
+   client --> hub : fetch stream + Bearer token
+   hub --> live : events
+   screens --> rec : record a message
+   @enduml
 
-   @endl
+- **App** (``App.tsx``) decides the phase: loading, setup (no admin token yet,
+  ``/health`` ``set_up: false``), sign-in, ready or offline. It reads a shared
+  token from ``#token=`` and keeps the token in ``localStorage``.
+- **Screens** are one per tab. A child's device (a non-admin token) sees only
+  Player and Radio (DEC-045).
+- **ApiClient** is an interface with two implementations: ``HttpClient``
+  talks to the speaker; ``MockClient`` is a stateful pretend speaker for the
+  tests, Storybook and the review page.
+- **Live State** keeps the last event of each topic and whether the stream is
+  connected; screens read their topic from it.
 
-Page Structure
---------------
+Live Updates
+------------
 
-.. code-block:: text
+``ApiClient.events(onEvent, onConnected)`` subscribes to ``/api/events``
+(DEC-046). ``HttpClient`` reads the stream with ``fetch``, so the token goes in
+the ``Authorization`` header, parses the ``event:``/``data:`` lines, and on a
+dropped stream reconnects after 1, 2, 4 … up to 15 s. ``MockClient`` produces
+the same events from its own state.
 
-   /                       → Player (default landing page)
-   /player                 → Player (same as /)
-   /config                 → Config section
-   /config/radio           → Internet radio stations
-   /config/podcasts        → Podcast feeds
-   /config/alarms          → Alarm settings
-   /config/tokens          → API token management
-   /config/bluetooth       → Bluetooth paired devices
-   /config/dsp             → DSP profiles
-   /config/ota             → OTA update status
-   /config/tts             → Text-to-speech: providers, credentials, voices
-   /config/system          → System info
-   /login                  → Login page (token entry)
+A screen uses ``useTopic(topic, load, every)``: it loads the endpoint once, then
+takes each event of its topic. While the stream is down it falls back to
+polling every ``every`` ms. After its own change a screen still reloads, so the
+result shows even before the event arrives.
 
-Player Page
-~~~~~~~~~~~
+Counters (the sleep timer, Bluetooth pairing, the reboot countdown) tick down
+in the browser from the last value (``useCountdown``); the server sends them
+only when they really change.
 
-The primary interface. Always visible or one tap away.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Element
-     - Description
-   * - Now Playing
-     - Current track title, artist, album art (if available)
-   * - Source indicator
-     - Icon showing active source (Spotify, AirPlay, Radio, etc.)
-   * - Playback controls
-     - Play/Pause (large center button), Next, Previous
-   * - Volume slider
-     - Vertical or horizontal slider, 0-100%
-   * - Sleep timer
-     - Countdown display + set/cancel buttons (15/30/60 min presets)
-   * - TTS quick-send
-     - Text input + send button for quick TTS messages
-
-Config Pages
-~~~~~~~~~~~~
-
-Settings and source management. Each sub-page follows a consistent pattern:
-list view → add/edit form → save/cancel.
-
-Text-to-speech (``/config/tts``)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-**Deferred with cloud TTS (DEC-031).** Where a parent would set up cloud
-text-to-speech (TTS_REQ_004 to TTS_REQ_006):
-
-- **Enable cloud TTS**: off by default. Turning it on shows "Announcements will be
-  sent to [provider] to be turned into speech. They leave your home network.
-  Messages already spoken are reused without being sent again." and needs an
-  explicit confirmation.
-- **Providers**: one card each for ElevenLabs and Google Cloud TTS, in priority
-  order, which can be changed.
-- **Credentials**: a password-type field per provider. After saving, the field is
-  cleared and the card shows only "Configured, key ending in 1234". A saved key is
-  never sent back to the browser. "Remove" deletes it.
-- **Test**: lists the provider's voices and speaks a short phrase through that
-  provider alone, reporting success or the provider's error, such as a rejected
-  key. For Google, this is where a project that doesn't accept API keys shows up.
-- **Voices**: a voice per language per provider, chosen from the provider's list.
-  A provider whose model doesn't support an enabled language shows that, and is
-  skipped for that language.
-
-The page refuses to submit credentials unless the page itself was loaded over
-HTTPS.
-
-State Management
-----------------
-
-Leptos reactive signals (``RwSignal``, ``Memo``) manage client-side state:
-
-.. code-block:: rust
-
-   // Global state store
-   struct AppState {
-       playback: RwSignal<PlaybackState>,
-       volume: RwSignal<VolumeState>,
-       bluetooth: RwSignal<BluetoothState>,
-       tts: RwSignal<TtsState>,
-       ota: RwSignal<OtaState>,
-       system: RwSignal<SystemInfo>,
-       ws_connected: RwSignal<bool>,
-   }
-
-State is updated exclusively via WebSocket events. The REST API is used
-only for commands (mutations). This ensures the UI always reflects the
-server's authoritative state.
-
-API Client
-----------
-
-The API client handles:
-
-1. **REST calls** — ``reqwest`` (WASM-compatible) for commands
-2. **WebSocket** — ``web-sys::WebSocket`` for real-time state
-3. **Token management** — Store token in ``localStorage``, attach to all
-   requests
-4. **Reconnection** — Automatic WebSocket reconnect with exponential
-   backoff (1s, 2s, 4s, 8s, max 30s)
-
-.. code-block:: rust
-
-   // WebSocket connection with reconnect
-   fn connect_ws(token: &str, state: &AppState) {
-       let url = format!("wss://{}/ws?token={}", HOST, token);
-       let ws = WebSocket::new(&url).unwrap();
-
-       ws.set_onmessage(Some(move |event| {
-           let msg: WsMessage = serde_json::from_str(&event.data()).unwrap();
-           update_state(&state, msg);
-       }));
-
-       ws.set_onclose(Some(move |_| {
-           // Reconnect with backoff
-           set_timeout(|| connect_ws(token, state), backoff_delay);
-       }));
-   }
+**Update reboot banner** (OTA_REQ_010): while the ``ota`` topic has a
+``reboot_at``, every screen shows "Højttaleren genstarter om m:ss for at
+blive opdateret", with **Genstart nu** for a parent (OTA_REQ_007).
 
 Offline Behaviour
 -----------------
 
-When the WebSocket connection is lost:
+If ``/health`` doesn't answer, the app shows "Højttaleren svarer ikke. Er du på
+samme Wi-Fi?" with a retry. If the live stream drops while the speaker still
+answers, screens poll until it reconnects.
 
-1. Show a "Connecting…" banner at the top of the screen
-2. Disable all controls (buttons greyed out, sliders frozen)
-3. Keep the last known state visible (don't clear the UI)
-4. Automatically reconnect — when reconnected, state is re-synced from
-   the server
+Build, Test and Review
+----------------------
 
-When the API Server is completely unreachable (e.g., wrong network):
+- ``npm run build``: type check and Vite build into ``web-ui/dist``; the image
+  copies it to ``/usr/share/kds/web`` (``make -C ci web-ui``).
+- ``npm test``: Vitest with jsdom: units, app flows and every review scenario.
+- ``npm run storybook`` / ``build-storybook``: one story per scenario in
+  ``src/scenarios.tsx``.
+- ``npm run build-demo``: the same scenarios on one HTML page in a phone frame.
+- CI uploads the Storybook and the review page with every change;
+  ``make -C ci hw-web-test`` checks the served page on a real Pi.
 
-1. Show "Unable to connect to speaker" with the speaker's expected IP/hostname
-2. Provide a "Retry" button
-3. If the user has previously connected, show the last known speaker address
+Deferred
+--------
 
-Build & Deployment
-------------------
-
-The Leptos frontend is built as part of the API Server's build process:
-
-.. code-block:: text
-
-   cargo build --target wasm32-unknown-unknown   (frontend WASM)
-   cargo build --target arm-unknown-linux-gnueabihf  (API Server binary)
-
-The WASM bundle is embedded in the API Server binary using
-``include_dir!("../frontend/dist")`` or Leptos's built-in asset embedding.
-
-The final deployment artifact is a **single binary** (``api-server``) that:
-- Serves the Leptos frontend
-- Handles REST API requests
-- Manages WebSocket connections
-- Connects to all backend services via IPC
-
-No Node.js, no npm, no separate frontend build pipeline. The entire
-frontend is Rust → WASM.
-
-.. note::
-
-   The Leptos build requires ``trunk`` (Rust-based WASM build tool) as a
-   build dependency. This is a one-time setup in the CI pipeline, not a
-   runtime dependency.
-
-Styling
--------
-
-CSS framework decision: **Tailwind CSS** via ``trunk``'s built-in Tailwind
-integration.
-
-**Rationale**:
-- Utility-first CSS works well with Leptos's component model
-- Small bundle size (only used classes are included)
-- No JavaScript runtime (pure CSS)
-- Widely used, good documentation
-
-The Tailwind config defines a custom color palette matching the Kids Desktop
-Speaker brand (to be defined — for now, a default blue/gray palette).
-
-Open Questions
---------------
-
-.. todo::
-
-   - **Album art**: Where does album art come from? Spotify provides it via
-     librespot's metadata. AirPlay may provide it. For radio/podcasts, we
-     may need to fetch it from the stream metadata or RSS feed. For v1,
-     show a placeholder if no art is available.
-
-     **Status (2026-11-11)**: Open for the wave 5 design review (KDS-9pb).
-
-   - **Responsive breakpoints**: Define specific breakpoints for phone
-     (portrait/landscape), tablet, and desktop. Player page should work
-     well on a phone held vertically (the primary use case).
-
-     **Status (2026-11-11)**: Drafted: phone first, two columns on a tablet or laptop (User Journeys and Wireframes).
-
-   - **Dark mode**: Should the UI support dark mode? Most speaker UIs do.
-     Low priority for v1 — light mode only initially.
-
-     **Status (2026-11-11)**: Deferred: light mode first.
-
-   - **Internationalization**: The UI is English-only for v1. If we need
-     multi-language support later, Leptos has i18n crates available.
-     Defer to a future release.
-
-
-     **Status (2026-11-11)**: Superseded: Danish (default) and English from the start (LOC_REQ_001, wave 5).
+- **Text-to-speech settings** for cloud voices: deferred with cloud TTS
+  (DEC-031). The page would refuse to send credentials unless loaded over
+  HTTPS.
+- **Album art** and **DSP profiles**: not in v1.

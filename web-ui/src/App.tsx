@@ -13,6 +13,8 @@ import { Radio } from "./screens/Radio";
 import { Messages } from "./screens/Messages";
 import { Settings } from "./screens/Settings";
 import { TabBar, Tab } from "./components/TabBar";
+import { RebootBanner } from "./components/RebootBanner";
+import { Live, NO_LIVE } from "./live";
 
 export interface AppProps {
   client: ApiClient;
@@ -32,6 +34,7 @@ export function App({ client, recorder = browserRecorder, initialTab = "player",
   const [admin, setAdmin] = useState(false);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [toast, setToast] = useState<string | null>(null);
+  const [live, setLive] = useState<Live>(NO_LIVE);
   const t = useMemo(() => translator(lang), [lang]);
 
   const start = async () => {
@@ -61,6 +64,20 @@ export function App({ client, recorder = browserRecorder, initialTab = "player",
     start();
   }, []);
 
+  // Live updates while signed in (DEC-046).
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const close = client.events(
+      (topic, data) =>
+        setLive((l) => ({ ...l, values: { ...l.values, [topic]: data }, at: { ...l.at, [topic]: Date.now() } })),
+      (connected) => setLive((l) => ({ ...l, connected })),
+    );
+    return () => {
+      close();
+      setLive(NO_LIVE);
+    };
+  }, [phase, client]);
+
   const services: AppServices = {
     client,
     lang,
@@ -80,6 +97,7 @@ export function App({ client, recorder = browserRecorder, initialTab = "player",
       setPhase("signin");
     },
     origin: origin ?? location.origin,
+    live,
   };
   const signedInWith = (token: string, isAdmin: boolean) => {
     storeToken(token);
@@ -104,6 +122,7 @@ export function App({ client, recorder = browserRecorder, initialTab = "player",
         {phase === "signin" && <SignIn onDone={signedInWith} />}
         {phase === "ready" && (
           <>
+            <RebootBanner />
             <main class="screen">
               {shown === "player" && <Player />}
               {shown === "radio" && <Radio />}

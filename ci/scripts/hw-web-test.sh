@@ -5,7 +5,8 @@
 #
 # Checks that api-server serves the Web UI over HTTPS with its security
 # headers, that the app's own paths get the page while unknown /api paths stay
-# a JSON 404, and that the page needs no token while the API does. If a
+# a JSON 404, that the page needs no token while the API does, and that live
+# updates (/api/events) arrive. If a
 # headless Chromium is available (KDS_CHROME, or Playwright's), it also opens
 # the page with an admin token and a child's token, checks the tabs each one
 # sees, and saves screenshots in $KDS_WEB_SHOTS (default: a temporary folder).
@@ -50,6 +51,26 @@ check "unknown /api paths are a JSON 404" "$(fetch -w ' %{http_code}' "$base/api
 check "the API still needs a token" "$(fetch -o /dev/null -w '%{http_code}' "$base/api/audio/source")" 401
 check "health tells the app the speaker is set up" \
     "$(fetch "$base/health" | python3 -c 'import json,sys; print(json.load(sys.stdin)["set_up"])')" True
+
+log "=== Live updates (DEC-046)"
+read -r live_id live_token < <(api_token "hw-web-test live")
+events="$WORK/events.txt"
+fetch -N --max-time 6 -H "Authorization: Bearer $live_token" "$base/api/events" > "$events" &
+stream=$!
+sleep 2
+before=$(fetch -H "Authorization: Bearer $live_token" "$base/api/audio/volume" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volume"])')
+want=$(( before > 20 ? before - 5 : before + 5 ))
+fetch -o /dev/null -X POST -H "Authorization: Bearer $live_token" -H 'content-type: application/json' \
+    -d "{\"volume\": $want}" "$base/api/audio/volume"
+wait "$stream"
+fetch -o /dev/null -X POST -H "Authorization: Bearer $live_token" -H 'content-type: application/json' \
+    -d "{\"volume\": $before}" "$base/api/audio/volume"
+api_revoke "$live_id"
+topics=$(sed -n 's/^event: //p' "$events" | head -5 | sort | tr '\n' ' ')
+check "a subscriber first gets every topic" "$topics" "bluetooth ota source timer volume "
+check "a volume change arrives on the stream" \
+    "$(grep -c "^data: {.*\"volume\":$want[,}]" "$events")" 1
+check "the stream needs a token" "$(fetch -o /dev/null -w '%{http_code}' --max-time 3 "$base/api/events")" 401
 
 chrome=${KDS_CHROME:-$(ls -d "$HOME"/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell 2>/dev/null | tail -1)}
 if [ -x "$chrome" ]; then

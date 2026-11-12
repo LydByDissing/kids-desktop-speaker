@@ -36,6 +36,12 @@ async fn main() -> Result<()> {
         std::time::Duration::from_secs(15),
     ));
 
+    // Live updates (DEC-046): watches the backends while anyone subscribes.
+    tokio::spawn(api_server::events::watch(
+        state.clone(),
+        api_server::events::INTERVAL,
+    ));
+
     // Not set up yet: read the setup code aloud until someone uses it.
     if !state.tokens.has_admin() {
         tokio::spawn(api_server::routes::setup::read_until_set_up(state.clone()));

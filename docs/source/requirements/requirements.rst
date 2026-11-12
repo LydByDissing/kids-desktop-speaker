@@ -291,6 +291,16 @@ Software — User Interface
    The web interface shall support volume control, playback control (play/pause/
    skip), and source selection.
 
+.. req:: UI_REQ_004
+   :id: UI_REQ_004
+   :status: open
+   :tags: software, ui, api
+
+   The web interface shall show changes made elsewhere (another phone, AirPlay,
+   Spotify or Bluetooth starting, a remote's volume buttons, the sleep timer, an
+   update) within 2 seconds, without being reloaded, and shall keep working
+   by polling if live updates are unavailable (ref DEC-046).
+
 .. req:: UI_REQ_003
    :id: UI_REQ_003
    :status: deferred
@@ -594,6 +604,15 @@ Software — Networking
 
    The API Server shall let a user check for an update immediately and reboot
    immediately, the latter skipping the maintenance window.
+
+.. req:: OTA_REQ_010
+   :id: OTA_REQ_010
+   :status: open
+   :tags: software, ota, ui
+
+   During the grace period before an update's reboot, the web interface shall
+   show a countdown to the reboot on every screen, with a way to reboot at once
+   (ref DEC-046, OTA_REQ_006).
 
 .. req:: OTA_REQ_008
    :id: OTA_REQ_008

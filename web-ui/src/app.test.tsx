@@ -102,3 +102,41 @@ describe("language", () => {
     await screen.findByText("Nothing is playing");
   });
 });
+
+describe("live updates (UI_REQ_004, DEC-046)", () => {
+  it("shows a change made elsewhere without reloading", async () => {
+    const client = start();
+    await screen.findByText("Intet spiller");
+    // The radio starts from an alarm or another phone, not from this page.
+    client.playing = "dr-p3";
+    client.programme = "Go' Morgen P3";
+    expect(await screen.findByText("Go' Morgen P3")).toBeTruthy();
+    client.volumeValue = 30;
+    expect(await screen.findByText(/^30 %/)).toBeTruthy();
+  });
+
+  it("shows the update reboot countdown on every screen (OTA_REQ_010)", async () => {
+    start({ rebootIn: 300 });
+    expect(await screen.findByText(/Højttaleren genstarter om (5:00|4:59)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Radio/ }));
+    expect(screen.getByText(/Højttaleren genstarter om/)).toBeTruthy();
+  });
+
+  it("restarts at once from the banner", async () => {
+    const client = start({ rebootIn: 300 });
+    let rebooted = false;
+    client.otaReboot = async () => {
+      rebooted = true;
+    };
+    await screen.findByText(/Højttaleren genstarter om/);
+    fireEvent.click(screen.getAllByRole("button", { name: "Genstart nu" })[0]);
+    await waitFor(() => expect(rebooted).toBe(true));
+  });
+
+  it("works without live updates", async () => {
+    start({ live: false, playing: "dr-p1", programme: "P1 Morgen" });
+    expect(await screen.findByText("P1 Morgen")).toBeTruthy();
+    expect(screen.queryByText(/genstarter/)).toBeNull();
+  });
+});
+

@@ -2774,3 +2774,50 @@ Indstillinger). A child's device (a non-admin token) sees only the Player and
 Radio. Sharing access shows the token once with a Copy button and a QR code
 linking ``https://<hostname>.local/#token=...``; the URL fragment never reaches
 the server. Danish by default, English as an option (LOC_REQ_001).
+
+DEC-046 — Live Updates: Server-Sent Events from the API Server
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_046
+   :status: resolved
+   :date: 2026-11-12
+   :tags: web, ui, api
+
+**Context**: the Web UI polled each endpoint every 5 to 15 s, so a change
+made elsewhere (AirPlay starting, a remote's volume button, another phone)
+showed late, and the update reboot countdown (OTA_REQ_010) couldn't be shown
+(UI_REQ_004, KDS-apx.7, KDS-u1v). The solution design planned a WebSocket at
+``/ws`` with the token in the query string, which puts tokens in URLs and logs.
+
+**Decision 1: Server-Sent Events at** ``GET /api/events``. One-way JSON events
+over a normal HTTP response (``text/event-stream``), authenticated with the
+usual ``Authorization: Bearer`` header by the same middleware as every other
+route; any token may subscribe. The browser reads it with ``fetch`` and a
+stream reader (``EventSource`` can't send headers), and reconnects with
+back-off. Nothing needs to flow from the browser, so a WebSocket adds nothing,
+and Home Assistant or ``curl -N`` can use the same stream.
+
+**Decision 2: one event per topic, the same JSON as its endpoint.** Topics:
+``source`` (``GET /api/audio/source``), ``volume`` (``/api/audio/volume``),
+``timer`` (``/api/timer``), ``bluetooth`` (``/api/bluetooth/status``) and
+``ota`` (``/api/ota/status``). A new subscriber first gets every topic, then
+an event only when a topic changes. Counters that tick (``remaining_s``) don't
+count as a change; the UI counts down itself.
+
+**Decision 3: the API Server watches, the backends are unchanged.** An Event
+Hub in the API Server asks the backends over IPC every 2 s, only while someone
+subscribes, compares with what it sent last, and sends what changed. After a
+successful change through the API (any non-GET ``/api`` request) it looks at
+once, so the sender's own change arrives immediately. Push subscriptions in
+every backend would be more code in four services for little gain: the IPC
+requests are local and cheap, and nobody subscribes most of the time.
+
+**Decision 4: the reboot countdown comes from the OTA Updater.** Its status
+gains ``reboot_at`` (Unix seconds) while a reboot waits out its grace period,
+and ``null`` otherwise. The Web UI shows a banner with the countdown on every
+screen and a Reboot now button for a parent (OTA_REQ_007).
+
+**Consequences**: lists that only change through the API (stations, messages,
+alarms, tokens) are not pushed; a screen reloads them after its own changes.
+

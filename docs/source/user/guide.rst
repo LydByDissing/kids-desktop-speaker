@@ -82,7 +82,13 @@ Updates
 
 The speaker updates itself at night, between 03:00 and 05:00, when nothing is
 playing. If an update doesn't start properly, it goes back to the previous
-version by itself. **Søg efter opdatering** checks now.
+version by itself. **Søg efter opdatering** checks now. Five minutes before
+an update restarts the speaker, its page shows a countdown on every screen;
+**Genstart nu** restarts at once.
+
+The page updates by itself: if someone else starts the radio, AirPlay or
+Bluetooth, or turns the volume up on another phone or a remote, you see it
+within a couple of seconds.
 
 Troubleshooting
 ---------------

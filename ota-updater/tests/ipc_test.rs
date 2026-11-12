@@ -9,7 +9,7 @@ async fn status_reports_state_and_version() {
     let response = handle(json!({"cmd": "status"}), status, &Controls::default()).await;
     assert_eq!(
         response,
-        json!({"ok": true, "state": "idle", "detail": null, "version": "v1.2.3", "pending": null})
+        json!({"ok": true, "state": "idle", "detail": null, "version": "v1.2.3", "pending": null, "reboot_at": null})
     );
 }
 
@@ -72,6 +72,14 @@ async fn status_reports_a_pending_update() {
     status.set_pending("v1.3.0".into()).await;
     let response = handle(json!({"cmd": "status"}), status, &Controls::default()).await;
     assert_eq!(response["pending"], "v1.3.0");
+}
+
+#[tokio::test]
+async fn status_reports_when_a_waiting_reboot_happens() {
+    let status = SharedStatus::new();
+    status.set_reboot_at(Some(1_800_000_000)).await;
+    let response = handle(json!({"cmd": "status"}), status, &Controls::default()).await;
+    assert_eq!(response["reboot_at"], 1_800_000_000u64);
 }
 
 #[tokio::test]
