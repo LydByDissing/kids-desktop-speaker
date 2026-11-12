@@ -2821,3 +2821,43 @@ screen and a Reboot now button for a parent (OTA_REQ_007).
 **Consequences**: lists that only change through the API (stations, messages,
 alarms, tokens) are not pushed; a screen reloads them after its own changes.
 
+DEC-047 — Update Bundle Size: Trim the Image, Check Space First
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_047
+   :status: resolved
+   :date: 2026-11-12
+   :tags: ota, image
+
+**Context** (KDS-sgt.8): the OTA Updater downloads the whole bundle to
+``/data/ota/staging`` on the 1 GB data partition before RAUC installs it. A dev
+bundle had reached 497 MB (rootfs 1,074 MB), close to RAUC's 512 MB
+``max-bundle-download-size`` and to half the partition, which also holds voice
+messages and settings.
+
+**Decision 1: the image leaves out what a speaker never reads.** A last
+Dockerfile layer removes the apt cache (203 MB of ``.deb`` files and indexes
+nobody cleaned), man and info pages, documentation except each package's
+``copyright`` file (the SBOM and license inventory read those), and
+translations other than Danish and English. The smoke test checks it.
+
+**Decision 2: dev builds carry line tables only.** Dev binaries go onto the Pi
+too (``hw-install``); full debug info made them 344 MB together. Line tables
+keep file and line numbers in backtraces; dependencies carry none. They are now
+100 MB.
+
+**Decision 3: the OTA Updater checks free space before downloading.** If the
+bundle plus 32 MB doesn't fit, it doesn't start, reports "not enough space for
+the update: it needs N MB, M MB free" in its status, and tries again at the
+next check. A leftover bundle from an interrupted download is removed first.
+
+**Result**: rootfs 1,074 → 550 MB, dev bundle 497 → 245 MB; release bundles,
+with 10 MB of release binaries instead of 100 MB, are smaller still.
+
+**Not now**: RAUC HTTP streaming would install from the URL without a local
+copy, and the kernel has what it needs (``nbd``, dm-verity), but Raspbian's
+RAUC 1.8 is built without streaming, so it would mean building and maintaining
+RAUC ourselves. The largest remaining part is MPD's dependencies (FFmpeg with
+video encoders, Samba, librsvg, codec2: about 80 MB), which is KDS-9jt.5.
+

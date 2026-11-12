@@ -224,3 +224,31 @@ async fn short_download_is_incomplete_not_a_bad_release() {
     assert!(!err.is_bad_release());
     assert!(!target.exists());
 }
+
+#[tokio::test]
+async fn a_bundle_too_big_for_the_disk_is_not_downloaded() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/image.raucb"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(BUNDLE))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let status = ota_updater::SharedStatus::new();
+    // No disk has an exabyte free; the check fails before any request.
+    let err = ota_updater::installer::install_verified(
+        &format!("{}/image.raucb", server.uri()),
+        &sha256_hex(BUNDLE),
+        Some(1 << 60),
+        status.clone(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, InstallerError::NoSpace { .. }), "{err}");
+    assert!(!err.is_bad_release(), "tried again at the next check");
+    let state = status.get().await.state;
+    assert!(
+        matches!(&state, ota_updater::OtaState::Error(m) if m.starts_with("not enough space")),
+        "{state:?}"
+    );
+}

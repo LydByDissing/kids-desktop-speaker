@@ -3,3 +3,12 @@ members = ["api-server", "audio-player", "ota-updater", "bluetooth-service", "kd
 resolver = "2"
 # librespot and CamillaDSP are built from their own releases (ci/scripts/build-*.sh).
 exclude = ["ci/librespot", "ci/camilladsp"]
+
+# Dev builds go onto the Pi too (hw-install). Full debug info made each service
+# binary ~70 MB and the dev bundle ~500 MB (KDS-sgt.8). Line tables keep file and
+# line numbers in backtraces; dependencies need none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

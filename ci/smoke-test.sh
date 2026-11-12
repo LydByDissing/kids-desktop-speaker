@@ -283,6 +283,15 @@ require_executable /usr/local/bin/bluetooth-service
 ok "all service binaries present and executable"
 
 echo ""
+echo "--- Trimmed for the bundle size (KDS-sgt.8) ---"
+ls /var/cache/apt/archives/*.deb >/dev/null 2>&1 && fail "the apt cache is still in the image"
+[ -z "$(ls -A /usr/share/man 2>/dev/null)" ] || fail "man pages are still in the image"
+[ -d /usr/share/locale/fr ] && fail "translations other than Danish and English are still in the image"
+copyrights=$(ls /usr/share/doc/*/copyright 2>/dev/null | wc -l)
+[ "$copyrights" -gt 100 ] || fail "copyright files are missing ($copyrights)"
+ok "apt cache, man pages and other languages removed; $copyrights copyright files kept"
+
+echo ""
 echo "--- Web UI ---"
 require_file /usr/share/kds/web/index.html
 ls /usr/share/kds/web/assets/*.js >/dev/null 2>&1 || fail "the Web UI has no scripts"
