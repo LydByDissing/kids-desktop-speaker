@@ -46,7 +46,9 @@ done
 # A real HTTPS request exercises the crypto code. The high version means nothing
 # gets installed.
 out=$(in_image 'echo v999.0.0 > /tmp/ver; OTA_VERSION_FILE=/tmp/ver timeout 40 /usr/local/bin/ota-updater 2>&1')
-echo "$out" | grep -qE 'ota: (nothing to install|release check failed: http error: HTTP status)'
+# Any answer from GitHub proves the TLS handshake; "no release published yet"
+# is its 404 while there are only pre-releases (KDS-eio).
+echo "$out" | grep -qE 'ota: (nothing to install|no release published yet|release check failed: http error: HTTP status)'
 check "ota-updater completes an HTTPS request" "$?" 0
 [ "$fail" -eq 0 ] || echo "$out" | tail -5
 

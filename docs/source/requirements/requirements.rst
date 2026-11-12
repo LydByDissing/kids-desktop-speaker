@@ -550,6 +550,18 @@ Software — Networking
    The system shall provide atomic OTA updates: updates are written to an
    inactive partition and activated only after successful installation.
 
+.. req:: OTA_REQ_011
+   :id: OTA_REQ_011
+   :status: open
+   :tags: software, ota, scalability
+
+   The OTA Updater shall check for a new release at every boot and then once a
+   week, plus when a user asks (OTA_REQ_007). A check that fails shall be
+   retried at most 3 times (after 1, 2 and 4 minutes) before waiting for the
+   next scheduled check. A repository without a release is not a failure. This
+   keeps many devices from loading the release server (decided with the user,
+   KDS-eio).
+
 .. req:: OTA_REQ_002
    :id: OTA_REQ_002
    :status: open

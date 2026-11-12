@@ -62,7 +62,7 @@ async fn fetch_latest_resolves_manifest_and_bundle_url() {
     )
     .await;
 
-    let update = fetch_latest(&config(&server)).await.unwrap();
+    let update = fetch_latest(&config(&server)).await.unwrap().unwrap();
     assert_eq!(update.manifest.version, "v1.2.3");
     assert_eq!(update.bundle_url, format!("{base}/image.raucb"));
 }
@@ -77,7 +77,7 @@ async fn fetch_latest_errors_without_manifest_asset() {
 }
 
 #[tokio::test]
-async fn fetch_latest_errors_when_no_release_exists() {
+async fn no_release_yet_is_a_normal_answer() {
     let server = MockServer::start().await;
     serve(
         &server,
@@ -86,8 +86,23 @@ async fn fetch_latest_errors_when_no_release_exists() {
     )
     .await;
 
+    // GitHub's answer when the repository has only pre-releases (KDS-eio).
     let result = fetch_latest(&config(&server)).await;
-    assert!(matches!(result, Err(ReleaseError::Http(_))));
+    assert!(matches!(result, Ok(None)));
+}
+
+#[tokio::test]
+async fn other_http_errors_still_fail_the_check() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        "/repos/owner/repo/releases/latest",
+        ResponseTemplate::new(403),
+    )
+    .await;
+
+    let result = fetch_latest(&config(&server)).await;
+    assert!(matches!(result, Err(ReleaseError::Http(_))), "rate limited");
 }
 
 #[tokio::test]
