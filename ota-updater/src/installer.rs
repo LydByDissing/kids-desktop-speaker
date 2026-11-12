@@ -17,6 +17,8 @@ pub enum InstallerError {
     RaucFailed(i32),
     #[error("download incomplete: expected {expected} bytes, got {actual}")]
     Incomplete { expected: u64, actual: u64 },
+    #[error("not enough space for the update: it needs {needed_mb} MB, {free_mb} MB free")]
+    NoSpace { needed_mb: u64, free_mb: u64 },
 }
 
 impl InstallerError {
@@ -33,6 +35,9 @@ impl InstallerError {
 }
 
 const DEFAULT_BUNDLE_PATH: &str = "/data/ota/staging/bundle.raucb";
+/// Room left over after the bundle, so voice messages and settings can still
+/// be saved while it downloads.
+pub const SPACE_MARGIN: u64 = 32 * 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -40,6 +45,39 @@ fn bundle_path() -> PathBuf {
     std::env::var_os("OTA_BUNDLE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_BUNDLE_PATH))
+}
+
+/// Free bytes for an unprivileged writer on the file system that holds `path`,
+/// or its nearest existing parent.
+pub fn free_bytes(path: &Path) -> std::io::Result<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut dir = path;
+    while !dir.exists() {
+        dir = dir.parent().unwrap_or(Path::new("/"));
+    }
+    let c_path = std::ffi::CString::new(dir.as_os_str().as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: c_path is a valid C string and stats a valid statvfs to fill.
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(stats.f_bavail as u64 * stats.f_frsize as u64)
+}
+
+/// Fails before downloading when the bundle wouldn't fit with [`SPACE_MARGIN`]
+/// to spare (KDS-sgt.8), instead of filling the data partition halfway.
+pub fn ensure_space(path: &Path, size: u64) -> Result<(), InstallerError> {
+    let free = free_bytes(path)?;
+    let needed = size.saturating_add(SPACE_MARGIN);
+    if free < needed {
+        let mb = |b: u64| b.div_ceil(1024 * 1024);
+        return Err(InstallerError::NoSpace {
+            needed_mb: mb(needed),
+            free_mb: free / (1024 * 1024),
+        });
+    }
+    Ok(())
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -140,6 +178,14 @@ pub async fn install_verified(
     status: SharedStatus,
 ) -> Result<(), InstallerError> {
     let path = bundle_path();
+    // A bundle left by an interrupted download would count against the space.
+    let _ = tokio::fs::remove_file(&path).await;
+    if let Some(size) = expected_size {
+        if let Err(e) = ensure_space(&path, size) {
+            status.set(OtaState::Error(e.to_string())).await;
+            return Err(e);
+        }
+    }
     status.set(OtaState::Downloading).await;
     let result = match download_verified(url, expected_sha256, expected_size, &path).await {
         Ok(()) => {
@@ -188,6 +234,34 @@ mod tests {
             actual: 4,
         };
         assert!(!short.is_bad_release());
+    }
+
+    #[test]
+    fn no_space_is_not_a_bad_release() {
+        let e = InstallerError::NoSpace {
+            needed_mb: 300,
+            free_mb: 100,
+        };
+        assert!(!e.is_bad_release(), "it may fit next time");
+        assert_eq!(
+            e.to_string(),
+            "not enough space for the update: it needs 300 MB, 100 MB free"
+        );
+    }
+
+    #[test]
+    fn free_space_is_read_from_the_nearest_existing_directory() {
+        let missing = std::env::temp_dir().join("kds-no-such-dir/staging/bundle.raucb");
+        assert!(free_bytes(&missing).unwrap() > 0);
+    }
+
+    #[test]
+    fn a_bundle_that_does_not_fit_is_refused() {
+        let dir = std::env::temp_dir();
+        let free = free_bytes(&dir).unwrap();
+        assert!(ensure_space(&dir, 1024).is_ok());
+        let err = ensure_space(&dir, free).unwrap_err();
+        assert!(matches!(err, InstallerError::NoSpace { .. }), "{err}");
     }
 
     #[test]

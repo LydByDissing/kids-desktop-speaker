@@ -562,6 +562,15 @@ Software — Networking
    keeps many devices from loading the release server (decided with the user,
    KDS-eio).
 
+.. req:: OTA_REQ_012
+   :id: OTA_REQ_012
+   :status: open
+   :tags: software, ota, storage
+
+   The OTA Updater shall not start downloading an update that doesn't fit the
+   data partition with 32 MB to spare, and shall report why in its status. An
+   update bundle shall stay well below half the data partition (ref DEC-047).
+
 .. req:: OTA_REQ_002
    :id: OTA_REQ_002
    :status: open

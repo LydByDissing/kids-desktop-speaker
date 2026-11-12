@@ -148,7 +148,9 @@ after boot, rate limited) is retried 3 times, after 1, 2 and 4 minutes, and then
 waits for the next weekly check (KDS-eio).
 
 **Download**: The RAUC bundle is downloaded to a staging directory on the
-data partition: ``/data/ota/staging/bundle.raucb``. Downloads use
+data partition: ``/data/ota/staging/bundle.raucb``. Before it starts, the updater
+checks that the bundle plus 32 MB fits; otherwise it reports "not enough space
+for the update" and tries again at the next check (DEC-047). Downloads use
 ``reqwest`` with progress reporting. Resumable downloads are not needed
 for v1 (bundles are ~100-150MB).
 
