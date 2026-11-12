@@ -58,14 +58,17 @@ fn env_or(key: &str, default: &str) -> String {
 
 const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(60);
 
-/// A failed check is retried soon, because the network or clock may not be ready
-/// yet just after boot. The device has no battery clock, and TLS needs the time.
-pub fn next_check_delay(check_succeeded: bool, interval: Duration) -> Duration {
-    if check_succeeded {
-        interval
-    } else {
-        interval.min(RETRY_AFTER_FAILURE)
+/// How long to wait after a check. A failed check is retried soon, because the
+/// network or clock may not be ready yet just after boot (the device has no
+/// battery clock, and TLS needs the time). Failures in a row back off, 1, 2,
+/// 4 … minutes, up to the interval, so an outage or GitHub's rate limit
+/// doesn't make the speaker ask every minute (KDS-eio).
+pub fn next_check_delay(failures_in_a_row: u32, interval: Duration) -> Duration {
+    if failures_in_a_row == 0 {
+        return interval;
     }
+    let factor = 1u32 << (failures_in_a_row - 1).min(16);
+    interval.min(RETRY_AFTER_FAILURE.saturating_mul(factor))
 }
 
 #[cfg(test)]
@@ -75,18 +78,28 @@ mod tests {
     #[test]
     fn success_waits_the_full_interval() {
         let hour = Duration::from_secs(3600);
-        assert_eq!(next_check_delay(true, hour), hour);
+        assert_eq!(next_check_delay(0, hour), hour);
     }
 
     #[test]
-    fn failure_retries_sooner() {
+    fn a_first_failure_retries_after_a_minute() {
         let hour = Duration::from_secs(3600);
-        assert_eq!(next_check_delay(false, hour), RETRY_AFTER_FAILURE);
+        assert_eq!(next_check_delay(1, hour), RETRY_AFTER_FAILURE);
+    }
+
+    #[test]
+    fn failures_in_a_row_back_off_up_to_the_interval() {
+        let hour = Duration::from_secs(3600);
+        let minutes: Vec<u64> = (1..=8)
+            .map(|n| next_check_delay(n, hour).as_secs() / 60)
+            .collect();
+        assert_eq!(minutes, [1, 2, 4, 8, 16, 32, 60, 60]);
+        assert_eq!(next_check_delay(1000, hour), hour, "no overflow");
     }
 
     #[test]
     fn failure_never_waits_longer_than_the_interval() {
         let short = Duration::from_secs(15);
-        assert_eq!(next_check_delay(false, short), short);
+        assert_eq!(next_check_delay(1, short), short);
     }
 }

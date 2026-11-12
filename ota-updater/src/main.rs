@@ -58,11 +58,16 @@ async fn check_loop(
     check_now: std::sync::Arc<tokio::sync::Notify>,
 ) {
     let mut state = CheckState::default();
+    let mut failures = 0u32;
     loop {
-        let succeeded = check_once(&cfg, &status, &mut state).await;
+        if check_once(&cfg, &status, &mut state).await {
+            failures = 0;
+        } else {
+            failures = failures.saturating_add(1);
+        }
         // A `check` command cuts the wait short.
         tokio::select! {
-            _ = tokio::time::sleep(next_check_delay(succeeded, cfg.check_interval)) => {}
+            _ = tokio::time::sleep(next_check_delay(failures, cfg.check_interval)) => {}
             _ = check_now.notified() => println!("ota: check requested"),
         }
     }
@@ -72,7 +77,11 @@ async fn check_loop(
 async fn check_once(cfg: &OtaConfig, status: &SharedStatus, state: &mut CheckState) -> bool {
     let current = version::read_current(&cfg.version_file).unwrap_or_else(|| "0.0.0".to_string());
     let update = match release::fetch_latest(cfg).await {
-        Ok(update) => update,
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            println!("ota: no release published yet (current {current})");
+            return true;
+        }
         Err(e) => {
             eprintln!("ota: release check failed: {:#}", anyhow::Error::new(e));
             return false;

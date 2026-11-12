@@ -66,20 +66,21 @@ fn client() -> reqwest::Client {
         .expect("reqwest client")
 }
 
-pub async fn fetch_latest(cfg: &OtaConfig) -> Result<LatestUpdate, ReleaseError> {
+/// The latest release's update, or None when the repository has no release
+/// yet: GitHub answers 404, also when there are only pre-releases. That is a
+/// normal answer, not a failed check (KDS-eio).
+pub async fn fetch_latest(cfg: &OtaConfig) -> Result<Option<LatestUpdate>, ReleaseError> {
     let http = client();
     let url = format!(
         "{}/repos/{}/{}/releases/latest",
         cfg.api_base, cfg.repo_owner, cfg.repo_name
     );
-    let release: Release = http
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    resolve_update(&http, release).await
+    let response = http.get(&url).send().await?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let release: Release = response.error_for_status()?.json().await?;
+    resolve_update(&http, release).await.map(Some)
 }
 
 async fn resolve_update(
