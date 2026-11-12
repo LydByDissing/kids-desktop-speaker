@@ -138,12 +138,14 @@ The OTA Updater monitors a GitHub repository's releases API:
      ]
    }
 
-**Polling interval**: every hour (``OTA_CHECK_INTERVAL_SECS``, default 3600),
-and on demand from the API Server (``POST /api/ota/check``). A repository with
-no release yet (GitHub answers ``404`` for ``releases/latest``, also when there
-are only pre-releases) is a normal answer: nothing to install, next check in an
-hour. A failed check (no network yet, no clock yet, rate limited) is retried
-after 1 minute, then 2, 4, 8 … minutes in a row, up to the interval (KDS-eio).
+**When it checks** (OTA_REQ_011): at every boot, then once a week
+(``OTA_CHECK_INTERVAL_SECS``, default 604800), and when a user asks from the
+Web UI (``POST /api/ota/check``). With many speakers, checking more often would
+only load the release server. A repository with no release yet (GitHub answers
+``404`` for ``releases/latest``, also when there are only pre-releases) is a
+normal answer: nothing to install. A failed check (no network or clock yet just
+after boot, rate limited) is retried 3 times, after 1, 2 and 4 minutes, and then
+waits for the next weekly check (KDS-eio).
 
 **Download**: The RAUC bundle is downloaded to a staging directory on the
 data partition: ``/data/ota/staging/bundle.raucb``. Downloads use
@@ -308,7 +310,7 @@ Open Questions
      from the API Server could hit the limit. Consider using a GitHub
      token for authenticated requests (5000/hour).
 
-     **Status (2026-11-12)**: Open: checks are unauthenticated; an hourly check, backed-off retries and manual checks stay well below 60 an hour.
+     **Status (2026-11-12)**: Open: checks are unauthenticated; a check at boot and weekly, at most 3 retries and manual checks stay far below 60 an hour.
 
    - **Bundle size**: RAUC bundles will be 100-150MB. On a Pi Zero W with
      slow SD card and limited bandwidth, download could take 10-30 minutes.
