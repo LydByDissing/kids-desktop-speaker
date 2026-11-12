@@ -74,6 +74,36 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+/// A slow Danish voice that logs "synthesize slowly".
+struct SlowSynth {
+    log: Log,
+}
+
+impl Synthesizer for SlowSynth {
+    fn id(&self) -> String {
+        "fake-slow".into()
+    }
+    fn synthesize(&self, text: &str, output: &Path) -> Result<(), TtsError> {
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("synthesize slowly {text}"));
+        std::fs::write(output, b"RIFF fake slow speech")?;
+        Ok(())
+    }
+}
+
+fn slow_voices(log: &Log) -> Voices {
+    let mut voices = Voices::new();
+    voices.insert(
+        Lang::Da,
+        Arc::new(SlowSynth {
+            log: Arc::clone(log),
+        }),
+    );
+    voices
+}
+
 fn announcer(
     name: &str,
     running: &[&str],
@@ -101,6 +131,7 @@ fn announcer(
         })),
         cache: Arc::new(TtsCache::new(dir.join("cache"), DEFAULT_TTL).unwrap()),
         voices,
+        slow_voices: slow_voices(&log),
         chimes: Chimes::write(&dir.join("chimes")).unwrap(),
     };
     (announcer, log)
@@ -176,6 +207,22 @@ async fn language_without_a_voice_is_an_error() {
         .unwrap_err();
     assert!(matches!(err, AnnounceError::NoVoice(Lang::En)));
     assert!(entries(&log).is_empty());
+}
+
+#[tokio::test]
+async fn a_slow_announcement_uses_the_slow_voice() {
+    let (a, log) = announcer("slow", &[], None, false);
+    a.speak(&Announcement::new("4, 7, 1", None).unwrap().slow())
+        .await
+        .unwrap();
+    a.speak(&Announcement::new("Hej", None).unwrap())
+        .await
+        .unwrap();
+    let synths: Vec<String> = entries(&log)
+        .into_iter()
+        .filter(|e| e.starts_with("synthesize"))
+        .collect();
+    assert_eq!(synths, ["synthesize slowly 4, 7, 1", "synthesize Hej"]);
 }
 
 #[test]

@@ -2553,7 +2553,10 @@ later, credentials) needs an admin token over HTTPS.
 **Decision 2: the first admin token comes from a spoken code** (decided with
 the user). The speaker has no screen or buttons, and the SD card should not be
 needed. So the speaker reads a 6-digit code aloud, in Danish, through the
-announcement queue (DEC-033): only someone in the room hears it. Until an admin
+announcement queue (DEC-033): only someone in the room hears it. The digits are
+read slowly, one at a time (espeak-ng at 140 words a minute with 600 ms between
+words, about 1.5 s a digit; ``"slow": true`` on the ``announce`` command), as
+the normal speed was too fast to write down. Until an admin
 token exists the speaker reads it after every start-up and repeats it, 8 s after
 each reading ends, until setup is completed. ``POST /api/setup {code, name}``
 exchanges the code for an admin token. Later, ``POST /api/setup/start`` asks
@@ -2621,7 +2624,10 @@ CamillaDSP over its localhost websocket (``SetVolume``, ``SetMute``) at start-up
 and on every change. CamillaDSP's statefile (``/data/camilladsp/statefile.yml``)
 restores the level if CamillaDSP restarts on its own.
 
-**Default**: the volume starts at the limit, 75 % (-15 dB).
+**Default**: the volume starts at the limit, 75 % (-15 dB). This is
+provisional: the speaker is a raw driver without its cabinet, so the default,
+the limit and the curve are set when it is in the cabinet, together with the
+DSP tuning (KDS-9jt.6).
 
 **Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
 an even curve in loudness. The limit caps the percentage: asking for more than
@@ -2738,3 +2744,33 @@ survives updates and there is one source of truth.
 (in Danish) "Forbind til netværket KidsSpeaker-xxxx for at sætte højttaleren
 op". The access point is open, as DEC-012 decided: only Wi-Fi credentials can be
 set through it, and they are only useful to someone in range.
+
+DEC-045 — The Web UI: Preact, TypeScript and Storybook
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_045
+   :status: resolved
+   :date: 2026-11-11
+   :tags: web, ui
+
+Decided with the user (wave 5, KDS-9pb review).
+
+**Decision 1: Preact and TypeScript, built in CI.** The Web UI is a small
+Preact app written in TypeScript and built with Vite in CI into static files.
+The API Server (Rust, unchanged) serves them at ``/`` over HTTPS; nothing is
+built or rendered on the Pi. This replaces the Leptos plan in the solution
+design, because the user wants a Storybook to validate the UI, and Storybook
+needs a JavaScript UI.
+
+**Decision 2: Storybook for validation.** Every screen and component has
+stories for its states (empty, playing, errors, setup, a child's device),
+rendered with mocked API data, so the UI can be checked in a browser without a
+speaker. CI builds the Storybook with every change; component tests run with
+Vitest.
+
+**Decision 3: from the design review.** Four tabs (Afspiller, Radio, Beskeder,
+Indstillinger). A child's device (a non-admin token) sees only the Player and
+Radio. Sharing access shows the token once with a Copy button and a QR code
+linking ``https://<hostname>.local/#token=...``; the URL fragment never reaches
+the server. Danish by default, English as an option (LOC_REQ_001).

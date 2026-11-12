@@ -6,6 +6,7 @@ pub mod setup;
 pub mod state;
 pub mod tls;
 pub mod transport;
+pub mod web;
 
 use axum::{
     routing::{get, post},
@@ -111,6 +112,12 @@ pub fn app(state: AppState) -> Router {
             auth::authenticate,
         ))
         .with_state(state)
+        // The Web UI (DEC-045): served without a token, outside the API.
+        .fallback_service(web::fallback(
+            std::env::var("KDS_WEB_DIR")
+                .map(Into::into)
+                .unwrap_or_else(|_| web::WEB_DIR.into()),
+        ))
 }
 
 /// The API as a process on the device sees it: over loopback HTTP, with full

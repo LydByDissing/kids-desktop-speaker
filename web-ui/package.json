@@ -1,0 +1,33 @@
+{
+  "name": "kids-speaker-web-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Kids Desktop Speaker's Web UI (DEC-045)",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build -o storybook-static",
+    "build-demo": "vite build --config vite.demo.config.ts && node scripts/demo-page.mjs"
+  },
+  "dependencies": {
+    "preact": "10.29.8",
+    "qrcode-generator": "1.5.2"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "2.10.6",
+    "@storybook/addon-essentials": "8.6.14",
+    "@storybook/preact": "8.6.19",
+    "@storybook/preact-vite": "8.6.19",
+    "@testing-library/preact": "3.2.6",
+    "@types/node": "22.20.5",
+    "jsdom": "26.1.0",
+    "storybook": "8.6.19",
+    "typescript": "5.9.3",
+    "vite": "6.4.6",
+    "vitest": "3.2.7"
+  }
+}

@@ -28,6 +28,27 @@ async fn test_health() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "ok");
     assert_eq!(json["version"], "0.1.0");
+    assert_eq!(json["set_up"], false, "a new speaker has no admin token");
+}
+
+#[tokio::test]
+async fn health_reports_when_the_speaker_is_set_up() {
+    let dir = std::env::temp_dir().join(format!("kds-health-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let state = api_server::state::AppState::with_run_dir(&dir);
+    state.tokens.create("parent", true).unwrap();
+    let response = api_server::local_app(state)
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["set_up"], true);
 }
 
 #[tokio::test]

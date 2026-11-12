@@ -1,2 +1,4 @@
 # Never send local secrets into a Docker build context.
 .env
+web-ui/node_modules
+web-ui/storybook-static

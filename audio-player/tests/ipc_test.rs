@@ -76,6 +76,23 @@ mod announce {
         };
         assert_eq!(queued.text, "Hello");
         assert_eq!(queued.lang, audio_player::announcer::Lang::En);
+        assert!(!queued.slow, "normal speed unless asked");
+    }
+
+    #[tokio::test]
+    async fn announce_can_ask_to_be_read_slowly() {
+        let (queue, mut rx) = AnnounceQueue::new();
+        let r = handle_with(
+            json!({"cmd": "announce", "text": "4, 7, 1", "slow": true}),
+            arb(),
+            Some(&queue),
+        )
+        .await;
+        assert_eq!(r, json!({"ok": true, "position": 1}));
+        let Some(audio_player::announcer::Item::Speech(queued)) = rx.recv().await else {
+            panic!("expected speech");
+        };
+        assert!(queued.slow);
     }
 
     #[tokio::test]
@@ -98,6 +115,10 @@ mod announce {
             (
                 json!({"cmd": "announce", "text": "Hej", "lang": "fr"}),
                 "language not enabled: fr",
+            ),
+            (
+                json!({"cmd": "announce", "text": "Hej", "slow": "yes"}),
+                "slow must be true or false",
             ),
         ] {
             let r = handle_with(request.clone(), arb(), Some(&queue)).await;

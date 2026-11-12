@@ -489,7 +489,14 @@ pub async fn handle_full(
                 Some(Value::String(lang)) => Some(lang.as_str()),
                 Some(_) => return error("lang must be a string"),
             };
-            match Announcement::new(text, lang).and_then(|a| queue.submit(a)) {
+            let slow = match request.get("slow") {
+                None | Some(Value::Null) => false,
+                Some(Value::Bool(slow)) => *slow,
+                Some(_) => return error("slow must be true or false"),
+            };
+            let announcement =
+                Announcement::new(text, lang).map(|a| if slow { a.slow() } else { a });
+            match announcement.and_then(|a| queue.submit(a)) {
                 Ok(position) => ok(json!({ "position": position })),
                 Err(e) => error(e),
             }

@@ -1,4 +1,6 @@
-use audio_player::announcer::{espeak_voices, AnnounceQueue, Announcer, Aplay, Chimes};
+use audio_player::announcer::{
+    espeak_voices, slow_espeak_voices, AnnounceQueue, Announcer, Aplay, Chimes,
+};
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{self, Radio, Services};
 use audio_player::manager::{ManagedSources, Supervision};
@@ -139,6 +141,7 @@ async fn main() -> anyhow::Result<()> {
                 sources: Arc::clone(&sources),
                 cache: Arc::new(cache),
                 voices: espeak_voices(),
+                slow_voices: slow_espeak_voices(),
                 chimes,
             })
         }

@@ -29,6 +29,37 @@ jobs:
       - run: ci/scripts/test-setup-sd.sh
       - run: ci/scripts/test-device-scripts.sh
 
+  web-ui:
+    name: Web UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run build-storybook
+      - run: npm run build-demo
+      # Download and open index.html, or serve the folder, to review the screens.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storybook
+          path: web-ui/storybook-static
+          retention-days: 30
+      # One HTML file: every scenario of the app against a pretend speaker.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-ui-review
+          path: web-ui/demo-dist/kids-speaker-ui.html
+          retention-days: 30
+
   cross-build:
     name: Cross-compile for ARMv6
     runs-on: ubuntu-latest

@@ -1,0 +1,110 @@
+/* Phone first, large touch targets, light and dark (DEC-045). */
+:root {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #1c2030;
+  --muted: #5f667a;
+  --line: #e2e5ee;
+  --accent: #1d4ed8;
+  --accent-text: #ffffff;
+  --accent-soft: #dbe5ff;
+  --danger: #b42318;
+  --radius: 14px;
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12141c;
+    --card: #1c2030;
+    --text: #eef0f6;
+    --muted: #a3a9bb;
+    --line: #2d3346;
+    --accent: #7aa2ff;
+    --accent-text: #0d1430;
+    --accent-soft: #263661;
+    --danger: #ff8a80;
+  }
+}
+:root[data-theme="light"] { color-scheme: light; }
+/* The same, when the page chooses dark itself (the review page does). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #12141c;
+  --card: #1c2030;
+  --text: #eef0f6;
+  --muted: #a3a9bb;
+  --line: #2d3346;
+  --accent: #7aa2ff;
+  --accent-text: #0d1430;
+  --accent-soft: #263661;
+  --danger: #ff8a80;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+.app { min-height: 100vh; }
+.screen { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 6rem; }
+h1 { font-size: 1.6rem; margin: 0.5rem 0 1rem; }
+h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin: 0.75rem 0; }
+.card h2 { margin-top: 0; }
+.narrow { max-width: 26rem; margin: 3rem auto; }
+.center { text-align: center; margin-top: 30vh; padding: 1rem; }
+.muted { color: var(--muted); }
+.small { font-size: 0.9rem; }
+.error { color: var(--danger); font-weight: 600; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+label.check { display: flex; gap: 0.5rem; align-items: center; font-weight: 400; }
+input, select { width: 100%; font: inherit; font-size: 1.05rem; padding: 0.7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); }
+input[type="checkbox"], input[type="radio"] { width: auto; }
+input[type="range"] { padding: 0; accent-color: var(--accent); }
+input.code { font-size: 2rem; letter-spacing: 0.6rem; text-align: center; font-variant-numeric: tabular-nums; }
+fieldset.inline { border: 0; padding: 0; margin: 0.75rem 0; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+fieldset.inline label { display: inline-flex; gap: 0.3rem; margin: 0; font-weight: 400; }
+
+button { font: inherit; font-size: 1.05rem; min-height: 44px; padding: 0.6rem 1rem; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); width: 100%; margin-top: 1rem; }
+button.link { background: none; border: 0; color: var(--accent); padding: 0.5rem; }
+button.danger, button.link.danger { color: var(--danger); }
+button.big { font-size: 2rem; width: 4.5rem; height: 4.5rem; border-radius: 50%; margin-top: 0.75rem; }
+.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.row .primary { width: auto; flex: 1; margin-top: 0; }
+
+.now-playing { text-align: center; padding: 1.5rem 1rem; }
+.now-playing .source { font-weight: 700; font-size: 1.2rem; margin: 0; }
+.now-playing .title { margin: 0.4rem 0 0; color: var(--muted); }
+.volume-row { display: flex; align-items: center; gap: 0.5rem; }
+.out-of-reach { height: 6px; border-radius: 3px; background: repeating-linear-gradient(45deg, var(--line), var(--line) 4px, transparent 4px, transparent 8px); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.6rem; }
+.tile { min-height: 4.5rem; font-weight: 700; }
+.tile.active { background: var(--accent-soft); border-color: var(--accent); }
+.chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.chip { border-radius: 999px; }
+
+.list { list-style: none; padding: 0; margin: 0; }
+.list > li { display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--line); padding: 0.25rem 0; }
+.list > li.stack { flex-direction: column; align-items: stretch; }
+.row-main { flex: 1; text-align: left; background: none; border: 0; padding: 0.6rem 0; }
+.episodes { list-style: none; padding: 0 0 0 1.25rem; margin: 0; }
+.badge { font-size: 0.75rem; background: var(--accent-soft); border-radius: 6px; padding: 0.1rem 0.4rem; }
+
+.recorder { text-align: center; }
+.record { font-size: 1.3rem; width: 100%; min-height: 4rem; background: var(--accent); color: var(--accent-text); border: 0; }
+.ring { width: 9rem; height: 9rem; display: block; margin: 0 auto; }
+.ring-bg { fill: none; stroke: var(--line); stroke-width: 8; }
+.ring-fg { fill: none; stroke: var(--danger); stroke-width: 8; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset 0.2s linear; }
+.ring text { font-size: 1.6rem; fill: var(--text); font-weight: 700; }
+audio { width: 100%; margin: 0.5rem 0; }
+
+.share { text-align: center; }
+.qr { width: 12rem; margin: 0.5rem auto; background: #fff; padding: 0.5rem; border-radius: 10px; }
+.qr svg { width: 100%; height: auto; display: block; }
+.token { display: block; word-break: break-all; font-size: 0.8rem; margin: 0.5rem 0; }
+
+.tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+.tab { flex: 1; border: 0; border-radius: 0; display: flex; flex-direction: column; align-items: center; gap: 0.1rem; font-size: 0.8rem; background: none; min-height: 3.5rem; }
+.tab.active { color: var(--accent); font-weight: 700; }
+.toast { position: fixed; left: 50%; bottom: 5rem; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 0.7rem 1rem; border-radius: 10px; max-width: 90vw; }

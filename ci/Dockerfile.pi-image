@@ -198,6 +198,8 @@ COPY ${BIN_DIR}/bluetooth-service /usr/local/bin/bluetooth-service
 # Wi-Fi onboarding: the setup access point and its portal (DEC-044).
 COPY ${BIN_DIR}/kds-wifi-setup /usr/local/bin/kds-wifi-setup
 COPY --chmod=755 ci/device/kds-setup-ap.sh /usr/local/bin/kds-setup-ap.sh
+# The Web UI, served by api-server at / (DEC-045). make -C ci web-ui builds it.
+COPY web-ui/dist/ /usr/share/kds/web/
 # Spotify Connect: librespot built from its pinned crates.io release by
 # make -C ci librespot (DEC-034); audio-player starts it.
 COPY ci/librespot/out/librespot /usr/bin/librespot

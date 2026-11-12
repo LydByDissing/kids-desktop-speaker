@@ -20,7 +20,7 @@ async fn read_aloud(state: &AppState, code: &str) -> Result<(), (StatusCode, Jso
     send(
         state,
         Service::AudioPlayer,
-        &json!({"cmd": "announce", "text": spoken(code), "lang": "da"}),
+        &json!({"cmd": "announce", "text": spoken(code), "lang": "da", "slow": true}),
     )
     .await
     .map(|_| ())

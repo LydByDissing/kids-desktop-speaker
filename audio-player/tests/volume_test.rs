@@ -32,8 +32,8 @@ fn the_limit_caps_the_volume() {
     let mut s = Settings::default();
     assert_eq!(
         (s.volume, s.limit),
-        (40, 75),
-        "defaults (FEAT_REQ_007: 75 %)"
+        (75, 75),
+        "the volume starts at the limit (FEAT_REQ_007: 75 %, DEC-040)"
     );
     assert_eq!(
         s.set_volume(90),

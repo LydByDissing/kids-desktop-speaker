@@ -283,6 +283,12 @@ require_executable /usr/local/bin/bluetooth-service
 ok "all service binaries present and executable"
 
 echo ""
+echo "--- Web UI ---"
+require_file /usr/share/kds/web/index.html
+ls /usr/share/kds/web/assets/*.js >/dev/null 2>&1 || fail "the Web UI has no scripts"
+ok "Web UI installed"
+
+echo ""
 echo "--- systemd Unit Files ---"
 require_file /etc/systemd/system/api-server.service
 require_file /etc/systemd/system/audio-player.service
