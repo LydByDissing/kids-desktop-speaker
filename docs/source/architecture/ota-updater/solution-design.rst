@@ -319,7 +319,7 @@ Open Questions
      The background download approach handles this, but we should show
      progress in the Web UI.
 
-     **Status (2026-11-11)**: Measured: about 456 MB (KDS-9jt.5 tracks trimming MPD); progress in the Web UI comes in wave 5 (KDS-apx.7).
+     **Status (2026-11-12)**: A dev bundle is 162 MB after trimming the image (DEC-047) and replacing MPD (DEC-048), from about 500 MB; release bundles are smaller still. The Web UI shows the update state live (DEC-046).
 
    - **First boot after OTA**: The ``rauc-mark-good.service`` needs to run
      on the first boot after an update. How do we distinguish "first boot

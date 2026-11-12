@@ -356,6 +356,9 @@ DEC-005 — Internet Radio & Podcast Backend
    :date: 2026-05-25
    :tags: audio, radio, podcast
 
+**Superseded by DEC-048 (2026-11-12)**: the Audio Player now plays radio and
+podcasts itself; MPD and its dependencies are gone from the image.
+
 **Decision**: Use **MPD** (Music Player Daemon) as a backend, controlled
 from the Audio Player via the MPD protocol.
 
@@ -2590,10 +2593,10 @@ was never told what played.
   ``paused``, ``stopped`` and ``session_disconnected`` are inactive).
 - Bluetooth: the Bluetooth Service watches BlueZ's ``MediaTransport1.State``
   (``active`` while the phone streams) and reports it.
-- Radio: the Audio Player starts MPD itself.
+- Radio: the Audio Player starts its stream player itself (DEC-048).
 
 **Decision 2: the newest wins, and the others are stopped the way each allows.**
-Radio: MPD stops. AirPlay and Spotify: the receiver is restarted, which ends
+Radio: the stream player stops. AirPlay and Spotify: the receiver is restarted, which ends
 the session (neither offers a "stop" a receiver can send). Bluetooth: the
 Bluetooth Service sends AVRCP Pause to the phone through BlueZ's
 ``MediaPlayer1`` (``avrcp {action}`` over IPC), so the phone shows it paused.
@@ -2858,6 +2861,37 @@ with 10 MB of release binaries instead of 100 MB, are smaller still.
 **Not now**: RAUC HTTP streaming would install from the URL without a local
 copy, and the kernel has what it needs (``nbd``, dm-verity), but Raspbian's
 RAUC 1.8 is built without streaming, so it would mean building and maintaining
-RAUC ourselves. The largest remaining part is MPD's dependencies (FFmpeg with
-video encoders, Samba, librsvg, codec2: about 80 MB), which is KDS-9jt.5.
+RAUC ourselves. The largest remaining part was MPD's dependencies (FFmpeg with
+video encoders, Samba, librsvg, codec2), removed with MPD in DEC-048.
+
+DEC-048 — Radio and Podcasts in the Audio Player, without MPD
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_048
+   :status: resolved
+   :date: 2026-11-12
+   :tags: audio, radio, podcast, image
+
+Decided with the user (KDS-9jt.5). Supersedes DEC_005.
+
+**Context**: Debian's ``mpd`` links every plugin's library, so it brought 144
+packages (~140 MB installed: Samba, FFmpeg with video encoders, codec2,
+librsvg, fonts, a soundfont, PipeWire) to play HTTP streams. A minimal MPD
+built in CI would have dropped ``.m4a`` podcast episodes (no MP4 demuxer
+without FFmpeg).
+
+**Decision**: the Audio Player plays radio and podcasts itself
+(``audio-player/src/stream/``): HTTP with ICY titles and ``Range`` seeks,
+symphonia (pure Rust) decoding MP3, AAC including ``.m4a``, Ogg Vorbis, FLAC
+and WAV, and ``aplay -D speaker`` as the output, as announcements use. The
+rest of the Audio Player sees the same operations it used on MPD (play, seek,
+pause, stop, status).
+
+**Measured on the Pi Zero W** (DR P1, 128 kbit/s MP3): 9.3 % CPU decoding plus
+4.3 % for aplay and 5 MB, against MPD's 12.3 % and 39 MB. Opus streams are not
+supported (symphonia has no Opus decoder); none of the default stations use it.
+
+**Consequences**: no MPD service, port 6600 or configuration; a live stream
+that drops reconnects 3 times; the image loses MPD's packages.
 

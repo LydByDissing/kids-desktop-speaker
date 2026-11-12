@@ -3,17 +3,17 @@
 
 use crate::announcer::{AnnounceQueue, Announcement};
 use crate::arbitrator::{Arbitrator, Source};
-use crate::mpd::{Mpd, PlayState};
 use crate::radio::StationStore;
+use crate::stream::{PlayState, Player};
 use kds_ipc::{command, error, ok};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Internet radio: the station list and the MPD that plays it.
+/// Internet radio: the station list and the player that plays it.
 pub struct Radio {
     pub stations: StationStore,
-    pub mpd: Mpd,
+    pub player: Player,
     /// The station last started, for status.
     pub current: std::sync::Mutex<Option<String>>,
 }
@@ -92,7 +92,7 @@ fn str_arg<'a>(request: &'a Value, name: &str) -> Result<&'a str, String> {
 
 async fn radio_status(radio: &Radio) -> Value {
     let station = radio.current.lock().ok().and_then(|c| c.clone());
-    match radio.mpd.status().await {
+    match radio.player.status().await {
         Ok(status) => {
             let state = match status.state {
                 PlayState::Play => "playing",
@@ -133,7 +133,7 @@ async fn handle_radio(
             "radio_play" => {
                 let station = radio.stations.get(str_arg(request, "id")?)?;
                 radio
-                    .mpd
+                    .player
                     .play_url(&station.url)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -152,7 +152,7 @@ async fn handle_radio(
                 Ok(json!({ "station": station }))
             }
             "radio_stop" => {
-                radio.mpd.stop().await.map_err(|e| e.to_string())?;
+                radio.player.stop().await.map_err(|e| e.to_string())?;
                 if let Ok(mut current) = radio.current.lock() {
                     *current = None;
                 }
@@ -251,18 +251,18 @@ async fn handle_remote(action: &str, arb: &Arc<Mutex<Arbitrator>>, services: &Se
             let Some(radio) = &services.radio else {
                 return error("radio unavailable");
             };
-            let state = radio.mpd.status().await.map(|s| s.state);
+            let state = radio.player.status().await.map(|s| s.state);
             match state {
-                Ok(PlayState::Play) => match radio.mpd.set_paused(true).await {
+                Ok(PlayState::Play) => match radio.player.set_paused(true).await {
                     Ok(()) => ok(json!({ "radio": "paused" })),
                     Err(e) => error(e),
                 },
-                Ok(PlayState::Pause) => match radio.mpd.set_paused(false).await {
+                Ok(PlayState::Pause) => match radio.player.set_paused(false).await {
                     Ok(()) => ok(json!({ "radio": "playing" })),
                     Err(e) => error(e),
                 },
                 _ => {
-                    // Nothing on MPD. Another source playing can't be paused
+                    // The player is idle. Another source playing can't be paused
                     // from here; otherwise start the first station.
                     if let Some(active) = arb.lock().await.active() {
                         return ok(json!({ "ignored": active.name() }));
@@ -404,7 +404,7 @@ pub async fn handle_full(
         }
         Some("stop_all") => {
             // The sleep timer (SLP_REQ_001): stop whatever plays, the way each
-            // source allows (DEC-039), and MPD in any case.
+            // source allows (DEC-039), and the player in any case.
             let playing: Vec<Source> = {
                 let a = arb.lock().await;
                 Source::ALL
@@ -423,7 +423,7 @@ pub async fn handle_full(
             }
             if !playing.contains(&Source::Radio) {
                 if let Some(radio) = &services.radio {
-                    let _ = radio.mpd.stop().await;
+                    let _ = radio.player.stop().await;
                 }
             }
             let mut a = arb.lock().await;

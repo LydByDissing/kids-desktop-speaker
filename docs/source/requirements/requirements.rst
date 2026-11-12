@@ -254,7 +254,7 @@ Software — Audio Streaming
    :status: open
    :tags: software, streaming, podcasts
 
-   The speaker shall play an episode through MPD (DEC_005) and remember how far
+   The speaker shall play an episode through its stream player (DEC-048) and remember how far
    it got, so playing it again continues there; an episode played to within a
    minute of its end starts from the beginning next time. Podcasts are a source
    like radio: one at a time (AUD_REQ_003), paused by announcements.

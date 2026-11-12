@@ -62,10 +62,17 @@ Decoding the live DR P3 stream (MP3, 128 kbit/s) over Wi-Fi.
    * - mpv 0.35
      - 23.3%
      - 49 MB
+   * - Stream player (symphonia + aplay, DEC-048, 2026-11-12)
+     - 9.3% + 4.3% aplay
+     - 5 MB
+   * - MPD 0.23.12 (speaker output, same day, for comparison)
+     - 12.3%
+     - 39 MB
 
 MPD takes 6.7 s to start on the Pi Zero W, so it is started at boot rather than
 when radio is selected. It reports the stream's metadata (the current
-programme) through its protocol. This confirms DEC_005.
+programme) through its protocol. This confirmed DEC_005; DEC-048 later replaced
+MPD with the Audio Player's own stream player (the row above).
 
 Streaming receivers
 -------------------

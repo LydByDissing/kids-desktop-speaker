@@ -4,10 +4,10 @@ use audio_player::announcer::{
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{self, Radio, Services};
 use audio_player::manager::{ManagedSources, Supervision};
-use audio_player::mpd::{Mpd, PlayState};
 use audio_player::podcasts::{PodcastStore, Podcasts, PODCASTS_DIR};
 use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
+use audio_player::stream::{PlayState, Player};
 use audio_player::switcher::{BtClient, DeviceStopper};
 use audio_player::volume::{Camilla, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
 use std::sync::Arc;
@@ -22,8 +22,6 @@ const TTS_CACHE_DIR: &str = "/data/tts-cache";
 const CHIME_DIR: &str = "/run/kds/chimes";
 /// Recorded voice messages, written by the API Server (DEC-037).
 const MESSAGES_DIR: &str = "/data/messages";
-/// MPD listens on localhost only (/etc/mpd.conf).
-const MPD_ADDR: &str = "127.0.0.1:6600";
 /// The shared output in /etc/asound.conf (DEC-033).
 const OUTPUT_DEVICE: &str = "speaker";
 const AUDIO_SOCKET: &str = "/run/kds/audio.sock";
@@ -61,17 +59,18 @@ async fn main() -> anyhow::Result<()> {
     let bluetooth_up = bluetooth.start_if_available().await;
     println!("audio-player: started as {name:?} (airplay: {airplay_up}, spotify: {spotify_up}, bluetooth: {bluetooth_up})");
 
-    // Internet radio through the MPD service (RAD_REQ_001, DEC_005).
-    let mpd = Mpd::new(MPD_ADDR);
+    // Internet radio and podcasts through the stream player (RAD_REQ_001,
+    // DEC-048), on the shared output like announcements.
+    let player = Player::aplay(OUTPUT_DEVICE);
     let radio = Arc::new(Radio {
         stations: StationStore::new(STATIONS_FILE),
-        mpd: mpd.clone(),
+        player: player.clone(),
         current: std::sync::Mutex::new(None),
     });
 
     let podcasts = Arc::new(Podcasts {
         store: PodcastStore::new(PODCASTS_DIR),
-        mpd: mpd.clone(),
+        player: player.clone(),
         current: std::sync::Mutex::new(None),
     });
     // Keep the listening position of a playing podcast episode (POD_REQ_002).
@@ -82,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
             every.tick().await;
             if saver.current().is_some()
                 && saver
-                    .mpd
+                    .player
                     .status()
                     .await
                     .is_ok_and(|s| s.state == PlayState::Play)
@@ -110,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let sources = Arc::new(Mutex::new(ManagedSources {
         managers: vec![airplay, spotify, bluetooth],
-        mpd: Some(mpd),
+        player: Some(player),
         bt: Some(bt.clone()),
     }));
     // When a source starts, the others stop (AUD_REQ_003, DEC-039).
