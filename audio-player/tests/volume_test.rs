@@ -3,7 +3,7 @@
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{handle_full, Services};
 use audio_player::volume::{
-    from_sender, lineout_step, sender_fraction, to_db, Camilla, Codec, Settings, Volume,
+    from_sender, lineout_step, sender_fraction, to_db, Camilla, Codec, Loudness, Settings, Volume,
     VolumeStore, LINEOUT_FULL,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -77,8 +77,15 @@ fn settings_are_kept_on_disk() {
     assert_eq!(store.load(), Settings::default());
 }
 
-/// A fake CamillaDSP websocket that records commands and answers Ok.
+/// A fake CamillaDSP websocket that records the volume commands and answers
+/// Ok. Its config has no loudness filter.
 async fn fake_camilla() -> (String, Arc<StdMutex<Vec<Value>>>) {
+    fake_camilla_with(json!({"filters": {}})).await
+}
+
+/// The same with `config` as the running config (GetConfigJson). Fader
+/// commands are recorded too.
+async fn fake_camilla_with(config: Value) -> (String, Arc<StdMutex<Vec<Value>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     let log: Arc<StdMutex<Vec<Value>>> = Arc::default();
@@ -87,13 +94,21 @@ async fn fake_camilla() -> (String, Arc<StdMutex<Vec<Value>>>) {
         loop {
             let (sock, _) = listener.accept().await.unwrap();
             let l = Arc::clone(&l);
+            let config = config.clone();
             tokio::spawn(async move {
                 let mut ws = tokio_tungstenite::accept_async(sock).await.unwrap();
                 while let Some(Ok(Message::Text(text))) = ws.next().await {
                     let command: Value = serde_json::from_str(text.as_str()).unwrap();
-                    let name = command.as_object().unwrap().keys().next().unwrap().clone();
-                    l.lock().unwrap().push(command);
-                    let reply = json!({ name: { "result": "Ok" } });
+                    let reply = match command.as_str() {
+                        Some(name) => {
+                            json!({ name: { "result": "Ok", "value": config.to_string() } })
+                        }
+                        None => {
+                            let name = command.as_object().unwrap().keys().next().unwrap().clone();
+                            l.lock().unwrap().push(command);
+                            json!({ name: { "result": "Ok" } })
+                        }
+                    };
                     ws.send(Message::Text(reply.to_string().into()))
                         .await
                         .unwrap();
@@ -111,6 +126,7 @@ fn volume(addr: &str, dir: &str) -> Arc<Volume> {
         store,
         camilla: Camilla { addr: addr.into() },
         codec: None,
+        loudness: Default::default(),
     })
 }
 
@@ -327,6 +343,7 @@ async fn the_volume_is_set_on_the_amplifier_with_camilla_at_0_db() {
         store,
         camilla: Camilla { addr },
         codec: Some(codec),
+        loudness: Default::default(),
     };
     v.set_volume(50).await.unwrap();
     assert_eq!(
@@ -355,10 +372,73 @@ async fn without_the_codec_camilla_plays_the_volume() {
         store,
         camilla: Camilla { addr },
         codec: Some(codec),
+        loudness: Default::default(),
     };
     v.set_volume(50).await.unwrap();
     assert_eq!(
         *log.lock().unwrap(),
         vec![json!({"SetVolume": -31.5}), json!({"SetMute": false})]
     );
+}
+
+/// The loudness filter as ci/device/camilladsp.yml has it.
+fn config_with_loudness() -> Value {
+    json!({"filters": {
+        "loudness": {"type": "Loudness", "parameters": {
+            "fader": "Aux1", "reference_level": -12.0, "low_boost": 8.0,
+            "high_boost": 2.0, "attenuate_mid": true}},
+        "subsonic": {"type": "BiquadCombo", "parameters": {}}
+    }})
+}
+
+#[test]
+fn the_mid_cut_follows_camillas_formula() {
+    let l = Loudness::from_config(&config_with_loudness()).unwrap();
+    assert_eq!(
+        l,
+        Loudness {
+            reference: -12.0,
+            max_boost: 8.0
+        }
+    );
+    assert_eq!(l.mid_cut(-6.0), 0.0, "above the reference: nothing");
+    assert_eq!(l.mid_cut(-22.0), 4.0, "10 dB below: half");
+    assert_eq!(l.mid_cut(-50.0), 8.0, "20 dB below and more: all of it");
+    assert_eq!(Loudness::from_config(&json!({"filters": {}})), None);
+}
+
+#[tokio::test]
+async fn loudness_follows_the_volume_and_the_amplifier_makes_up_the_mids() {
+    let (addr, log) = fake_camilla_with(config_with_loudness()).await;
+    let (codec, amixer_log) = fake_amixer("loudness", true);
+    let store = VolumeStore::new(temp_dir("loudness-store").join("volume.json"));
+    let v = Volume {
+        settings: StdMutex::new(store.load()),
+        store,
+        camilla: Camilla { addr },
+        codec: Some(codec),
+        loudness: Default::default(),
+    };
+    // 50 %: -31.5 dB, 19.5 dB below the reference: the mids are cut 7.8 dB,
+    // so the amplifier is at 63 - 31.5 + 7.8 = 39.3, step 39 (32 without).
+    v.set_volume(50).await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&amixer_log).unwrap(),
+        "-q -c IQaudIOCODEC cset name=Lineout Volume 39\n"
+    );
+    assert_eq!(
+        *log.lock().unwrap(),
+        vec![
+            json!({"SetFaderVolume": [1, -31.5]}),
+            json!({"SetVolume": 0.0}),
+            json!({"SetMute": false})
+        ],
+        "the loudness fader mirrors the volume; the main volume stays at 0 dB"
+    );
+    // 90 % (limit raised): -6.3 dB, above the reference, no cut: the plain
+    // mapping, 63 - 6.3 = step 57.
+    v.set_limit(100).await.unwrap();
+    v.set_volume(90).await.unwrap();
+    let last = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(last.ends_with("Lineout Volume 57\n"), "{last}");
 }

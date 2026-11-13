@@ -30,6 +30,42 @@ pub fn lineout_step(percent: u8) -> Option<u8> {
     })
 }
 
+/// CamillaDSP's loudness filter (DEC-051): it lifts the bass as the volume
+/// drops below `reference` by lowering the mids, by up to `max_boost` dB at
+/// 20 dB below. The Audio Player mirrors the volume into fader Aux1 for it and
+/// makes the mid cut up with the amplifier's analog gain.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Loudness {
+    pub reference: f64,
+    pub max_boost: f64,
+}
+
+impl Loudness {
+    /// How much the mids are lowered at `db`, as CamillaDSP computes it.
+    pub fn mid_cut(&self, db: f64) -> f64 {
+        ((self.reference - db) / 20.0).clamp(0.0, 1.0) * self.max_boost
+    }
+
+    /// The loudness filter in a CamillaDSP config (GetConfigJson), if any.
+    pub fn from_config(config: &Value) -> Option<Self> {
+        config["filters"].as_object()?.values().find_map(|filter| {
+            (filter["type"] == "Loudness" && filter["parameters"]["attenuate_mid"] == true).then(
+                || {
+                    let p = &filter["parameters"];
+                    let boost = |key: &str| p[key].as_f64().unwrap_or(0.0);
+                    Loudness {
+                        reference: p["reference_level"].as_f64().unwrap_or(0.0),
+                        max_boost: boost("low_boost").max(boost("high_boost")),
+                    }
+                },
+            )
+        })
+    }
+}
+
+/// CamillaDSP's fader that only the loudness filter reads.
+pub const LOUDNESS_FADER: usize = 1;
+
 /// The codec's line-out gain, set with amixer.
 #[derive(Debug, Clone)]
 pub struct Codec {
@@ -203,6 +239,17 @@ impl Camilla {
         };
         self.send(&commands).await.map(|_| ())
     }
+
+    /// The running config's loudness filter, if it has one.
+    pub async fn loudness(&self) -> Result<Option<Loudness>, String> {
+        let replies = self.send(&[json!("GetConfigJson")]).await?;
+        let text = replies
+            .first()
+            .and_then(|r| r["GetConfigJson"]["value"].as_str())
+            .ok_or("CamillaDSP sent no config")?;
+        let config: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        Ok(Loudness::from_config(&config))
+    }
 }
 
 /// The volume as the IPC commands see it.
@@ -211,6 +258,8 @@ pub struct Volume {
     pub camilla: Camilla,
     /// The amplifier's gain; None plays the volume through CamillaDSP.
     pub codec: Option<Codec>,
+    /// The loudness filter, read from CamillaDSP once it answers.
+    pub loudness: std::sync::Mutex<Option<Option<Loudness>>>,
     pub settings: std::sync::Mutex<Settings>,
 }
 
@@ -235,10 +284,30 @@ impl Volume {
         Ok((settings, self.apply(settings.volume).await.err()))
     }
 
+    /// The loudness filter, asking CamillaDSP the first time.
+    async fn loudness(&self) -> Option<Loudness> {
+        if let Some(known) = *self.loudness.lock().ok()? {
+            return known;
+        }
+        let found = self.camilla.loudness().await.ok()?;
+        if let Ok(mut cached) = self.loudness.lock() {
+            *cached = Some(found);
+        }
+        found
+    }
+
     /// Applies a volume: on the amplifier, with CamillaDSP at 0 dB, or on
-    /// CamillaDSP when the codec can't be set. 0 % mutes CamillaDSP.
+    /// CamillaDSP when the codec can't be set. 0 % mutes CamillaDSP. The
+    /// loudness filter's mid cut is made up with the same gain (DEC-051).
     pub async fn apply(&self, percent: u8) -> Result<(), String> {
-        let on_codec = match (&self.codec, lineout_step(percent)) {
+        let loudness = self.loudness().await;
+        let makeup = |db: f64| loudness.map(|l| l.mid_cut(db)).unwrap_or(0.0);
+        let step = to_db(percent).map(|db| {
+            (f64::from(LINEOUT_FULL) + db + makeup(db))
+                .round()
+                .clamp(0.0, f64::from(LINEOUT_MAX)) as u8
+        });
+        let on_codec = match (&self.codec, step) {
             (Some(codec), Some(step)) => match codec.set(step).await {
                 Ok(()) => true,
                 Err(e) => {
@@ -248,7 +317,20 @@ impl Volume {
             },
             _ => false,
         };
-        let db = to_db(percent).map(|db| if on_codec { 0.0 } else { db });
+        if let Some(db) = to_db(percent) {
+            if loudness.is_some() {
+                // Only the loudness filter reads this fader.
+                let fader = json!({"SetFaderVolume": [LOUDNESS_FADER, (db * 10.0).round() / 10.0]});
+                self.camilla.send(&[fader]).await?;
+            }
+        }
+        let db = to_db(percent).map(|db| {
+            if on_codec {
+                0.0
+            } else {
+                (db + makeup(db)).min(0.0)
+            }
+        });
         self.camilla.apply_db(db).await
     }
 

@@ -109,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
             addr: CAMILLA_ADDR.into(),
         },
         codec: Some(Codec::iqaudio()),
+        loudness: Default::default(),
     });
     let applier = Arc::clone(&volume);
     tokio::spawn(async move { applier.apply_when_ready().await });

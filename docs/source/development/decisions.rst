@@ -2970,8 +2970,8 @@ volume. If the codec can't be set (no HAT, the VM), CamillaDSP's volume takes
 over on the same 63 dB curve. If 1 dB steps turn out too coarse, CamillaDSP
 adds the steps in between.
 
-**Decision 2 (to implement with the voicing): how the bass boost avoids
-clipping without costing loudness.**
+**Decision 2: how the bass boost avoids clipping without costing loudness**
+(implemented in DEC-051).
 
 *It is not a resolution problem.* CamillaDSP calculates in 64-bit floating
 point, so nothing clips inside the pipeline, however large the boost; a signal
@@ -3000,4 +3000,59 @@ is, whatever the DSP does. So the plan is:
 
 The amounts (boost, high-pass, where the boost fades, ``LINEOUT_FULL``) come
 from voicing with the cabinet and a measurement microphone.
+
+DEC-051 — Bass for a Small Box: Static Fill, Dynamic Ducking, Loudness
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_051
+   :status: resolved
+   :date: 2026-11-13
+   :tags: audio, dsp
+
+Decided with the user (KDS-9jt.6). Implements DEC-050's plan.
+
+**Context**: the driver and box leave a large dip at 35-200 Hz. The amplifier
+gives only 1.3 W (the driver is efficient, over 90 dB SPL), so the bass must
+come up without lowering the speaker's maximum level, and it must never clip
+audibly. A static boost needs static headroom equal to the boost, which costs
+exactly that maximum level.
+
+**Decision**: CamillaDSP's pipeline (``ci/device/camilladsp.yml``), mono:
+
+1. **Subsonic high-pass** at 40 Hz (Butterworth, 6th order): nothing is spent
+   on bass the driver can't play.
+2. **Static fill**: a Linkwitz-Riley crossover at 150 Hz splits off the bass,
+   which gets +6 dB for the box's dip.
+3. **Bass ducking**: a compressor turns down only the bass, watching an
+   estimate of the summed signal (a low shelf of the same boost) and acting
+   when it would pass -4 dBFS. Loud passages keep their mids; the bass gives
+   way. It watches the signal 5 ms ahead of the audio (a delay on the audio
+   path), so it acts before a peak arrives.
+4. **Loudness** (equal-loudness contours): as the volume drops below -12 dB,
+   up to +8 dB bass and +2 dB treble relative to the mids, done by cutting the
+   mids (``attenuate_mid``) so no digital headroom is needed. The Audio Player
+   mirrors the volume into fader Aux1, which only this filter reads, reads the
+   filter's settings from the running config, and raises the amplifier's
+   analog gain by the mid cut (DEC-050).
+5. **Look-ahead limiter** (a compressor with a 5 ms look-ahead, -1.5 dBFS,
+   ratio 100) on everything, then a **clipper at -0.5 dBFS** that should never
+   act.
+
+CamillaDSP's compressor follows each sample's level in dB: a short release
+sags between the peaks of a bass note and lets peaks through, so both
+compressors hold with long releases (0.4 and 0.5 s) and attack fast (0.5 and
+0.2 ms), which the look-ahead makes safe.
+
+**Validated offline** (``make -C ci test-dsp``, also in CI): the config runs
+through the image's own CamillaDSP with test signals. Loud bass (80 Hz at -2
+dBFS) next to 1 kHz at -8 dBFS costs the mids 0.4 dB; full-scale bass and
+treble peak at -0.6 dBFS with the clipper never acting; loudness lifts the
+bass 6.2 dB relative to the mids 20 dB below the reference; 25 Hz is 18.5 dB
+down.
+
+**The values are placeholders** until the box is measured (crossover, boost,
+high-pass, loudness reference). Next: the analog clip point of the line-out at
+full scale, to set ``LINEOUT_FULL``; then psychoacoustic bass (harmonics of
+35-80 Hz) to aim higher.
 

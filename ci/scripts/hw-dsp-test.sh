@@ -6,9 +6,9 @@
 # Runs on the build host against the image installed on the Pi. Reads
 # CamillaDSP's meters through an SSH tunnel to its localhost websocket and plays
 # test tones into "speaker":
-#   - a -6 dBFS tone arrives at -6 dB and leaves lowered by the config's
-#     headroom (mono mix, no gain error)
-#   - a full-scale tone leaves under the -1 dBFS limit, with no clipped samples
+#   - a -6 dBFS 1 kHz tone arrives at -6 dB and leaves at -6 dB (mono mix,
+#     no gain error; the bass stages leave it alone, DEC-051)
+#   - a full-scale tone is held by the look-ahead limiter, with no clipped samples
 #   - the loopback's rate follows the HAT, and CamillaDSP keeps up
 # With KDS_AIRPLAY_SINK set (this host streams AirPlay through PipeWire), it
 # also checks that the sender's volume sets the speaker volume (DEC-049). With
@@ -81,22 +81,19 @@ check "it is processing" "$(value GetState)" Running
 check "its websocket is reachable only on localhost" "$(remote "ss -ltnH 'sport = :1234'" | awk '{print $4}' | sort -u | paste -sd,)" "127.0.0.1:1234"
 clipped_before=$(value GetClippedSamples)
 
-log "=== Levels (mono, headroom, limiter: KDS-9jt.6)"
-# The pipeline adds left and right (-6 dB each), cuts by the headroom in the
-# config and limits at -1 dBFS. The tones are the same on both channels, so
-# they keep their level through the mono mix.
-headroom=$(remote "sed -n 's/^ *headroom: {type: Gain, parameters: {gain: \(-\?[0-9.]*\)}}.*/\1/p' /etc/camilladsp/config.yml")
-check "the config has a headroom stage" "$([ -n "$headroom" ] && echo yes)" yes
-log "  headroom: ${headroom:-?} dB"
+log "=== Levels (DEC-051: 1 kHz passes the bass stages untouched)"
+# At 100 % the loudness filter does nothing, and a 1 kHz tone is in the
+# "rest" band: it leaves at its own level, and the look-ahead limiter holds
+# full scale just under its -1.5 dBFS threshold, before the -0.5 dBFS clipper.
 tone tone-6 -6 48000 6
 play_and_measure tone-6
 check "-6 dBFS arrives at -6 dB" "$(near "$CAP" -6 0.3)" yes
-check "-6 dBFS leaves lowered by the headroom" "$(near "$PLAY" "-6 + (${headroom:-0})" 0.3)" yes
+check "-6 dBFS leaves at -6 dB" "$(near "$PLAY" -6 0.5)" yes
 tone tone-0 0 44100 6
 play_and_measure tone-0
 check "full scale arrives at 0 dB (44.1 kHz converted)" "$(near "$CAP" 0 0.3)" yes
-check "full scale leaves lowered by the headroom, under the -1 dBFS limit" \
-    "$(near "$PLAY" "$(python3 -c "print(min(-1, ${headroom:-0}))")" 0.3)" yes
+check "full scale leaves held by the limiter, under -1 dBFS" "$(atmost "$PLAY" -1.0)" yes
+check "and not far under (-2 dBFS or more)" "$(atmost -2.0 "$PLAY")" yes
 check "no samples were clipped" "$CLIP" "$clipped_before"
 
 log "=== Timing"

@@ -49,17 +49,19 @@ log "=== Volume"
 r=$(api POST /api/audio/volume-limit '{"limit": 75}')
 r=$(api POST /api/audio/volume '{"volume": 50}')
 check "the API reports 50 % as -31.5 dB" "$(field "$r" db)" -31.5
-check "the amplifier is at step 32 (31 dB below full)" "$(lineout)" 32
+# Loudness (DEC-051) cuts the mids by 7.8 dB at 50 %; the amplifier makes it
+# up: 63 - 31.5 + 7.8 = step 39.
+check "the amplifier is at step 39" "$(lineout)" 39
 check "CamillaDSP stays at 0 dB" "$(near "$(value GetVolume)" 0 0.1)" yes
 check "and not muted" "$(value GetMute)" False
 
 log "=== The limit"
 r=$(api POST /api/audio/volume '{"volume": 95}')
 check "asking for 95 % gives the 75 % limit" "$(field "$r" volume)" 75
-check "the amplifier is at step 47" "$(lineout)" 47
+check "the amplifier is at step 49 (75 %: 63 - 15.75 + 1.5)" "$(lineout)" 49
 r=$(api POST /api/audio/volume-limit '{"limit": 40}')
 check "lowering the limit to 40 % lowers the volume" "$(field "$r" volume)" 40
-check "the amplifier is at step 25" "$(lineout)" 25
+check "the amplifier is at step 33 (40 %: 63 - 37.8 + 8)" "$(lineout)" 33
 
 log "=== It applies to the sound"
 python3 - "$WORK/tone.wav" <<'PY'
@@ -74,10 +76,9 @@ sleep 2.5
 cap=$(value GetCaptureSignalPeak); out=$(value GetPlaybackSignalPeak)
 wait
 log "  -6 dBFS tone at 40 %: in $cap dB, out $out dB"
-# The volume is analog now: the DAC gets the signal after the DSP's own gain
-# (mono mix, headroom), not lowered by the volume.
-headroom=$(remote "sed -n 's/^ *headroom: {type: Gain, parameters: {gain: \(-\?[0-9.]*\)}}.*/\1/p' /etc/camilladsp/config.yml")
-check "the DAC gets the tone at full digital level (less the headroom)" "$(near "$out" "-6 + (${headroom:-0})" 0.5)" yes
+# The volume is analog now: the DAC gets the tone at its own level, less the
+# loudness filter's 8 dB mid cut at 40 % (the amplifier makes that up).
+check "the DAC gets the tone at -6 dB less the 8 dB mid cut (-14 dB)" "$(near "$out" -14 0.7)" yes
 
 log "=== Mute"
 r=$(api POST /api/audio/volume '{"volume": 0}')
