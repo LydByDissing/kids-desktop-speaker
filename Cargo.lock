@@ -2544,7 +2544,6 @@ dependencies = [
 name = "wifi-setup"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "axum",
  "http-body-util",
  "kds-ipc",

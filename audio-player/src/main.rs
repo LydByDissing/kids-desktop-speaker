@@ -9,7 +9,7 @@ use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
 use audio_player::stream::{PlayState, Player};
 use audio_player::switcher::{BtClient, DeviceStopper};
-use audio_player::volume::{Camilla, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
+use audio_player::volume::{Camilla, Codec, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -99,8 +99,8 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // The device volume and limit (VOL_REQ_001, DEC-040), applied once
-    // CamillaDSP answers.
+    // The device volume and limit (VOL_REQ_001, DEC-040), on the HAT's
+    // amplifier (DEC-050), applied once CamillaDSP answers.
     let store = VolumeStore::new(VOLUME_FILE);
     let volume = Arc::new(Volume {
         settings: std::sync::Mutex::new(store.load()),
@@ -108,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         camilla: Camilla {
             addr: CAMILLA_ADDR.into(),
         },
+        codec: Some(Codec::iqaudio()),
     });
     let applier = Arc::clone(&volume);
     tokio::spawn(async move { applier.apply_when_ready().await });

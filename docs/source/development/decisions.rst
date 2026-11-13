@@ -2643,6 +2643,9 @@ provisional: the speaker is a raw driver without its cabinet, so the default,
 the limit and the curve are set when it is in the cabinet, together with the
 DSP tuning (KDS-9jt.6).
 
+**Superseded in part by DEC-050 (2026-11-13)**: the volume is now the HAT
+amplifier's analog gain over 63 dB, with CamillaDSP at 0 dB.
+
 **Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
 an even curve in loudness. The limit caps the percentage: asking for more than
 the limit gives the limit, and lowering the limit lowers a higher volume.
@@ -2945,4 +2948,56 @@ next source keeps. The Web UI's slider moves in 1 % steps.
 
 **Not yet**: the speaker's volume isn't sent back to the phone, so a phone's
 slider shows its own last value until it is moved.
+
+DEC-050 — Volume on the Amplifier; Headroom for the Bass Boost
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_050
+   :status: resolved
+   :date: 2026-11-13
+   :tags: audio, volume, dsp
+
+Decided with the user (KDS-9jt.6). Refines DEC-040.
+
+**Decision 1: the device volume is the amplifier's gain.** The amplifier is
+the DA7213 codec's line-out on the HAT; its ``Lineout Volume`` is an analog
+gain after the DAC, 0-63 in 1 dB steps (48 is 0 dB). The volume maps onto its
+whole range: 100 % is step 63 (``LINEOUT_FULL``, full output), each 1.6 % is
+about one step, 0 % mutes CamillaDSP. CamillaDSP's volume stays at 0 dB, so
+the DAC always gets the whole digital signal and its noise drops with the
+volume. If the codec can't be set (no HAT, the VM), CamillaDSP's volume takes
+over on the same 63 dB curve. If 1 dB steps turn out too coarse, CamillaDSP
+adds the steps in between.
+
+**Decision 2 (to implement with the voicing): how the bass boost avoids
+clipping without costing loudness.**
+
+*It is not a resolution problem.* CamillaDSP calculates in 64-bit floating
+point, so nothing clips inside the pipeline, however large the boost; a signal
+clips only where it is converted to the DAC's integers (S32_LE) and exceeds
+full scale. A 32-bit output has far more resolution than the DA7213's DAC
+(about 24 bits, ~100 dB). Cutting the digital level by 10 dB and making it up
+with the analog gain after the DAC costs at most those 10 dB of the DAC's
+signal-to-noise ratio (~90 dB left): measurable, not audible on this speaker.
+
+*What limits loudness is the amplifier's voltage swing.* A +10 dB bass boost
+on music that already peaks at full scale needs 10 dB more swing than there
+is, whatever the DSP does. So the plan is:
+
+1. **Headroom made up in analog**: the digital cut before the EQ equals its
+   largest boost; with the volume on the amplifier (Decision 1) the analog gain
+   makes it up, so the top of the volume range still reaches full output.
+2. **Loudness-style bass**: full boost at low and middle volume, fading
+   towards the top, so the loudest setting plays nearly flat at the
+   amplifier's full output. CamillaDSP's Loudness filter follows a fader; the
+   Audio Player sets that fader to mirror the volume (CamillaDSP's own volume
+   stays at 0 dB).
+3. **A high-pass below what the driver can play**, so no swing is spent on
+   bass the driver can't reproduce.
+4. **A compressor or soft limiter last**, so rare peaks are tamed instead of
+   forcing more static headroom.
+
+The amounts (boost, high-pass, where the boost fades, ``LINEOUT_FULL``) come
+from voicing with the cabinet and a measurement microphone.
 

@@ -3,7 +3,8 @@
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{handle_full, Services};
 use audio_player::volume::{
-    from_sender, sender_fraction, to_db, Camilla, Settings, Volume, VolumeStore,
+    from_sender, lineout_step, sender_fraction, to_db, Camilla, Codec, Settings, Volume,
+    VolumeStore, LINEOUT_FULL,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
@@ -23,9 +24,9 @@ fn temp_dir(name: &str) -> PathBuf {
 fn the_curve_is_even_in_db() {
     assert_eq!(to_db(0), None, "0 % mutes");
     assert_eq!(to_db(100), Some(0.0));
-    assert_eq!(to_db(50), Some(-30.0));
-    assert_eq!(to_db(75), Some(-15.0));
-    assert!((to_db(1).unwrap() + 59.4).abs() < 1e-9);
+    assert_eq!(to_db(50), Some(-31.5));
+    assert_eq!(to_db(75), Some(-15.75));
+    assert!((to_db(1).unwrap() + 62.37).abs() < 1e-9);
     assert_eq!(to_db(200), Some(0.0), "above 100 counts as 100");
 }
 
@@ -109,6 +110,7 @@ fn volume(addr: &str, dir: &str) -> Arc<Volume> {
         settings: StdMutex::new(store.load()),
         store,
         camilla: Camilla { addr: addr.into() },
+        codec: None,
     })
 }
 
@@ -121,7 +123,7 @@ async fn camilla_receives_the_level_or_a_mute() {
     assert_eq!(
         *log.lock().unwrap(),
         vec![
-            json!({"SetVolume": -30.0}),
+            json!({"SetVolume": -31.5}),
             json!({"SetMute": false}),
             json!({"SetMute": true})
         ]
@@ -142,7 +144,7 @@ async fn volume_over_ipc_is_capped_saved_and_applied() {
     let r = call(json!({"cmd": "set_volume", "volume": 90})).await;
     assert_eq!(
         r,
-        json!({"ok": true, "volume": 75, "limit": 75, "db": -15.0})
+        json!({"ok": true, "volume": 75, "limit": 75, "db": -15.8})
     );
     let r = call(json!({"cmd": "set_limit", "limit": 50})).await;
     assert_eq!(r["volume"], 50);
@@ -150,7 +152,7 @@ async fn volume_over_ipc_is_capped_saved_and_applied() {
         log.lock().unwrap().last().unwrap(),
         &json!({"SetMute": false})
     );
-    assert!(log.lock().unwrap().contains(&json!({"SetVolume": -30.0})));
+    assert!(log.lock().unwrap().contains(&json!({"SetVolume": -31.5})));
     assert_eq!(
         v.store.load(),
         Settings {
@@ -162,7 +164,7 @@ async fn volume_over_ipc_is_capped_saved_and_applied() {
     let r = call(json!({"cmd": "volume"})).await;
     assert_eq!(
         r,
-        json!({"ok": true, "volume": 50, "limit": 50, "db": -30.0})
+        json!({"ok": true, "volume": 50, "limit": 50, "db": -31.5})
     );
     for bad in [
         json!({"cmd": "set_volume", "volume": 150}),
@@ -264,10 +266,7 @@ async fn a_phone_changing_its_volume_sets_the_speaker_volume() {
     assert_eq!(r["ok"], true, "{r}");
     assert_eq!(r["volume"], 38);
     assert_eq!(v.store.load().volume, 38, "kept for the next source");
-    assert!(log
-        .lock()
-        .unwrap()
-        .contains(&json!({"SetVolume": -60.0 * (1.0 - 0.38)})));
+    assert!(log.lock().unwrap().contains(&json!({"SetVolume": -39.1})));
     // AirPlay all the way up: the limit.
     let r = call(json!({"cmd": "source_volume", "source": "airplay", "value": "0.00"})).await;
     assert_eq!(r["volume"], 75);
@@ -278,4 +277,88 @@ async fn a_phone_changing_its_volume_sets_the_speaker_volume() {
     ] {
         assert_eq!(call(bad.clone()).await["ok"], false, "{bad}");
     }
+}
+
+#[test]
+fn the_volume_maps_onto_the_amplifiers_steps() {
+    assert_eq!(lineout_step(0), None, "0 % mutes");
+    assert_eq!(
+        lineout_step(100),
+        Some(LINEOUT_FULL),
+        "100 % is full output"
+    );
+    assert_eq!(lineout_step(50), Some(32));
+    assert_eq!(lineout_step(1), Some(1));
+    // One dB per step: neighbouring volumes are at most one step apart.
+    for p in 1..100u8 {
+        let (a, b) = (lineout_step(p).unwrap(), lineout_step(p + 1).unwrap());
+        assert!(b >= a && b - a <= 1, "{p}: {a} -> {b}");
+    }
+}
+
+/// An amixer that records its arguments, or fails.
+fn fake_amixer(dir: &str, works: bool) -> (Codec, PathBuf) {
+    let dir = temp_dir(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("amixer.log");
+    let script = dir.join("amixer");
+    let body = if works {
+        format!("#!/bin/sh\necho \"$@\" >> {}\n", log.display())
+    } else {
+        "#!/bin/sh\nexit 1\n".to_string()
+    };
+    std::fs::write(&script, body).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let codec = Codec {
+        program: script.display().to_string(),
+        ..Codec::iqaudio()
+    };
+    (codec, log)
+}
+
+#[tokio::test]
+async fn the_volume_is_set_on_the_amplifier_with_camilla_at_0_db() {
+    let (addr, log) = fake_camilla().await;
+    let (codec, amixer_log) = fake_amixer("codec", true);
+    let store = VolumeStore::new(temp_dir("codec-store").join("volume.json"));
+    let v = Volume {
+        settings: StdMutex::new(store.load()),
+        store,
+        camilla: Camilla { addr },
+        codec: Some(codec),
+    };
+    v.set_volume(50).await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&amixer_log).unwrap(),
+        "-q -c IQaudIOCODEC cset name=Lineout Volume 32\n"
+    );
+    assert_eq!(
+        *log.lock().unwrap(),
+        vec![json!({"SetVolume": 0.0}), json!({"SetMute": false})],
+        "the DAC gets the whole signal"
+    );
+    v.set_volume(0).await.unwrap();
+    assert_eq!(
+        log.lock().unwrap().last().unwrap(),
+        &json!({"SetMute": true})
+    );
+}
+
+#[tokio::test]
+async fn without_the_codec_camilla_plays_the_volume() {
+    let (addr, log) = fake_camilla().await;
+    let (codec, _) = fake_amixer("nocodec", false);
+    let store = VolumeStore::new(temp_dir("nocodec-store").join("volume.json"));
+    let v = Volume {
+        settings: StdMutex::new(store.load()),
+        store,
+        camilla: Camilla { addr },
+        codec: Some(codec),
+    };
+    v.set_volume(50).await.unwrap();
+    assert_eq!(
+        *log.lock().unwrap(),
+        vec![json!({"SetVolume": -31.5}), json!({"SetMute": false})]
+    );
 }

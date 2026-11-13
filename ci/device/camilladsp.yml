@@ -10,8 +10,9 @@
 # makes room for the voicing EQ's bass boost, and a limiter just under full
 # scale stops clipping whatever the sources and their volumes do. The result
 # goes to both HAT channels; the codec's own mono mix is off (kds-hat-init).
-# The amplifier runs at full gain; the device volume (DEC-040) and the headroom
-# set the level. Tune live with make -C ci dsp-tune.
+# The device volume is the amplifier's analog gain (the codec's line-out,
+# DEC-050), so CamillaDSP's own volume stays at 0 dB and the analog gain makes
+# up the headroom. Tune live with make -C ci dsp-tune.
 title: Kids Desktop Speaker
 devices:
   samplerate: 48000

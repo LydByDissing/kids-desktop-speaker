@@ -455,7 +455,8 @@ Software — Features
    :tags: software, audio, parental
 
    The speaker shall have one device volume, 0-100 % (0 is muted), applied to
-   everything it plays, and a maximum volume
+   everything it plays as the amplifier's analog gain (ref DEC-050), and a
+   maximum volume
    (FEAT_REQ_007, 75 % by default) that the device volume can never exceed.
    Both shall survive restarts and updates. Anyone with a token may change the
    volume; only an admin token may change the maximum (ref DEC-040).

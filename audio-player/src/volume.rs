@@ -1,5 +1,8 @@
-//! The device volume and the volume limit, applied as CamillaDSP's main volume
-//! (VOL_REQ_001, FEAT_REQ_007, DEC-040).
+//! The device volume and the volume limit (VOL_REQ_001, FEAT_REQ_007,
+//! DEC-040), applied as the codec's analog line-out gain: the amplifier on the
+//! HAT (DEC-050). CamillaDSP stays at 0 dB, so the DAC always gets the whole
+//! digital signal. Without the codec (no HAT, the VM) CamillaDSP's volume
+//! takes over, on the same curve.
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -11,8 +14,60 @@ use tokio_tungstenite::tungstenite::Message;
 pub const VOLUME_FILE: &str = "/data/audio/volume.json";
 /// CamillaDSP's websocket, on localhost only (DEC-036).
 pub const CAMILLA_ADDR: &str = "127.0.0.1:1234";
-/// 1 % is this many dB below full; 100 % is 0 dB.
-pub const RANGE_DB: f64 = 60.0;
+/// 1 % is this many dB below full; 100 % is 0 dB: the line-out's whole range.
+pub const RANGE_DB: f64 = 63.0;
+/// The DA7213's "Lineout Volume": steps 0-63, one dB each, 48 is 0 dB.
+pub const LINEOUT_MAX: u8 = 63;
+/// The step 100 % plays at: the amplifier's full output (voicing may lower it).
+pub const LINEOUT_FULL: u8 = 63;
+
+/// The line-out step for a volume, or None for 0 % (muted).
+pub fn lineout_step(percent: u8) -> Option<u8> {
+    to_db(percent).map(|db| {
+        (f64::from(LINEOUT_FULL) + db)
+            .round()
+            .clamp(0.0, f64::from(LINEOUT_MAX)) as u8
+    })
+}
+
+/// The codec's line-out gain, set with amixer.
+#[derive(Debug, Clone)]
+pub struct Codec {
+    pub program: String,
+    pub card: String,
+    pub control: String,
+}
+
+impl Codec {
+    /// The IQaudIO Pi-Codec Zero (/etc/asound.conf, kds-hat-init).
+    pub fn iqaudio() -> Self {
+        Codec {
+            program: "amixer".into(),
+            card: "IQaudIOCODEC".into(),
+            control: "Lineout Volume".into(),
+        }
+    }
+
+    pub async fn set(&self, step: u8) -> Result<(), String> {
+        let status = tokio::process::Command::new(&self.program)
+            .args(["-q", "-c", &self.card, "cset"])
+            .arg(format!("name={}", self.control))
+            .arg(step.to_string())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map_err(|e| format!("{}: {e}", self.program))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{} could not set {}: {status}",
+                self.program, self.control
+            ))
+        }
+    }
+}
 
 /// The level in dB for a volume in percent, or None for 0 % (muted).
 pub fn to_db(percent: u8) -> Option<f64> {
@@ -133,9 +188,13 @@ impl Camilla {
             .map_err(|_| "CamillaDSP did not answer".to_string())?
     }
 
-    /// Applies a volume: muted at 0 %, otherwise the level in dB.
+    /// Sets CamillaDSP's volume: muted at 0 %, otherwise the level in dB.
     pub async fn apply(&self, percent: u8) -> Result<(), String> {
-        let commands = match to_db(percent) {
+        self.apply_db(to_db(percent)).await
+    }
+
+    async fn apply_db(&self, db: Option<f64>) -> Result<(), String> {
+        let commands = match db {
             None => vec![json!({"SetMute": true})],
             Some(db) => vec![
                 json!({"SetVolume": (db * 10.0).round() / 10.0}),
@@ -150,6 +209,8 @@ impl Camilla {
 pub struct Volume {
     pub store: VolumeStore,
     pub camilla: Camilla,
+    /// The amplifier's gain; None plays the volume through CamillaDSP.
+    pub codec: Option<Codec>,
     pub settings: std::sync::Mutex<Settings>,
 }
 
@@ -171,19 +232,36 @@ impl Volume {
         let settings = self.update(|s| {
             s.set_volume(volume);
         })?;
-        Ok((settings, self.camilla.apply(settings.volume).await.err()))
+        Ok((settings, self.apply(settings.volume).await.err()))
+    }
+
+    /// Applies a volume: on the amplifier, with CamillaDSP at 0 dB, or on
+    /// CamillaDSP when the codec can't be set. 0 % mutes CamillaDSP.
+    pub async fn apply(&self, percent: u8) -> Result<(), String> {
+        let on_codec = match (&self.codec, lineout_step(percent)) {
+            (Some(codec), Some(step)) => match codec.set(step).await {
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("audio-player: {e}; using CamillaDSP's volume");
+                    false
+                }
+            },
+            _ => false,
+        };
+        let db = to_db(percent).map(|db| if on_codec { 0.0 } else { db });
+        self.camilla.apply_db(db).await
     }
 
     pub async fn set_limit(&self, limit: u8) -> Result<(Settings, Option<String>), String> {
         let settings = self.update(|s| s.set_limit(limit))?;
-        Ok((settings, self.camilla.apply(settings.volume).await.err()))
+        Ok((settings, self.apply(settings.volume).await.err()))
     }
 
     /// Applies the saved volume, retrying until CamillaDSP answers.
     pub async fn apply_when_ready(&self) {
         let mut delay = Duration::from_secs(1);
         loop {
-            match self.camilla.apply(self.current().volume).await {
+            match self.apply(self.current().volume).await {
                 Ok(()) => return,
                 Err(_) => {
                     tokio::time::sleep(delay).await;
