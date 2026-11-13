@@ -321,7 +321,8 @@ impl Volume {
             if loudness.is_some() {
                 // Only the loudness filter reads this fader. "External" sets the
                 // fader's current value too: no Volume filter ramps it.
-                let fader = json!({"SetFaderExternalVolume": [LOUDNESS_FADER, (db * 10.0).round() / 10.0]});
+                let fader =
+                    json!({"SetFaderExternalVolume": [LOUDNESS_FADER, (db * 10.0).round() / 10.0]});
                 self.camilla.send(&[fader]).await?;
             }
         }
