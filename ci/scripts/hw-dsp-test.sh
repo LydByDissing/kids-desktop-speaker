@@ -111,10 +111,12 @@ if [ -n "${KDS_AIRPLAY_SINK:-}" ]; then
     node=$(wpctl status | grep -m1 -i "$(echo "$KDS_AIRPLAY_SINK" | sed -E 's/^raop_sink\.([^.]*).*/\1/')" | grep -oE '[0-9]+' | head -1)
     tone airplay -6 44100 40
     device_volume() { remote "curl -s http://127.0.0.1:8080/api/audio/volume" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volume"])'; }
-    wpctl set-volume "$node" 1.0
     pw-play --target "$KDS_AIRPLAY_SINK" "$WORK/airplay.wav" >/dev/null 2>&1 &
     sender=$!
-    sleep 12
+    # The session starts at the sink's previous volume; set it once it runs.
+    sleep 4
+    wpctl set-volume "$node" 1.0
+    sleep 8
     loud=$(value GetCaptureSignalPeak)
     at_full=$(device_volume)
     wpctl set-volume "$node" 0.5
