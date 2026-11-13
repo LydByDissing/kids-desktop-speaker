@@ -6,9 +6,14 @@ Camilladsp
    Superseded in part by DEC-033 and DEC-036 (2026-11-10): announcements pause
    the source instead of being mixed over it, so the pipeline is one stereo
    stream. All sources and the announcer write to ``speaker`` (a plug and a
-   dmix) into an ALSA loopback; CamillaDSP 4.1.3 reads the loopback, applies a
-   -1 dBFS limiter (EQ to come with tuning) and plays on the HAT, adjusting the
+   dmix) into an ALSA loopback; CamillaDSP 4.1.3 reads the loopback, runs the
+   mono bass pipeline of DEC-051 (subsonic filter, static fill, bass ducking,
+   loudness, look-ahead limiter) and plays on the HAT, adjusting the
    loopback's rate to the HAT's clock. Config: ``ci/device/camilladsp.yml``.
+   We build it from the pinned release plus our patches
+   (``ci/camilladsp/patches``): the **VirtualBass** filter (DEC-052) adds
+   harmonics of the 35-90 Hz bass at 90-300 Hz, on the bass path and the bass
+   compressor's side chain.
    The 6-channel design below is kept for reference.
 
 Software DSP engine for the Kids Desktop Speaker. Handles EQ, crossover, bass

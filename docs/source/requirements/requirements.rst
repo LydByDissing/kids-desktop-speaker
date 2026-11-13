@@ -273,7 +273,8 @@ Software — DSP
    The speaker has one driver: CamillaDSP shall mix left and right to mono
    before its EQ and limiter, keep headroom for the bass boost so nothing
    clips with the amplifier at full gain, and every source shall pass through
-   it (KDS-9jt.6).
+   it (KDS-9jt.6). Bass the box can't play shall be suggested by its harmonics
+   (virtual bass, DEC-052), without lowering the maximum level or clipping.
 
    Reference: https://github.com/HEnquist/camilladsp
 

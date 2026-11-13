@@ -215,9 +215,9 @@ legal-info: export-rootfs
 	tar -xzf $(LEGAL_DIR)/licenses.tar.gz -C $(LEGAL_DIR) licenses/packages.tsv
 	python3 scripts/collect-sources.py $(LEGAL_DIR)/licenses/packages.tsv $(LEGAL_DIR)/sources
 	# CamillaDSP (GPL-3.0) is built by us: its exact source is the release
-	# archive plus our Cargo.lock (DEC-036).
+	# archive plus our Cargo.lock (DEC-036) and our patches (DEC-052).
 	mkdir -p $(LEGAL_DIR)/sources/camilladsp
-	cp camilladsp/out/camilladsp-*.tar.gz camilladsp/out/camilladsp-*.Cargo.lock $(LEGAL_DIR)/sources/camilladsp/
+	cp camilladsp/out/camilladsp-*.tar.gz camilladsp/out/camilladsp-*.Cargo.lock camilladsp/out/camilladsp-*.patch $(LEGAL_DIR)/sources/camilladsp/
 	tar -C $(LEGAL_DIR) -cf $(LEGAL_DIR)/sources.tar sources
 	rm -rf $(LEGAL_DIR)/sources $(LEGAL_DIR)/licenses
 	@echo "==> legal-info: $$(ls $(LEGAL_DIR) | tr '\n' ' ')"

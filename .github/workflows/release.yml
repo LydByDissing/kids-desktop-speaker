@@ -188,7 +188,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ci/camilladsp/out
-          key: camilladsp-${{ hashFiles('ci/scripts/build-camilladsp.sh', 'ci/camilladsp/Cargo.lock', 'ci/cross-alsa/Dockerfile', 'ci/cross-alsa/Cross.toml') }}
+          key: camilladsp-${{ hashFiles('ci/scripts/build-camilladsp.sh', 'ci/camilladsp/Cargo.lock', 'ci/camilladsp/patches/**', 'ci/cross-alsa/Dockerfile', 'ci/cross-alsa/Cross.toml') }}
 
       - name: Build CamillaDSP
         run: make -C ci camilladsp
