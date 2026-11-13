@@ -3051,6 +3051,18 @@ treble peak at -0.6 dBFS with the clipper never acting; loudness lifts the
 bass 6.2 dB relative to the mids 20 dB below the reference; 25 Hz is 18.5 dB
 down.
 
+**Denormals (found on the Pi)**: after a mute, the filters get exact zeros
+and their states decay through subnormal numbers, which the Pi Zero's ARM1176
+FPU traps to slow kernel support code. With 13 biquads and two compressors a
+chunk then took 224 % of real time; the capture overran and CamillaDSP's
+recovery looped (overrun, stall, rate change, underrun) until it was
+restarted. More buffering can't help a pipeline slower than real time. A
+flat dither at the 32-bit floor (~-187 dBFS) as the first stage keeps every
+state above the subnormal range; the same mute sequence then gives no errors,
+and ``hw-volume-test`` checks it. Setting the FPU's flush-to-zero mode in our
+CamillaDSP patch set would do the same for free and is a candidate for
+upstream.
+
 **The values are placeholders** until the box is measured (crossover, boost,
 high-pass, loudness reference). Next: the analog clip point of the line-out at
 full scale, to set ``LINEOUT_FULL``; then psychoacoustic bass (harmonics of

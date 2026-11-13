@@ -9,9 +9,10 @@
 # driver, so everything is mono. The values are placeholders until the box is
 # measured; tune live with make -C ci dsp-tune.
 #
-#   mono ─┬─ bass:  subsonic HPF ─ LR4 low-pass ─ +6 dB ─ 5 ms delay ─ ducked ─┐
-#         ├─ rest:  LR4 high-pass ──────────────────────── 5 ms delay ─────────┼─ sum
-#         └─ watch: subsonic HPF ─ low shelf +6 dB (what the sum will be) ─────┘ (side chain)
+#   mono ─ dither ─┬─ bass:  subsonic HPF ─ LR4 low-pass ─ +6 dB ─ 5 ms delay ─ ducked ─┐
+#                  ├─ rest:  LR4 high-pass ──────────────────────── 5 ms delay ─────────┼─ sum
+#                  └─ watch: subsonic HPF ─ low shelf +6 dB (what the sum will be) ─────┘ (side chain)
+#   (the dither keeps the filters off subnormal numbers, see anti_denormal)
 #   sum ─ loudness (follows the volume, lowers the mids) ─┬─ 5 ms delay ─ limited ─ clipper ─ both HAT channels
 #                                                         └─ watch (side chain)
 #
@@ -75,6 +76,11 @@ mixers:
       - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
       - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
 filters:
+  # Keeps every filter state away from subnormal numbers, which the Pi Zero's
+  # ARM1176 FPU traps to slow software: after a mute (exact zeros), 13 biquads
+  # and two compressors decaying through them made a chunk take 224 % of real
+  # time and stalled CamillaDSP. Flat noise at the 32-bit floor, ~-187 dBFS.
+  anti_denormal: {type: Dither, parameters: {type: Flat, bits: 32, amplitude: 2.0}}
   # Below what the driver can play: no swing spent on it.
   subsonic: {type: BiquadCombo, parameters: {type: ButterworthHighpass, freq: 40, order: 6}}
   bass_band: {type: BiquadCombo, parameters: {type: LinkwitzRileyLowpass, freq: 150, order: 4}}
@@ -118,6 +124,7 @@ processors:
       makeup_gain: 0
 pipeline:
   - {type: Mixer, name: to_mono}
+  - {type: Filter, channels: [0], names: [anti_denormal]}
   - {type: Mixer, name: split_bass}
   - {type: Filter, channels: [0], names: [subsonic, bass_band, bass_boost, lookahead]}
   - {type: Filter, channels: [1], names: [rest_band, lookahead]}

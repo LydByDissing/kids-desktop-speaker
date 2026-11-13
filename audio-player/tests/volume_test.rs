@@ -429,7 +429,7 @@ async fn loudness_follows_the_volume_and_the_amplifier_makes_up_the_mids() {
     assert_eq!(
         *log.lock().unwrap(),
         vec![
-            json!({"SetFaderVolume": [1, -31.5]}),
+            json!({"SetFaderExternalVolume": [1, -31.5]}),
             json!({"SetVolume": 0.0}),
             json!({"SetMute": false})
         ],
