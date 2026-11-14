@@ -273,9 +273,26 @@ Software — DSP
    The speaker has one driver: CamillaDSP shall mix left and right to mono
    before its EQ and limiter, keep headroom for the bass boost so nothing
    clips with the amplifier at full gain, and every source shall pass through
-   it (KDS-9jt.6).
+   it (KDS-9jt.6). Bass the box can't play shall be suggested by its harmonics
+   (virtual bass, DEC-052), without lowering the maximum level or clipping.
 
    Reference: https://github.com/HEnquist/camilladsp
+
+.. req:: DSP_REQ_002
+   :id: DSP_REQ_002
+   :status: open
+   :tags: software, dsp, tooling
+
+   The box's frequency response shall be corrected towards a house curve kept
+   in the repository, from measurements made with Room EQ Wizard (REW). An
+   EQ fitted by REW shall be imported into the CamillaDSP config by one
+   command that refuses filters outside set limits (number of filters,
+   frequency band, Q, boost and cut, and the total boost of all filters
+   together), so an import can't overload the driver or fight the bass
+   processing. The EQ shall act on the mono signal before the bass split, so
+   the bass compressor's side chain sees it, and each import shall be kept in
+   the repository and testable offline and by A/B listening (DEC-054,
+   KDS-9jt.9).
 
 Software — User Interface
 -------------------------

@@ -6,10 +6,12 @@
 # CamillaDSP is GPL-3.0, so we build it from source and publish that source with
 # each release. This downloads the pinned release tag from GitHub, checks it
 # against the pinned SHA-256, adds our Cargo.lock (the tag ships none; ours pins
-# every dependency) and builds with cross for arm-unknown-linux-gnueabihf.
-# Output in ci/camilladsp/out: the binary, the exact source (upstream archive
-# plus Cargo.lock) for the release's source bundle, and the crate licences.
-# A stamp makes a rebuild a no-op, so CI can cache the output directory.
+# every dependency), applies our patches in ci/camilladsp/patches (in name
+# order; DEC-052) and builds with cross for arm-unknown-linux-gnueabihf.
+# Output in ci/camilladsp/out: the binary, the exact source (upstream archive,
+# Cargo.lock and patches) for the release's source bundle, and the crate
+# licences. A stamp makes a rebuild a no-op, so CI can cache the output
+# directory.
 
 set -euo pipefail
 
@@ -20,7 +22,12 @@ TARGET=arm-unknown-linux-gnueabihf
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 OUT="$REPO/ci/camilladsp/out"
 LOCK="$REPO/ci/camilladsp/Cargo.lock"
-STAMP="camilladsp $VERSION $SHA256 $(sha256sum "$LOCK" | cut -d' ' -f1) $TARGET"
+# Our changes to CamillaDSP, each exported from a commit in our fork (DEC-052).
+shopt -s nullglob
+PATCHES=("$REPO"/ci/camilladsp/patches/*.patch)
+shopt -u nullglob
+PATCH_SUMS=$(for p in "${PATCHES[@]}"; do sha256sum "$p" | cut -d' ' -f1; done | tr '\n' ' ')
+STAMP="camilladsp $VERSION $SHA256 $(sha256sum "$LOCK" | cut -d' ' -f1) $TARGET patches: $PATCH_SUMS"
 
 if [ -x "$OUT/camilladsp" ] && [ "$(cat "$OUT/stamp" 2>/dev/null)" = "$STAMP" ]; then
     echo "==> CamillaDSP $VERSION already built: $OUT/camilladsp"
@@ -38,6 +45,13 @@ echo "$SHA256  $ARCHIVE" | sha256sum -c --quiet - \
     || { echo "error: CamillaDSP $VERSION does not match the pinned SHA-256" >&2; exit 1; }
 tar -xzf "$ARCHIVE" -C "$SRC"
 cp "$LOCK" "$SRC/camilladsp-$VERSION/Cargo.lock"
+for p in "${PATCHES[@]}"; do
+    echo "==> Applying $(basename "$p")..."
+    patch -d "$SRC/camilladsp-$VERSION" -p1 --forward --quiet < "$p"
+done
+# Its own workspace: otherwise cargo looks further up for one and, in a git
+# worktree nested inside the repo, finds the main checkout's.
+printf '\n[workspace]\n' >> "$SRC/camilladsp-$VERSION/Cargo.toml"
 
 echo "==> Building the cross image..."
 docker build -q -t kds-cross-alsa:0.2.5 "$REPO/ci/cross-alsa" >/dev/null
@@ -53,8 +67,12 @@ cat LICENSE_GLPv3.txt LICENSE_MPL2.0.txt > "$OUT/LICENSE"
     cargo tree --locked --target "$TARGET" -e normal --prefix none --format $'{p}\t{l}' \
         | sed -E 's/ \(\*\)$//; s/^([^ ]+) v([^ \t]+)[^\t]*\t/\1\t\2\t/' | sort -u
 } > "$OUT/crates.tsv"
-# The corresponding source for the release (GPL-3.0): upstream archive + lockfile.
+# The corresponding source for the release (GPL-3.0): upstream archive +
+# lockfile + our patches.
 cp "$LOCK" "$OUT/camilladsp-$VERSION.Cargo.lock"
+for p in "${PATCHES[@]}"; do
+    cp "$p" "$OUT/camilladsp-$VERSION-$(basename "$p")"
+done
 echo "$STAMP" > "$OUT/stamp"
 rm -rf "$SRC"
 echo "==> Built $OUT/camilladsp ($(du -h "$OUT/camilladsp" | cut -f1))"

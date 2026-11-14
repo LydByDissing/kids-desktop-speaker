@@ -1,0 +1,16 @@
+* House curve for the Kids Desktop Speaker (DSP_REQ_002, DEC-054): REW target,
+* frequency (Hz) and level (dB). Flat through the mids; a steady roll-off below
+* 150 Hz that the bass fill and the virtual bass make up for (DEC-052/053), so
+* the EQ doesn't chase bass the box can't play; a slight treble tilt.
+20 -15
+35 -9
+50 -6
+70 -3.5
+100 -1.5
+150 0
+300 0
+1000 0
+3000 -0.5
+6000 -1
+10000 -2
+20000 -3

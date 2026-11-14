@@ -99,6 +99,11 @@ Endpoints
      - ``{"volume": 0-100}``; capped by the limit. Reply ``{"volume", "limit",
        "db"}`` (VOL_REQ_001).
    * - GET, POST
+     - ``/api/audio/bass``
+     - The bass fill over the volume (DEC-053): ``{"max_db", "top_db"}``,
+       ``top_db`` at 100 % and 1 dB more per dB of lower gain, up to
+       ``max_db``. POST needs an admin token over HTTPS.
+   * - GET, POST
      - ``/api/audio/volume-limit``
      - ``{"limit": 0-100}``; POST needs an admin token over HTTPS.
    * - POST

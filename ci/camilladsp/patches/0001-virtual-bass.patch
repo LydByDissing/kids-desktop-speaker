@@ -1,0 +1,655 @@
+From f2b929f45e383fc0ebcad6134e597048e43c3e65 Mon Sep 17 00:00:00 2001
+From: Tue Dissing <tsd@lydbydissing.com>
+Date: Fri, 13 Nov 2026 18:05:17 +0100
+Subject: [PATCH] Add a virtual bass filter for deep bass on small speakers
+
+Backport to 4.1.3 of the VirtualBass filter on the virtual-bass branch.
+Attack and release are in milliseconds here, as 4.1.3 has no time units.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CHANGELOG.md                |   4 +
+ README.md                   |  44 ++++
+ src/config/mod.rs           |  68 ++++++
+ src/config/utils.rs         |   3 +-
+ src/filters/mod.rs          |   4 +
+ src/filters/virtual_bass.rs | 416 ++++++++++++++++++++++++++++++++++++
+ src/pipeline.rs             |   3 +
+ 7 files changed, 541 insertions(+), 1 deletion(-)
+ create mode 100644 src/filters/virtual_bass.rs
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 6f15567..5af7514 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,3 +1,7 @@
++# Unreleased
++New features:
++- Add `VirtualBass` filter, for deep bass on small speakers.
++
+ # 4.1.3
+ Bugfixes:
+ - Increased capture ringbuffer sizes in CoreAudio, WASAPI, ASIO, and threaded ALSA
+diff --git a/README.md b/README.md
+index 09b9834..900d378 100644
+--- a/README.md
++++ b/README.md
+@@ -129,6 +129,7 @@ and the Mozilla Public License Version 2.0:
+    - **[IIR](#iir)**
+    - **[Dither](#dither)**
+    - **[Limiter](#limiter)**
++   - **[Virtual bass](#virtual-bass)**
+    - **[Difference equation](#difference-equation)**
+ - **[Processors](#processors)**
+    - **[Compressor](#compressor)**
+@@ -2377,6 +2378,49 @@ Parameters:
+   * `soft_clip`: enable soft clipping. Set to `false` to use hard clipping. Optional, defaults to `false`.
+   * `clip_limit`: the level in dB to clip at.
+ 
++### Virtual bass
++The "VirtualBass" filter makes deep bass audible on speakers that cannot play it,
++by adding harmonics of the bass.
++The ear hears the missing fundamental from its harmonics.
++
++The bass between `low_freq` and `high_freq` is divided by its own envelope and turned into
++2nd, 3rd and 4th harmonics by Chebyshev polynomials. Multiplying by the envelope again makes the
++harmonics follow the level of the bass, so they sound the same at any level.
++The harmonics are band-passed between `high_freq` and `harmonics_freq` and added to the signal.
++The signal itself passes unchanged, so a highpass filter is needed to remove the bass
++that the speaker cannot play.
++
++Example:
++```
++  example_virtual_bass:
++    type: VirtualBass
++    parameters:
++      low_freq: 35.0 (*)
++      high_freq: 90.0 (*)
++      harmonics_freq: 300.0 (*)
++      harmonic2: 1.0 (*)
++      harmonic3: 0.5 (*)
++      harmonic4: 0.25 (*)
++      gain: 0.0 (*)
++      attack: 2.0 (*)
++      release: 200.0 (*)
++```
++
++Parameters:
++  * `low_freq`: lowest frequency of the bass that harmonics are made from, in Hz. A second order
++    highpass. Optional, defaults to 35 Hz.
++  * `high_freq`: highest frequency of the bass that harmonics are made from, and lowest frequency
++    of the harmonics, in Hz. Fourth order lowpass and highpass. Optional, defaults to 90 Hz.
++  * `harmonics_freq`: highest frequency of the harmonics, in Hz. A second order lowpass.
++    Must be below half the samplerate. Optional, defaults to 300 Hz.
++  * `harmonic2`, `harmonic3`, `harmonic4`: the level of each harmonic relative to the bass,
++    0 to 10. Optional, default to 1.0, 0.5 and 0.25.
++  * `gain`: the level of the harmonics in dB, at most 20. Optional, defaults to 0 dB.
++  * `attack`: attack time of the envelope in milliseconds. Must be greater than or equal to 0.
++    Optional, defaults to 2 ms.
++  * `release`: release time of the envelope in milliseconds. Must be greater than 0.
++    Optional, defaults to 200 ms.
++
+ ### Difference equation
+ The "DiffEq" filter implements a generic difference equation filter with transfer function:
+ H(z) = (b0 + b1*z^-1 + .. + bn*z^-n)/(a0 + a1*z^-1 + .. + an*z^-n).
+diff --git a/src/config/mod.rs b/src/config/mod.rs
+index b466d01..4d3f63c 100644
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -1010,6 +1010,11 @@ pub enum Filter {
+         description: Option<String>,
+         parameters: LimiterParameters,
+     },
++    VirtualBass {
++        #[serde(default)]
++        description: Option<String>,
++        parameters: VirtualBassParameters,
++    },
+ }
+ 
+ #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+@@ -1591,6 +1596,69 @@ impl RACEParameters {
+     }
+ }
+ 
++/// Parameters for the virtual bass (missing fundamental) filter.
++/// Attack and release are in milliseconds.
++#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
++#[serde(deny_unknown_fields)]
++pub struct VirtualBassParameters {
++    #[serde(default)]
++    pub low_freq: Option<PrcFmt>,
++    #[serde(default)]
++    pub high_freq: Option<PrcFmt>,
++    #[serde(default)]
++    pub harmonics_freq: Option<PrcFmt>,
++    #[serde(default)]
++    pub harmonic2: Option<PrcFmt>,
++    #[serde(default)]
++    pub harmonic3: Option<PrcFmt>,
++    #[serde(default)]
++    pub harmonic4: Option<PrcFmt>,
++    #[serde(default)]
++    pub gain: Option<PrcFmt>,
++    #[serde(default)]
++    pub attack: Option<PrcFmt>,
++    #[serde(default)]
++    pub release: Option<PrcFmt>,
++}
++
++impl VirtualBassParameters {
++    pub fn low_freq(&self) -> PrcFmt {
++        self.low_freq.unwrap_or(35.0)
++    }
++
++    pub fn high_freq(&self) -> PrcFmt {
++        self.high_freq.unwrap_or(90.0)
++    }
++
++    pub fn harmonics_freq(&self) -> PrcFmt {
++        self.harmonics_freq.unwrap_or(300.0)
++    }
++
++    pub fn harmonic2(&self) -> PrcFmt {
++        self.harmonic2.unwrap_or(1.0)
++    }
++
++    pub fn harmonic3(&self) -> PrcFmt {
++        self.harmonic3.unwrap_or(0.5)
++    }
++
++    pub fn harmonic4(&self) -> PrcFmt {
++        self.harmonic4.unwrap_or(0.25)
++    }
++
++    pub fn gain(&self) -> PrcFmt {
++        self.gain.unwrap_or(0.0)
++    }
++
++    pub fn attack(&self) -> PrcFmt {
++        self.attack.unwrap_or(2.0)
++    }
++
++    pub fn release(&self) -> PrcFmt {
++        self.release.unwrap_or(200.0)
++    }
++}
++
+ #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+ #[serde(deny_unknown_fields)]
+ pub struct LimiterParameters {
+diff --git a/src/config/utils.rs b/src/config/utils.rs
+index cbd4098..db30361 100644
+--- a/src/config/utils.rs
++++ b/src/config/utils.rs
+@@ -461,7 +461,8 @@ pub fn config_diff(currentconf: &Configuration, newconf: &Configuration) -> Conf
+                     | (Filter::DiffEq { .. }, Filter::DiffEq { .. })
+                     | (Filter::Volume { .. }, Filter::Volume { .. })
+                     | (Filter::Loudness { .. }, Filter::Loudness { .. })
+-                    | (Filter::Limiter { .. }, Filter::Limiter { .. }) => {}
++                    | (Filter::Limiter { .. }, Filter::Limiter { .. })
++                    | (Filter::VirtualBass { .. }, Filter::VirtualBass { .. }) => {}
+                     _ => {
+                         // A filter changed type, need to rebuild the pipeline
+                         return ConfigChange::Pipeline;
+diff --git a/src/filters/mod.rs b/src/filters/mod.rs
+index 7acb1cb..a85161f 100644
+--- a/src/filters/mod.rs
++++ b/src/filters/mod.rs
+@@ -22,6 +22,7 @@ pub mod dither;
+ pub mod fftconv;
+ pub mod limiter;
+ pub mod loudness;
++pub mod virtual_bass;
+ 
+ use crate::config;
+ use crate::config::BinarySampleFormat;
+@@ -230,6 +231,9 @@ pub fn validate_filter(fs: usize, filter_config: &config::Filter) -> Res<()> {
+             biquadcombo::validate_config(fs, parameters)
+         }
+         config::Filter::Limiter { parameters, .. } => limiter::validate_config(parameters),
++        config::Filter::VirtualBass { parameters, .. } => {
++            virtual_bass::validate_config(fs, parameters)
++        }
+     }
+ }
+ 
+diff --git a/src/filters/virtual_bass.rs b/src/filters/virtual_bass.rs
+new file mode 100644
+index 0000000..d4573e6
+--- /dev/null
++++ b/src/filters/virtual_bass.rs
+@@ -0,0 +1,416 @@
++// CamillaDSP - A flexible tool for processing audio
++// Copyright (C) 2026 Henrik Enquist
++//
++// This file is part of CamillaDSP.
++//
++// CamillaDSP is free software; you can redistribute it and/or modify it
++// under the terms of either:
++//
++// a) the GNU General Public License version 3,
++//    or
++// b) the Mozilla Public License Version 2.0.
++//
++// You should have received copies of the GNU General Public License and the
++// Mozilla Public License along with this program. If not, see
++// <https://www.gnu.org/licenses/> and <https://www.mozilla.org/MPL/2.0/>.
++
++use crate::config;
++use crate::filters::Filter;
++use crate::filters::biquad::{Biquad, BiquadCoefficients};
++use crate::utils::decibels::db_to_linear;
++
++use crate::PrcFmt;
++use crate::Res;
++
++/// The Q values of a fourth order Butterworth filter.
++const BUTTERWORTH4_Q: [PrcFmt; 2] = [0.541_196_100_146_197, 1.306_562_964_876_376_6];
++/// Largest weight of a harmonic, relative to the bass it is made from.
++const MAX_WEIGHT: PrcFmt = 10.0;
++/// Largest level of the harmonics, relative to the bass they are made from.
++const MAX_GAIN: PrcFmt = 20.0;
++
++/// Adds harmonics of the deep bass, for speakers that cannot play the bass
++/// itself. The ear hears the missing fundamental from its harmonics.
++///
++/// The bass band is normalized by its own envelope and fed through Chebyshev
++/// polynomials, which turn a sine of amplitude one into pure 2nd, 3rd and 4th
++/// harmonics. Multiplying by the envelope again makes the harmonics follow the
++/// level of the bass, so the amount of harmonics does not depend on the level
++/// as it would with a plain waveshaper.
++pub struct VirtualBass {
++    pub name: String,
++    samplerate: usize,
++    /// Highpass at `low_freq`, then a fourth order lowpass at `high_freq`.
++    bass_band: [Biquad; 3],
++    /// Fourth order highpass at `high_freq`, then a lowpass at `harmonics_freq`.
++    harmonics_band: [Biquad; 3],
++    /// The weights of the 2nd, 3rd and 4th harmonic, including the gain.
++    weights: [PrcFmt; 3],
++    attack: PrcFmt,
++    release: PrcFmt,
++    envelope: PrcFmt,
++}
++
++/// The biquads of the bass band and the harmonics band.
++fn band_parameters(
++    conf: &config::VirtualBassParameters,
++) -> ([config::BiquadParameters; 3], [config::BiquadParameters; 3]) {
++    let highpass = |freq, q| config::BiquadParameters::Highpass { freq, q };
++    let lowpass = |freq, q| config::BiquadParameters::Lowpass { freq, q };
++    let butterworth2_q = std::f64::consts::FRAC_1_SQRT_2 as PrcFmt;
++    let bass = [
++        highpass(conf.low_freq(), butterworth2_q),
++        lowpass(conf.high_freq(), BUTTERWORTH4_Q[0]),
++        lowpass(conf.high_freq(), BUTTERWORTH4_Q[1]),
++    ];
++    let harmonics = [
++        highpass(conf.high_freq(), BUTTERWORTH4_Q[0]),
++        highpass(conf.high_freq(), BUTTERWORTH4_Q[1]),
++        lowpass(conf.harmonics_freq(), butterworth2_q),
++    ];
++    (bass, harmonics)
++}
++
++/// The weights of the harmonics, the attack and the release coefficient.
++fn shaper_parameters(
++    samplerate: usize,
++    conf: &config::VirtualBassParameters,
++) -> ([PrcFmt; 3], PrcFmt, PrcFmt) {
++    let gain = db_to_linear(conf.gain());
++    let weights = [
++        gain * conf.harmonic2(),
++        gain * conf.harmonic3(),
++        gain * conf.harmonic4(),
++    ];
++    let samples_per_ms = samplerate as PrcFmt / 1000.0;
++    let attack = (-1.0 / (conf.attack() * samples_per_ms)).exp();
++    let release = (-1.0 / (conf.release() * samples_per_ms)).exp();
++    (weights, attack, release)
++}
++
++impl VirtualBass {
++    pub fn from_config(name: &str, conf: config::VirtualBassParameters, samplerate: usize) -> Self {
++        let (bass, harmonics) = band_parameters(&conf);
++        let (weights, attack, release) = shaper_parameters(samplerate, &conf);
++        let biquad = |name, parameters| {
++            Biquad::new(
++                name,
++                samplerate,
++                BiquadCoefficients::from_config(samplerate, parameters),
++            )
++        };
++        debug!("Creating virtual bass '{name}', config: {conf:?}");
++        VirtualBass {
++            name: name.to_string(),
++            samplerate,
++            bass_band: bass.map(|p| biquad("bass_band", p)),
++            harmonics_band: harmonics.map(|p| biquad("harmonics_band", p)),
++            weights,
++            attack,
++            release,
++            envelope: 0.0,
++        }
++    }
++
++    /// The harmonics of one sample of the bass band.
++    fn harmonics(&mut self, bass: PrcFmt) -> PrcFmt {
++        let level = bass.abs();
++        let coeff = if level > self.envelope {
++            self.attack
++        } else {
++            self.release
++        };
++        self.envelope = level + coeff * (self.envelope - level);
++        if self.envelope <= 0.0 {
++            return 0.0;
++        }
++        // With a non-zero attack the envelope can trail the peaks.
++        let x = (bass / self.envelope).clamp(-1.0, 1.0);
++        let x2 = x * x;
++        let second = 2.0 * x2 - 1.0;
++        let third = x * (4.0 * x2 - 3.0);
++        let fourth = 8.0 * x2 * (x2 - 1.0) + 1.0;
++        self.envelope
++            * (self.weights[0] * second + self.weights[1] * third + self.weights[2] * fourth)
++    }
++
++    /// Flush stored subnormal numbers to zero.
++    fn flush_subnormals(&mut self) {
++        for stage in self
++            .bass_band
++            .iter_mut()
++            .chain(self.harmonics_band.iter_mut())
++        {
++            if stage.s1.is_subnormal() {
++                stage.s1 = 0.0;
++            }
++            if stage.s2.is_subnormal() {
++                stage.s2 = 0.0;
++            }
++        }
++        if self.envelope.is_subnormal() {
++            self.envelope = 0.0;
++        }
++    }
++}
++
++impl Filter for VirtualBass {
++    fn name(&self) -> &str {
++        &self.name
++    }
++
++    fn process_waveform(&mut self, waveform: &mut [PrcFmt]) -> Res<()> {
++        for item in waveform.iter_mut() {
++            let mut bass = *item;
++            for stage in self.bass_band.iter_mut() {
++                bass = stage.process_single(bass);
++            }
++            let mut harmonics = self.harmonics(bass);
++            for stage in self.harmonics_band.iter_mut() {
++                harmonics = stage.process_single(harmonics);
++            }
++            *item += harmonics;
++        }
++        self.flush_subnormals();
++        Ok(())
++    }
++
++    fn update_parameters(&mut self, conf: config::Filter) {
++        if let config::Filter::VirtualBass {
++            parameters: conf, ..
++        } = conf
++        {
++            let (bass, harmonics) = band_parameters(&conf);
++            let stages = self
++                .bass_band
++                .iter_mut()
++                .chain(self.harmonics_band.iter_mut());
++            for (stage, parameters) in stages.zip(bass.into_iter().chain(harmonics)) {
++                stage.update_parameters(config::Filter::Biquad {
++                    description: None,
++                    parameters,
++                });
++            }
++            (self.weights, self.attack, self.release) = shaper_parameters(self.samplerate, &conf);
++            debug!("Updated virtual bass '{}', config: {conf:?}", self.name);
++        } else {
++            // This should never happen unless there is a bug somewhere else
++            panic!("Invalid config change!");
++        }
++    }
++}
++
++/// Validate a VirtualBass config.
++pub fn validate_config(samplerate: usize, conf: &config::VirtualBassParameters) -> Res<()> {
++    if conf.low_freq() <= 0.0 {
++        return Err(config::ConfigError::new("Low freq must be > 0").into());
++    }
++    if conf.high_freq() <= conf.low_freq() {
++        return Err(config::ConfigError::new("High freq must be higher than low freq").into());
++    }
++    if conf.harmonics_freq() >= samplerate as PrcFmt / 2.0 {
++        return Err(config::ConfigError::new("Harmonics freq must be < samplerate/2").into());
++    }
++    if conf.harmonics_freq() <= conf.high_freq() {
++        return Err(
++            config::ConfigError::new("Harmonics freq must be higher than high freq").into(),
++        );
++    }
++    for weight in [conf.harmonic2(), conf.harmonic3(), conf.harmonic4()] {
++        if !(0.0..=MAX_WEIGHT).contains(&weight) {
++            let msg = format!("Harmonic weight must be between 0 and {MAX_WEIGHT:.0}");
++            return Err(config::ConfigError::new(&msg).into());
++        }
++    }
++    if conf.gain() > MAX_GAIN {
++        let msg = format!("Gain cannot be larger than {MAX_GAIN:.0}");
++        return Err(config::ConfigError::new(&msg).into());
++    }
++    if conf.attack() < 0.0 {
++        return Err(
++            config::ConfigError::new("Attack time must be greater than or equal to 0").into(),
++        );
++    }
++    if conf.release() <= 0.0 {
++        return Err(config::ConfigError::new("Release time must be greater than 0").into());
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::{VirtualBass, validate_config};
++    use crate::PrcFmt;
++    use crate::config::{Filter as FilterConfig, VirtualBassParameters};
++    use crate::filters::Filter;
++
++    const FS: usize = 48000;
++
++    fn params() -> VirtualBassParameters {
++        VirtualBassParameters {
++            low_freq: None,
++            high_freq: None,
++            harmonics_freq: None,
++            harmonic2: None,
++            harmonic3: None,
++            harmonic4: None,
++            gain: None,
++            attack: None,
++            release: None,
++        }
++    }
++
++    fn sine(freq: f64, amplitude: f64, seconds: f64) -> Vec<PrcFmt> {
++        (0..(seconds * FS as f64) as usize)
++            .map(|n| {
++                let t = n as f64 / FS as f64;
++                (amplitude * (2.0 * std::f64::consts::PI * freq * t).sin()) as PrcFmt
++            })
++            .collect()
++    }
++
++    /// Runs the signal through a new filter, in chunks as the pipeline does,
++    /// and returns what the filter added.
++    fn added(conf: VirtualBassParameters, input: &[PrcFmt]) -> Vec<f64> {
++        let mut filter = VirtualBass::from_config("vb", conf, FS);
++        let mut output = input.to_vec();
++        for chunk in output.chunks_mut(1024) {
++            filter.process_waveform(chunk).unwrap();
++        }
++        #[allow(clippy::unnecessary_cast)]
++        output
++            .iter()
++            .zip(input)
++            .map(|(out, inp)| (out - inp) as f64)
++            .collect()
++    }
++
++    /// The amplitude of `freq` in the last second of `signal`.
++    fn amplitude(signal: &[f64], freq: f64) -> f64 {
++        let tail = &signal[signal.len() - FS..];
++        let (mut re, mut im) = (0.0, 0.0);
++        for (n, value) in tail.iter().enumerate() {
++            let phase = 2.0 * std::f64::consts::PI * freq * n as f64 / FS as f64;
++            re += value * phase.cos();
++            im += value * phase.sin();
++        }
++        2.0 * (re * re + im * im).sqrt() / FS as f64
++    }
++
++    fn db(value: f64) -> f64 {
++        20.0 * value.log10()
++    }
++
++    #[test]
++    fn adds_harmonics_of_a_low_tone() {
++        let added = added(params(), &sine(50.0, 0.5, 2.0));
++        let second = db(amplitude(&added, 100.0) / 0.5);
++        let third = db(amplitude(&added, 150.0) / 0.5);
++        let fundamental = db(amplitude(&added, 50.0) / 0.5);
++        println!("2nd {second:.1} dB, 3rd {third:.1} dB, 50 Hz {fundamental:.1} dB");
++        assert!((-8.0..0.0).contains(&second));
++        assert!((-16.0..-4.0).contains(&third));
++        assert!(fundamental < -20.0);
++    }
++
++    #[test]
++    fn adds_nothing_above_the_harmonics() {
++        let added = added(params(), &sine(50.0, 0.5, 2.0));
++        for freq in [700.0, 1000.0, 2000.0, 5000.0] {
++            let level = db(amplitude(&added, freq) / 0.5);
++            println!("{freq} Hz: {level:.1} dB");
++            assert!(level < -50.0);
++        }
++    }
++
++    #[test]
++    fn leaves_a_tone_above_the_bass_alone() {
++        let added = added(params(), &sine(1000.0, 0.5, 2.0));
++        let peak = added[FS..].iter().fold(0.0_f64, |acc, v| acc.max(v.abs()));
++        println!("added peak {:.1} dB", db(peak / 0.5));
++        assert!(db(peak / 0.5) < -60.0);
++    }
++
++    #[test]
++    fn harmonics_follow_the_level() {
++        let loud = amplitude(&added(params(), &sine(50.0, 0.5, 2.0)), 100.0);
++        let quiet = amplitude(&added(params(), &sine(50.0, 0.05, 2.0)), 100.0);
++        let difference = db(loud / quiet);
++        println!("20 dB quieter bass, harmonics {difference:.2} dB quieter");
++        assert!((difference - 20.0).abs() < 0.5);
++    }
++
++    #[test]
++    fn gain_and_weights_scale_the_harmonics() {
++        let reference = added(params(), &sine(50.0, 0.5, 2.0));
++        let mut conf = params();
++        conf.gain = Some(-6.0);
++        conf.harmonic3 = Some(0.0);
++        let changed = added(conf, &sine(50.0, 0.5, 2.0));
++        let second = db(amplitude(&changed, 100.0) / amplitude(&reference, 100.0));
++        println!("2nd harmonic {second:.2} dB");
++        assert!((second + 6.0).abs() < 0.5);
++        assert!(amplitude(&changed, 150.0) < 0.01 * amplitude(&reference, 150.0));
++    }
++
++    #[test]
++    fn silence_and_subnormals_stay_silent() {
++        let mut filter = VirtualBass::from_config("vb", params(), FS);
++        let mut tone = sine(50.0, 0.5, 0.5);
++        for chunk in tone.chunks_mut(1024) {
++            filter.process_waveform(chunk).unwrap();
++        }
++        let mut quiet = vec![PrcFmt::MIN_POSITIVE / 4.0; 1024];
++        filter.process_waveform(&mut quiet).unwrap();
++        assert!(quiet.iter().all(|v| v.is_finite()));
++        // Long enough for the envelope and the filter states to die out.
++        let mut silence = vec![0.0; 1024];
++        for _ in 0..1000 {
++            silence.fill(0.0);
++            filter.process_waveform(&mut silence).unwrap();
++            assert!(silence.iter().all(|v| v.is_finite()));
++        }
++        assert!(silence.iter().all(|v| v.abs() < 1.0e-12));
++        // Nothing subnormal is carried into the next chunk.
++        assert!(!filter.envelope.is_subnormal());
++        for stage in filter.bass_band.iter().chain(filter.harmonics_band.iter()) {
++            assert!(!stage.s1.is_subnormal() && !stage.s2.is_subnormal());
++        }
++    }
++
++    #[test]
++    fn update_parameters_changes_the_harmonics() {
++        let mut filter = VirtualBass::from_config("vb", params(), FS);
++        let mut conf = params();
++        conf.gain = Some(-100.0);
++        filter.update_parameters(FilterConfig::VirtualBass {
++            description: None,
++            parameters: conf,
++        });
++        let input = sine(50.0, 0.5, 1.0);
++        let mut output = input.clone();
++        filter.process_waveform(&mut output).unwrap();
++        let peak = output
++            .iter()
++            .zip(&input)
++            .fold(0.0, |acc: PrcFmt, (o, i)| acc.max((o - i).abs()));
++        assert!(peak < 1.0e-4);
++    }
++
++    #[test]
++    fn validates_frequencies_and_weights() {
++        assert!(validate_config(FS, &params()).is_ok());
++        let mut conf = params();
++        conf.high_freq = Some(30.0);
++        assert!(validate_config(FS, &conf).is_err());
++        let mut conf = params();
++        conf.harmonics_freq = Some(24000.0);
++        assert!(validate_config(FS, &conf).is_err());
++        let mut conf = params();
++        conf.harmonic2 = Some(-1.0);
++        assert!(validate_config(FS, &conf).is_err());
++        let mut conf = params();
++        conf.release = Some(0.0);
++        assert!(validate_config(FS, &conf).is_err());
++    }
++}
+diff --git a/src/pipeline.rs b/src/pipeline.rs
+index 3b4d0c4..eb81605 100644
+--- a/src/pipeline.rs
++++ b/src/pipeline.rs
+@@ -96,6 +96,9 @@ impl FilterGroup {
+                 config::Filter::Limiter { parameters, .. } => {
+                     Box::new(filters::limiter::Limiter::from_config(name, parameters))
+                 }
++                config::Filter::VirtualBass { parameters, .. } => Box::new(
++                    filters::virtual_bass::VirtualBass::from_config(name, parameters, sample_freq),
++                ),
+             };
+             filters.push(filter);
+         }
+-- 
+2.51.0
+

@@ -26,6 +26,7 @@ jobs:
       - run: cargo test --workspace
       - run: python3 ci/scripts/test_clean_rootfs.py
       - run: python3 ci/scripts/test_collect_sources.py
+      - run: python3 ci/scripts/test_dsp_import_rew.py
       - run: ci/scripts/test-setup-sd.sh
       - run: ci/scripts/test-device-scripts.sh
 

@@ -84,3 +84,33 @@ pub async fn set_volume_limit(
     )?;
     volume_command(&state, json!({"cmd": "set_limit", "limit": body.limit})).await
 }
+
+/// The bass fill that follows the volume (DEC-053).
+pub async fn get_bass_fill(State(state): State<AppState>) -> ApiResult {
+    volume_command(&state, json!({"cmd": "bass_fill"})).await
+}
+
+#[derive(Deserialize)]
+pub struct BassFillBody {
+    pub max_db: Value,
+    pub top_db: Value,
+}
+
+/// Changes the bass fill curve: part of the voicing, so an admin token is
+/// needed, over HTTPS.
+pub async fn set_bass_fill(
+    State(state): State<AppState>,
+    principal: Option<axum::Extension<Principal>>,
+    transport: Option<axum::Extension<Transport>>,
+    Json(body): Json<BassFillBody>,
+) -> ApiResult {
+    ensure_admin(
+        principal.as_ref().map(|p| &p.0),
+        transport.as_ref().map(|t| &t.0),
+    )?;
+    volume_command(
+        &state,
+        json!({"cmd": "set_bass_fill", "max_db": body.max_db, "top_db": body.top_db}),
+    )
+    .await
+}

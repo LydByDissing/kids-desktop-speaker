@@ -32,6 +32,9 @@ for input in 'Aux Right' 'Mixin Right' 'Mixin Left'; do
     set_control "Mixout Right $input Switch" off
 done
 set_control 'Lineout Switch' on
+# The volume is the line-out's gain (DEC-050): ramp each step instead of
+# jumping, so volume changes don't click or zip.
+set_control 'Lineout Gain Ramping Switch' on
 # The amplifier's gain is the device volume (DEC-050): the Audio Player sets
 # it at start and on every change. 48 (0 dB) until then.
 set_control 'Lineout Volume' 48

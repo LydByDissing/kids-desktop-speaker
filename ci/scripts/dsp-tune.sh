@@ -6,9 +6,11 @@
 # Runs CamillaGUI here, connected to the speaker's CamillaDSP through an SSH
 # tunnel, so filters can be changed and heard at once. Open the printed URL,
 # edit the filters and press Apply: the speaker plays with the change right
-# away. Nothing on the speaker is saved: restarting CamillaDSP (or the speaker)
-# goes back to the image's config. To keep a tuning, save it in the GUI (it
-# lands in ci/dsp/work/configs/) and copy it to ci/device/camilladsp.yml.
+# away. Nothing on the speaker is saved: stopping the GUI (or restarting the
+# speaker) goes back to the installed config. To keep a tuning, save it in the
+# GUI (it lands in ci/dsp/work/configs/) and copy it to ci/device/camilladsp.yml.
+# CamillaGUI doesn't know our VirtualBass filter, so the speaker plays the
+# config without it while tuning (dsp-variant.sh no-vb).
 #
 # The GUI release matches the speaker's CamillaDSP (4.1.x) and is pinned by
 # SHA-256. CamillaDSP listens on the speaker's localhost only; the tunnel is
@@ -46,9 +48,18 @@ if [ "$(cat "$GUI/version" 2>/dev/null)" != "$VERSION $SHA256" ]; then
 fi
 
 mkdir -p "$WORK/configs" "$WORK/coeffs"
-# Start from the config the image ships, so the GUI shows what the speaker runs.
-[ -f "$WORK/configs/speaker.yml" ] || cp "$REPO/ci/device/camilladsp.yml" "$WORK/configs/speaker.yml"
-[ -f "$WORK/default_config.yml" ] || cp "$REPO/ci/device/camilladsp.yml" "$WORK/default_config.yml"
+# CamillaGUI only knows upstream's filter types, so our VirtualBass (DEC-052)
+# is left out while tuning: the speaker plays the no-vb variant, restored to
+# the installed config when the GUI stops.
+gui_config=installed
+if grep -q "type: VirtualBass" "$REPO/ci/device/camilladsp.yml"; then
+    gui_config=no-vb
+    echo "==> CamillaGUI doesn't know VirtualBass: playing variant no-vb while tuning."
+    bash "$REPO/ci/scripts/dsp-variant.sh" no-vb
+fi
+# Start from what the speaker plays, so the GUI shows it.
+python3 "$REPO/ci/scripts/dsp-variant.py" "$gui_config" > "$WORK/configs/speaker.yml"
+cp "$WORK/configs/speaker.yml" "$WORK/default_config.yml"
 cat > "$WORK/camillagui.yml" <<EOF
 ---
 camilla_host: "127.0.0.1"
@@ -72,7 +83,14 @@ EOF
 echo "==> Tunnelling localhost:$LOCAL_PORT to CamillaDSP on $PI_HOST..."
 ssh -N -o ExitOnForwardFailure=yes -L "$LOCAL_PORT:127.0.0.1:1234" "$PI_HOST" &
 tunnel=$!
-trap 'kill $tunnel 2>/dev/null' EXIT
+restore() {
+    kill $tunnel 2>/dev/null
+    if [ "$gui_config" != installed ]; then
+        echo "==> Back to the installed DSP config."
+        bash "$REPO/ci/scripts/dsp-variant.sh" installed || true
+    fi
+}
+trap restore EXIT
 sleep 2
 kill -0 "$tunnel" 2>/dev/null || { echo "error: the SSH tunnel did not start" >&2; exit 1; }
 

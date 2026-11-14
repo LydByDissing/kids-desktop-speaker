@@ -14,7 +14,7 @@
 #   - QEMU user-mode emulation (binfmt_misc for arm)
 #   - On GitHub Actions: docker/setup-qemu-action handles this automatically
 
-.PHONY: all build web-ui test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-sources-test hw-podcasts-test hw-volume-test hw-schedule-test hw-wifi-setup-test hw-web-test dsp-tune test-dsp hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
+.PHONY: all build web-ui test test-armv6 hw-test hw-ab-test hw-ota-test hw-wifi-test hw-announce-test hw-bluetooth-test hw-radio-test hw-dsp-test hw-https-test hw-messages-test hw-setup-test hw-sources-test hw-podcasts-test hw-volume-test hw-schedule-test hw-wifi-setup-test hw-web-test dsp-tune dsp-variant dsp-import-rew test-dsp hw-install librespot camilladsp vm-ab-test release setup-sd sd-image legal-info bundle export-rootfs clean cross-build vm-image vm smoke ci-test
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -150,6 +150,18 @@ hw-web-test:
 test-dsp:
 	@python3 scripts/test-dsp-config.py ../ci/device/camilladsp.yml $(IMAGE_NAME):$(IMAGE_TAG)
 
+## dsp-import-rew — Import a box EQ fitted by REW, within limits, then test it offline (DEC-054): make dsp-import-rew FILE=rew-eq.txt
+EQ_LIMITS ?=
+dsp-import-rew:
+	@test -n "$(FILE)" || { echo "usage: make dsp-import-rew FILE=rew-eq.txt [EQ_LIMITS='--max-filters 8']" >&2; exit 2; }
+	@python3 scripts/dsp-import-rew.py $(EQ_LIMITS) --relative-to .. "$(FILE)"
+	@$(MAKE) --no-print-directory test-dsp
+	@echo "==> Listen: make dsp-variant PI_HOST=... VARIANT=repo (with the EQ) or VARIANT=no-eq; commit ci/voicing/rew-export.txt with the config."
+
+## dsp-variant — Switch the speaker's DSP live for A/B listening: make dsp-variant PI_HOST=root@host VARIANT=no-vb
+dsp-variant:
+	@PI_HOST=$(PI_HOST) bash scripts/dsp-variant.sh $(VARIANT)
+
 ## dsp-tune — Tune the speaker's DSP live with CamillaGUI on this computer: make dsp-tune PI_HOST=root@host
 dsp-tune:
 	@PI_HOST=$(PI_HOST) bash scripts/dsp-tune.sh
@@ -215,9 +227,9 @@ legal-info: export-rootfs
 	tar -xzf $(LEGAL_DIR)/licenses.tar.gz -C $(LEGAL_DIR) licenses/packages.tsv
 	python3 scripts/collect-sources.py $(LEGAL_DIR)/licenses/packages.tsv $(LEGAL_DIR)/sources
 	# CamillaDSP (GPL-3.0) is built by us: its exact source is the release
-	# archive plus our Cargo.lock (DEC-036).
+	# archive plus our Cargo.lock (DEC-036) and our patches (DEC-052).
 	mkdir -p $(LEGAL_DIR)/sources/camilladsp
-	cp camilladsp/out/camilladsp-*.tar.gz camilladsp/out/camilladsp-*.Cargo.lock $(LEGAL_DIR)/sources/camilladsp/
+	cp camilladsp/out/camilladsp-*.tar.gz camilladsp/out/camilladsp-*.Cargo.lock camilladsp/out/camilladsp-*.patch $(LEGAL_DIR)/sources/camilladsp/
 	tar -C $(LEGAL_DIR) -cf $(LEGAL_DIR)/sources.tar sources
 	rm -rf $(LEGAL_DIR)/sources $(LEGAL_DIR)/licenses
 	@echo "==> legal-info: $$(ls $(LEGAL_DIR) | tr '\n' ' ')"

@@ -2644,7 +2644,8 @@ the limit and the curve are set when it is in the cabinet, together with the
 DSP tuning (KDS-9jt.6).
 
 **Superseded in part by DEC-050 (2026-11-13)**: the volume is now the HAT
-amplifier's analog gain over 63 dB, with CamillaDSP at 0 dB.
+amplifier's analog gain over 63 dB, with CamillaDSP at 0 dB. 0 % is the codec's soft mute, and its
+line-out ramps each gain step (no clicks).
 
 **Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
 an even curve in loudness. The limit caps the percentage: asking for more than
@@ -2964,7 +2965,9 @@ Decided with the user (KDS-9jt.6). Refines DEC-040.
 the DA7213 codec's line-out on the HAT; its ``Lineout Volume`` is an analog
 gain after the DAC, 0-63 in 1 dB steps (48 is 0 dB). The volume maps onto its
 whole range: 100 % is step 63 (``LINEOUT_FULL``, full output), each 1.6 % is
-about one step, 0 % mutes CamillaDSP. CamillaDSP's volume stays at 0 dB, so
+about one step. 0 % is the codec's soft mute (``DAC Soft Mute Switch``, a
+ramp instead of a click), and the line-out ramps each gain step (``Lineout Gain
+Ramping Switch``, set by ``kds-hat-init``). CamillaDSP's volume stays at 0 dB, so
 the DAC always gets the whole digital signal and its noise drops with the
 volume. If the codec can't be set (no HAT, the VM), CamillaDSP's volume takes
 over on the same 63 dB curve. If 1 dB steps turn out too coarse, CamillaDSP
@@ -3051,20 +3054,270 @@ treble peak at -0.6 dBFS with the clipper never acting; loudness lifts the
 bass 6.2 dB relative to the mids 20 dB below the reference; 25 Hz is 18.5 dB
 down.
 
-**Denormals (found on the Pi)**: after a mute, the filters get exact zeros
-and their states decay through subnormal numbers, which the Pi Zero's ARM1176
-FPU traps to slow kernel support code. With 13 biquads and two compressors a
-chunk then took 224 % of real time; the capture overran and CamillaDSP's
-recovery looped (overrun, stall, rate change, underrun) until it was
-restarted. More buffering can't help a pipeline slower than real time. A
-flat dither at the 32-bit floor (~-187 dBFS) as the first stage keeps every
-state above the subnormal range; the same mute sequence then gives no errors,
-and ``hw-volume-test`` checks it. Setting the FPU's flush-to-zero mode in our
-CamillaDSP patch set would do the same for free and is a candidate for
-upstream.
+**Stalls after a mute (found on the Pi)**: CamillaDSP sometimes fell into an
+overrun, stall and underrun loop after a mute, with chunks taking up to 287 %
+of real time. Two things combined:
+
+- The Audio Player set the loudness fader with ``SetFaderVolume``, which only
+  moves a fader's target (a Volume filter ramps its current value, and there
+  is none for Aux1). It now uses ``SetFaderExternalVolume``, meant for an
+  external volume; with that alone the mute sequence runs clean.
+- Subnormal numbers: CamillaDSP flushes biquad states at the end of each
+  chunk once they *are* subnormal, so a slowly decaying state computes with
+  subnormals for the rest of that chunk. The Pi Zero's ARM1176 traps every such
+  operation to software.
+
+Fixes compared on the Pi with the old fader commands as a reliable trigger
+(two runs each, idle CPU of CamillaDSP):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Fix
+     - Errors
+     - CPU
+   * - none
+     - 10, 7
+     - 24 %
+   * - dither at the input (-187 dBFS)
+     - 0, 0
+     - 26 %
+   * - FPU flush-to-zero in the processing threads (hardware)
+     - 5, 5
+     - 24 %
+   * - flush biquad states below 1e-20 at chunk end
+     - 0, 0
+     - 24 %
+
+The last is used: ``ci/camilladsp/patches/0002-flush-small-biquad-states.patch``
+changes CamillaDSP's existing flush to act before a state can reach the
+subnormal range, with a unit test that fails without it. It costs nothing and
+adds no noise; the hardware flush-to-zero did not catch every case on this
+CPU. It is a small bug fix for upstream (ask which branch first, as their
+contribution guide says).
 
 **The values are placeholders** until the box is measured (crossover, boost,
 high-pass, loudness reference). Next: the analog clip point of the line-out at
 full scale, to set ``LINEOUT_FULL``; then psychoacoustic bass (harmonics of
-35-80 Hz) to aim higher.
+35-80 Hz) to aim higher (DEC-052).
+
+DEC-052 — Virtual Bass: Harmonics of the Deep Bass, in Our CamillaDSP Build
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_052
+   :status: resolved
+   :date: 2026-11-13
+   :tags: audio, dsp, licensing
+
+Decided with the user (KDS-9jt.7, related to KDS-9jt.6). Builds on DEC-051.
+
+**Context**: the box can't play 35-90 Hz at any useful level, and boosting it
+costs the swing the 1.3 W amplifier doesn't have (DEC-050). The ear hears a
+missing fundamental from its harmonics, so harmonics of the deep bass, played
+where the driver is efficient (about 90-300 Hz), sound like deeper bass at a
+level the speaker can reach. CamillaDSP has no such filter.
+
+**Decision 1: a VirtualBass filter in CamillaDSP.** Per sample, on one
+channel:
+
+1. The **bass band**: a 2nd order Butterworth high-pass at ``low_freq``
+   (35 Hz) and a 4th order Butterworth low-pass at ``high_freq`` (90 Hz).
+2. An **envelope** of the band (peak follower, ``attack`` 2 ms,
+   ``release`` 200 ms).
+3. **Harmonics**: the band divided by its envelope is a sine of amplitude
+   one for a steady tone; Chebyshev polynomials turn that into pure 2nd, 3rd
+   and 4th harmonics (weights ``harmonic2/3/4``, 1.0, 0.5, 0.25: the 2nd
+   sounds most natural). Multiplying by the envelope again makes the
+   harmonics follow the bass's level: their amount doesn't change with the
+   level as a plain waveshaper's would, and no deep bass means no harmonics.
+4. The harmonics are **band-passed** from ``high_freq`` (4th order high-pass)
+   to ``harmonics_freq`` (300 Hz, 2nd order low-pass), scaled by ``gain``
+   (dB, relative to the bass they come from) and added to the signal, which
+   itself passes unchanged.
+
+Six biquads, a division and a polynomial per sample: no allocation, no
+look-ahead, no latency. ``camilladsp --check`` validates the parameters
+(frequencies in order and below Nyquist, weights 0-10, gain at most 20 dB,
+attack >= 0, release > 0).
+
+**Decision 2: in the pipeline** (``ci/device/camilladsp.yml``): on the bass
+path after the static +6 dB, and on the bass compressor's side chain after
+its low shelf, so the side chain sees the same harmonics and ducks them with
+the bass; loud bass doesn't push the limiter into the mids. The subsonic
+high-pass stays on the bass. Placeholder amount: ``gain: -6`` (relative to the
+boosted bass), the default band and weights, until listening tests.
+
+**Decision 3: developed as an upstream contribution.** The filter lives in a
+fork of HEnquist/camilladsp, https://github.com/LydByDissing/camilladsp-1
+(``gh repo fork`` named it ``-1``; the org's older fork ``camilladsp`` lags
+upstream, and the token can't push branches that update its workflow files):
+
+- branch ``virtual-bass`` (commit ``14a8256``) on upstream's ``next5``, which
+  upstream PRs target: config type and validation in ``camilladsp-schema``,
+  the filter in ``src/filters/virtual_bass.rs`` with its unit tests, a README
+  section and a changelog line, following upstream's ``AGENTS.md``. Attack and
+  release take optional units (``attack_unit``, ``release_unit``, default
+  ``ms``) like the other 5.0 filters.
+- branch ``virtual-bass-v4.1.3`` (commit ``f2b929f``) on the ``v4.1.3`` tag:
+  the same filter for our build, attack and release in ms (4.1.3 has no time
+  units). The YAML without units works on both.
+
+No upstream PR yet: the user decides after listening tests on the speaker.
+
+**Decision 4: our build applies a patch.** ``build-camilladsp.sh`` still
+downloads the pinned v4.1.3 tarball (SHA-256 checked) and adds our
+``Cargo.lock``, then applies ``ci/camilladsp/patches/*.patch`` in name order.
+``0001-virtual-bass.patch`` is ``git format-patch`` of ``f2b929f`` (SHA-256
+``0d4acef2…``). A patch on the pinned tarball keeps the upstream source
+verifiable by its checksum, shows our change on its own, and carries over to
+a new upstream version (or disappears once merged). The patches' checksums
+are part of the build stamp and of the CI cache keys, so a changed patch
+rebuilds.
+
+**GPL-3.0**: the corresponding source of the binary is the upstream archive,
+our ``Cargo.lock`` and the patches. The build copies the patches to
+``ci/camilladsp/out`` (``camilladsp-4.1.3-0001-virtual-bass.patch``) and
+``make -C ci legal-info`` puts them in the release's ``sources.tar`` next to
+the archive and lockfile. The patch is GPL-3.0/MPL-2.0 like the file headers
+it carries.
+
+**Validated**:
+
+- *Unit tests* (in the fork, both branches, f64 and f32): a 50 Hz tone at
+  -6 dBFS gains its 2nd harmonic at -2.2 dB and its 3rd at -7.3 dB relative to
+  itself; nothing above the harmonics band (700 Hz -55 dB, 1 kHz -72 dB);
+  a 1 kHz tone gets under -100 dB added; 20 dB less bass gives exactly 20 dB
+  less harmonics; gain and weights scale as set; silence and subnormal input
+  stay finite and nothing subnormal is kept between chunks.
+- *Offline* (``make -C ci test-dsp`` through the image's CamillaDSP under
+  QEMU, also in CI): a 50 Hz tone at -20 dBFS comes out with 100 Hz at
+  -8.1 dB and 150 Hz at -13.2 dB relative to it (nothing there without the
+  filter), the 50 Hz itself unchanged; a 1 kHz tone is unchanged (-165 dB
+  added); full-scale 50 Hz plus 3 kHz peaks at -0.64 dBFS with the clipper
+  never acting. The harmonics share the swing: next to loud 80 Hz bass the
+  mids drop 0.8 dB (was 0.4 dB) and the bass is ducked 3 dB more.
+- *CPU*: under QEMU (arm1176) the two instances add 26 % to the pipeline's
+  emulated time; counting cycles, about 2-4 % of the Pi Zero W's CPU. To be
+  measured on the Pi.
+
+**Next**: listening tests on the speaker (``gain``, the band and the weights;
+whether the side chain instance is worth its CPU), then the upstream PR.
+
+**On the Pi (2026-11-14)**: the virtual bass adds about 4 % CPU (CamillaDSP idles
+at 28 % instead of 24 %). Its own filter states and envelope were flushed only
+once subnormal, like CamillaDSP's biquads before patch 0002, so after a mute
+they decayed through the subnormal range mid-chunk and chunks took up to 170 %
+of real time. ``0003-flush-small-virtual-bass-states.patch`` flushes them below
+1e-20 and treats a smaller envelope as silence; its unit test fails without
+it. With it, mute and unmute, a 5-minute radio soak and the hardware tests run
+without underruns or stalls. In the fork (``LydByDissing/camilladsp-1``), following
+upstream's ``AGENTS.md`` (tests in the file's own test module, a changelog line,
+``cargo test --workspace`` with f64 and f32 samples on ARMv6, all passing):
+``virtual-bass`` (5d8921c, on ``next5``) has the envelope flush, the biquads
+being covered upstream by ``flush-small-biquad-states`` (7f49531, on
+``next5``, the same change as our patch 0002), and ``virtual-bass-v4.1.3``
+(eecdd8b) is what our patches 0001 and 0003 come from. Upstream asks for an
+issue before a new feature and for the target branch before a fix; nothing has
+been proposed yet.
+
+**Tuning and listening**: CamillaGUI 4.1 rejects a config with a filter type it
+doesn't know, so ``make -C ci dsp-tune`` plays the variant without the virtual
+bass while the GUI runs and restores the installed config when it stops.
+``make -C ci dsp-variant VARIANT=...`` switches the running speaker between
+variants of the config for A/B listening (``installed``, ``no-vb``,
+``no-duck``, ``no-loudness``, ``no-fill``, ``flat``), each checked by the
+speaker's CamillaDSP before it loads.
+
+DEC-053 — The Bass Fill Is Counted Back from Full Volume
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_053
+   :status: resolved
+   :date: 2026-11-14
+   :tags: audio, dsp, volume
+
+Decided with the user (KDS-9jt.6).
+
+**Context**: by ear, the bass sounded natural with the fill (``bass_boost``)
+at about +18 dB, which works at medium volume but not at 100 %: +18 dB is 63
+times the power, more than the 1.3 W amplifier and the driver can give, so the
+bass compressor pulled the bass back hard at the top.
+
+**Decision**: the fill is counted back from 100 %, so no volume asks more of
+the amplifier and driver than full volume does. At the amplifier's full gain
+the fill is ``top_db``, the most bass the system can play; for each dB the
+gain is lower the fill is 1 dB more, up to the box correction ``max_db``. So
+the bass (gain plus fill) never plays louder than at 100 %: below the knee
+(``top_db - max_db`` dB below full) the box gets its full correction, above it
+the fill falls exactly as fast as the volume rises, which is how the driver's
+excursion and the amplifier's headroom run out (both follow the drive
+voltage). The gain counted is the amplifier's, the volume plus the loudness
+filter's mid cut it makes up (DEC-051).
+
+What it is not: it is not loudness compensation. Hearing needs a steady
+0.3-0.4 dB less bass for each dB louder at 63-125 Hz at every level from 40 to
+90 phon (ISO 226 equal-loudness contours), with no knee; the loudness filter
+does that already (8 dB over its 20 dB range, 0.4 dB per dB). A taper in the
+fill on top would count it twice; the first version of this decision (a
+straight line from ``taper_from`` % to ``top_db``) did, and fell at neither
+rate.
+
+The Audio Player sets the fill and the bass compressor's view of it
+(``bass_boost`` and ``boosted_view``) with CamillaDSP's ``PatchConfig`` on each
+volume change, only when the value changes; a config without those filters (a
+listening variant) is left alone. The ducking stays as the safety net. The
+curve is kept in ``/data/audio/bass.json`` and changed with ``POST
+/api/audio/bass`` (an admin token over HTTPS); the default, +6 dB at every
+volume, is the static fill. The values come from voicing in the new
+cabinet; the lowest octave is left to the virtual bass rather than boosted.
+
+DEC-054 — Box EQ from REW, Imported Within Limits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_054
+   :status: resolved
+   :date: 2026-11-14
+   :tags: audio, dsp, tooling
+
+Decided with the user (KDS-9jt.9, DSP_REQ_002).
+
+**Context**: the new cabinet needs voicing from measurements rather than by
+ear alone. REW measures the speaker and its Auto EQ fits filters towards a
+target curve; it exports them as text. The EQ has to fit the pipeline of
+DEC-051: the bass is split at 150 Hz, filled, compressed through a side chain
+and limited, so an EQ placed on one band would need routing per filter and
+would not be seen by the side chain.
+
+**Decision**:
+
+- The target is a house curve in the repo (``ci/voicing/house-curve.txt``,
+  REW's target format): flat through the mids, a steady roll-off below
+  150 Hz that the bass fill and the virtual bass make up for (DEC-052/053),
+  and a slight treble tilt. REW is asked to match it, not a flat line, so the
+  EQ doesn't chase bass the box can't play.
+- REW's Auto EQ runs with a maximum number of filters, a frequency range and a
+  maximum boost (prefer cuts), and the filters are exported as text (REW's
+  generic filter settings or the Equalizer APO format).
+- ``make -C ci dsp-import-rew FILE=...`` (``ci/scripts/dsp-import-rew.py``)
+  converts the peaking and shelf filters to CamillaDSP Biquads (``eq_1`` ...)
+  in a generated block of ``ci/device/camilladsp.yml`` and one step right after
+  ``to_mono``, before ``split_bass``: every band and the side chain see the
+  EQ, with no routing per filter. It refuses an export with other filter
+  types, or outside the limits: number of filters (10), band (60 Hz-12 kHz),
+  Q (0.3-10), boost (+6 dB) and cut (-18 dB) per filter, and the total boost
+  of the filters together (+6 dB anywhere from 20 Hz to 20 kHz, from their
+  combined response). REW's preamp is ignored: the limiter guards the level.
+- The export is copied to ``ci/voicing/rew-export.txt``, so each iteration is a
+  commit; the generated block names it and its checksum.
+- After the import it runs ``make -C ci test-dsp``, which checks the EQ's
+  response through the image's CamillaDSP against the filters' design, and
+  ``make -C ci dsp-variant VARIANT=repo`` / ``VARIANT=no-eq`` plays the repo's
+  config with and without the EQ on the speaker for A/B listening.
+
+**Consequences**: voicing is measured, reviewed in the diff and reverted
+with git. The bass fill (DEC-053) stays separate from the EQ: the EQ shapes
+the response at a fixed volume, the fill is what changes with the volume.
 

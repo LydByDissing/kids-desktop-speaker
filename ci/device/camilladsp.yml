@@ -9,13 +9,21 @@
 # driver, so everything is mono. The values are placeholders until the box is
 # measured; tune live with make -C ci dsp-tune.
 #
-#   mono ─ dither ─┬─ bass:  subsonic HPF ─ LR4 low-pass ─ +6 dB ─ 5 ms delay ─ ducked ─┐
-#                  ├─ rest:  LR4 high-pass ──────────────────────── 5 ms delay ─────────┼─ sum
-#                  └─ watch: subsonic HPF ─ low shelf +6 dB (what the sum will be) ─────┘ (side chain)
-#   (the dither keeps the filters off subnormal numbers, see anti_denormal)
+#   mono ─┬─ bass:  subsonic HPF ─ LR4 low-pass ─ +6 dB ─ virtual bass ─ 5 ms delay ─ ducked ─┐
+#         ├─ rest:  LR4 high-pass ─────────────────────────────────────── 5 ms delay ─────────┼─ sum
+#         └─ watch: subsonic HPF ─ low shelf +6 dB ─ virtual bass (what the sum will be) ─────┘ (side chain)
 #   sum ─ loudness (follows the volume, lowers the mids) ─┬─ 5 ms delay ─ limited ─ clipper ─ both HAT channels
 #                                                         └─ watch (side chain)
 #
+# - Virtual bass (DEC-052, our patch to CamillaDSP) adds harmonics of the
+#   35-90 Hz bass at 90-300 Hz, where the driver plays efficiently; the ear
+#   hears the missing fundamental from them. The harmonics are on the bass
+#   path, so the bass compressor ducks them with the bass (its side chain
+#   makes the same harmonics) and loud bass doesn't push the limiter into the
+#   mids; they never cost the maximum level or clip.
+# - The box EQ (DEC-054), fitted by REW to the house curve and imported with
+#   make -C ci dsp-import-rew, acts on the mono signal before the split, so
+#   every band and the side chain see it.
 # - The static boost fills the box's dip; the bass compressor turns down only
 #   the bass, and only when the sum would pass full scale, so loud passages
 #   keep their mids and the speaker its maximum level.
@@ -76,11 +84,8 @@ mixers:
       - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
       - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
 filters:
-  # Keeps every filter state away from subnormal numbers, which the Pi Zero's
-  # ARM1176 FPU traps to slow software: after a mute (exact zeros), 13 biquads
-  # and two compressors decaying through them made a chunk take 224 % of real
-  # time and stalled CamillaDSP. Flat noise at the 32-bit floor, ~-187 dBFS.
-  anti_denormal: {type: Dither, parameters: {type: Flat, bits: 32, amplitude: 2.0}}
+  # >>> box EQ (DEC-054): none imported yet (make -C ci dsp-import-rew)
+  # <<< box EQ
   # Below what the driver can play: no swing spent on it.
   subsonic: {type: BiquadCombo, parameters: {type: ButterworthHighpass, freq: 40, order: 6}}
   bass_band: {type: BiquadCombo, parameters: {type: LinkwitzRileyLowpass, freq: 150, order: 4}}
@@ -94,6 +99,22 @@ filters:
   # as the volume (fader Aux1) drops 20 dB below -12 dB, as cut mids.
   loudness: {type: Loudness, parameters: {fader: Aux1, reference_level: -12, low_boost: 8, high_boost: 2, attenuate_mid: true}}
   clipper: {type: Limiter, parameters: {clip_limit: -0.5, soft_clip: false}}
+  # Harmonics (2nd, 3rd, 4th) of the 35-90 Hz bass, band-passed to 90-300 Hz
+  # and following the bass's level (attack and release in ms); gain is
+  # relative to the boosted bass. Placeholder amount until listening tests on
+  # the speaker (DEC-052).
+  virtual_bass:
+    type: VirtualBass
+    parameters:
+      low_freq: 35
+      high_freq: 90
+      harmonics_freq: 300
+      harmonic2: 1.0
+      harmonic3: 0.5
+      harmonic4: 0.25
+      gain: -6.0
+      attack: 2
+      release: 200
 processors:
   # Turns down only the bass when the sum would pass -4 dBFS, early enough
   # that the limiter rarely has to touch the mids. CamillaDSP follows each
@@ -124,11 +145,15 @@ processors:
       makeup_gain: 0
 pipeline:
   - {type: Mixer, name: to_mono}
-  - {type: Filter, channels: [0], names: [anti_denormal]}
+  # >>> box EQ
+  # <<< box EQ
   - {type: Mixer, name: split_bass}
-  - {type: Filter, channels: [0], names: [subsonic, bass_band, bass_boost, lookahead]}
+  - {type: Filter, channels: [0], names: [subsonic, bass_band, bass_boost]}
+  - {type: Filter, channels: [0], names: [virtual_bass]}
+  - {type: Filter, channels: [0], names: [lookahead]}
   - {type: Filter, channels: [1], names: [rest_band, lookahead]}
   - {type: Filter, channels: [2], names: [subsonic, boosted_view]}
+  - {type: Filter, channels: [2], names: [virtual_bass]}
   - {type: Processor, name: bass_duck}
   - {type: Mixer, name: join_bass}
   - {type: Filter, channels: [0], names: [loudness]}

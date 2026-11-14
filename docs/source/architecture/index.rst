@@ -152,7 +152,7 @@ Containers
        Container(api, "API Server", "Axum (Rust)", "Local-network REST + WebSocket API with token auth; also hosts Leptos frontend")
        Container(player, "Audio Player", "Rust", "Supervises shairport-sync, librespot, bluealsa-aplay; radio and podcasts in its own stream player (DEC-048); one source at a time; announcements and messages; device volume via CamillaDSP")
        Container(bt, "Bluetooth Service", "Rust + zbus + BlueZ", "Pairing agent and window; AVRCP pause/play of phones; remote buttons from input events; A2DP via BlueALSA")
-       Container(dsp, "CamillaDSP", "Rust (external, built in CI) + systemd", "One stereo stream from the loopback to the HAT; device volume; limiter at -1 dBFS; EQ to come")
+       Container(dsp, "CamillaDSP", "Rust (external, built in CI) + systemd", "Built from the pinned release plus our patches (DEC-052); mono bass path for the small box: subsonic filter, static fill, virtual bass (harmonics), bass ducking, loudness, look-ahead limiter (DEC-051)")
        Container(tts, "TTS Engine", "Rust library + espeak-ng", "Danish and English speech with a 90-day disk cache; used by the Audio Player's announcer")
        Container(wifisetup, "Wi-Fi Setup", "Rust + hostapd + dnsmasq", "Setup access point and captive portal when Wi-Fi is missing or failing (DEC-044)")
        Container(ota, "OTA Updater", "Rust + RAUC", "Atomic system updates via RAUC A/B partitions; GitHub Releases; auto-rollback")

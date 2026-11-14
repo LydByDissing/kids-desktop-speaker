@@ -44,6 +44,13 @@ async fn audio_player(dir: &Path) -> Arc<Mutex<(u64, u64)>> {
                         _ => return error("limit must be a whole number from 0 to 100"),
                     },
                     Some("volume") => {}
+                    // The bass fill (DEC-053): the stand-in echoes a curve.
+                    Some("bass_fill") => return ok(json!({"max_db": 6.0, "top_db": 6.0})),
+                    Some("set_bass_fill") => {
+                        return ok(
+                            json!({"max_db": request["max_db"], "top_db": request["top_db"]}),
+                        )
+                    }
                     _ => return error("unknown command"),
                 }
                 ok(json!({"volume": s.0, "limit": s.1}))
@@ -202,4 +209,62 @@ async fn only_an_admin_over_https_changes_the_limit() {
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn only_an_admin_over_https_changes_the_bass_fill() {
+    let dir = run_dir("bass");
+    audio_player(&dir).await;
+    let state = AppState::with_run_dir(&dir);
+    let (_, kid) = state.tokens.create("tablet", false).unwrap();
+    let (_, parent) = state.tokens.create("parent", true).unwrap();
+    let curve = || Some(json!({"max_db": 18.0, "top_db": 6.0}));
+
+    let (status, body) = call(
+        net(state.clone(), Transport::Https),
+        "GET",
+        "/api/audio/bass",
+        &kid,
+        None,
+    )
+    .await;
+    assert_eq!(
+        (status, body["top_db"].clone()),
+        (StatusCode::OK, json!(6.0)),
+        "anyone may read it"
+    );
+    let (status, _) = call(
+        net(state.clone(), Transport::Https),
+        "POST",
+        "/api/audio/bass",
+        &kid,
+        curve(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a child's token can't change it"
+    );
+    let (status, _) = call(
+        net(state.clone(), Transport::Http),
+        "POST",
+        "/api/audio/bass",
+        &parent,
+        curve(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "not over plain HTTP");
+    let (status, body) = call(
+        net(state, Transport::Https),
+        "POST",
+        "/api/audio/bass",
+        &parent,
+        curve(),
+    )
+    .await;
+    assert_eq!(
+        (status, body["max_db"].clone()),
+        (StatusCode::OK, json!(18.0))
+    );
 }

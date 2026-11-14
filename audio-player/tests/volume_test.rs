@@ -3,8 +3,8 @@
 use audio_player::arbitrator::Arbitrator;
 use audio_player::ipc::{handle_full, Services};
 use audio_player::volume::{
-    from_sender, lineout_step, sender_fraction, to_db, Camilla, Codec, Loudness, Settings, Volume,
-    VolumeStore, LINEOUT_FULL,
+    analog_gain, from_sender, lineout_step, sender_fraction, to_db, Bass, BassFill, Camilla, Codec,
+    Loudness, Settings, Volume, VolumeStore, LINEOUT_FULL,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
@@ -77,6 +77,15 @@ fn settings_are_kept_on_disk() {
     assert_eq!(store.load(), Settings::default());
 }
 
+/// The commands without the bass fill patches (DEC-053), which have their own
+/// tests.
+fn without_patches(log: &[Value]) -> Vec<Value> {
+    log.iter()
+        .filter(|c| c.get("PatchConfig").is_none())
+        .cloned()
+        .collect()
+}
+
 /// A fake CamillaDSP websocket that records the volume commands and answers
 /// Ok. Its config has no loudness filter.
 async fn fake_camilla() -> (String, Arc<StdMutex<Vec<Value>>>) {
@@ -127,6 +136,8 @@ fn volume(addr: &str, dir: &str) -> Arc<Volume> {
         camilla: Camilla { addr: addr.into() },
         codec: None,
         loudness: Default::default(),
+        codec_muted: Default::default(),
+        bass: Default::default(),
     })
 }
 
@@ -137,7 +148,7 @@ async fn camilla_receives_the_level_or_a_mute() {
     camilla.apply(50).await.unwrap();
     camilla.apply(0).await.unwrap();
     assert_eq!(
-        *log.lock().unwrap(),
+        without_patches(&log.lock().unwrap()),
         vec![
             json!({"SetVolume": -31.5}),
             json!({"SetMute": false}),
@@ -344,21 +355,47 @@ async fn the_volume_is_set_on_the_amplifier_with_camilla_at_0_db() {
         camilla: Camilla { addr },
         codec: Some(codec),
         loudness: Default::default(),
+        codec_muted: Default::default(),
+        bass: Default::default(),
     };
     v.set_volume(50).await.unwrap();
     assert_eq!(
         std::fs::read_to_string(&amixer_log).unwrap(),
-        "-q -c IQaudIOCODEC cset name=Lineout Volume 32\n"
+        "-q -c IQaudIOCODEC cset name=Lineout Volume 32\n\
+         -q -c IQaudIOCODEC cset name=DAC Soft Mute Switch off\n",
+        "the first change also makes sure the codec isn't muted"
     );
     assert_eq!(
-        *log.lock().unwrap(),
+        without_patches(&log.lock().unwrap()),
         vec![json!({"SetVolume": 0.0}), json!({"SetMute": false})],
         "the DAC gets the whole signal"
     );
+    // The next step is one amixer call: the mute state is known.
+    v.set_volume(60).await.unwrap();
+    let steps = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(
+        steps.ends_with("Mute Switch off\n-q -c IQaudIOCODEC cset name=Lineout Volume 38\n"),
+        "{steps}"
+    );
+    // 0 % is the codec's soft mute, not CamillaDSP's.
     v.set_volume(0).await.unwrap();
+    let steps = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(
+        steps.ends_with("cset name=DAC Soft Mute Switch on\n"),
+        "{steps}"
+    );
     assert_eq!(
         log.lock().unwrap().last().unwrap(),
-        &json!({"SetMute": true})
+        &json!({"SetMute": false})
+    );
+    // Back up: unmuted again.
+    v.set_volume(40).await.unwrap();
+    let steps = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(
+        steps.ends_with(
+            "Lineout Volume 25\n-q -c IQaudIOCODEC cset name=DAC Soft Mute Switch off\n"
+        ),
+        "{steps}"
     );
 }
 
@@ -373,10 +410,12 @@ async fn without_the_codec_camilla_plays_the_volume() {
         camilla: Camilla { addr },
         codec: Some(codec),
         loudness: Default::default(),
+        codec_muted: Default::default(),
+        bass: Default::default(),
     };
     v.set_volume(50).await.unwrap();
     assert_eq!(
-        *log.lock().unwrap(),
+        without_patches(&log.lock().unwrap()),
         vec![json!({"SetVolume": -31.5}), json!({"SetMute": false})]
     );
 }
@@ -418,16 +457,19 @@ async fn loudness_follows_the_volume_and_the_amplifier_makes_up_the_mids() {
         camilla: Camilla { addr },
         codec: Some(codec),
         loudness: Default::default(),
+        codec_muted: Default::default(),
+        bass: Default::default(),
     };
     // 50 %: -31.5 dB, 19.5 dB below the reference: the mids are cut 7.8 dB,
     // so the amplifier is at 63 - 31.5 + 7.8 = 39.3, step 39 (32 without).
     v.set_volume(50).await.unwrap();
     assert_eq!(
         std::fs::read_to_string(&amixer_log).unwrap(),
-        "-q -c IQaudIOCODEC cset name=Lineout Volume 39\n"
+        "-q -c IQaudIOCODEC cset name=Lineout Volume 39\n\
+         -q -c IQaudIOCODEC cset name=DAC Soft Mute Switch off\n"
     );
     assert_eq!(
-        *log.lock().unwrap(),
+        without_patches(&log.lock().unwrap()),
         vec![
             json!({"SetFaderExternalVolume": [1, -31.5]}),
             json!({"SetVolume": 0.0}),
@@ -441,4 +483,143 @@ async fn loudness_follows_the_volume_and_the_amplifier_makes_up_the_mids() {
     v.set_volume(90).await.unwrap();
     let last = std::fs::read_to_string(&amixer_log).unwrap();
     assert!(last.ends_with("Lineout Volume 57\n"), "{last}");
+}
+
+#[test]
+fn the_bass_fill_counts_back_from_the_top() {
+    let curve = BassFill {
+        max_db: 18.0,
+        top_db: 6.0,
+    };
+    assert_eq!(curve.at(0.0), 6.0, "at full gain: what the system can play");
+    assert_eq!(curve.at(-6.0), 12.0, "1 dB more for each dB lower");
+    assert_eq!(curve.at(-12.0), 18.0, "the box correction at the knee");
+    assert_eq!(curve.knee_db(), -12.0);
+    assert_eq!(curve.at(-40.0), 18.0, "and no more below it");
+    assert_eq!(curve.at(3.0), 6.0, "no gain above full");
+    assert_eq!(
+        BassFill::default().at(-30.0),
+        6.0,
+        "by default the static +6 dB"
+    );
+    // The bass never plays louder than at 100 %, the loudness filter's
+    // make-up gain included.
+    let loudness = Loudness::from_config(&config_with_loudness());
+    assert_eq!(analog_gain(100, loudness), Some(0.0));
+    assert_eq!(analog_gain(0, loudness), None);
+    for percent in 1..=100 {
+        let gain = analog_gain(percent, loudness).unwrap();
+        assert!(gain + curve.at(gain) <= 6.0 + 1e-9, "{percent} %");
+    }
+    // 70 %: -18.9 dB, raised 2.76 dB for the mid cut: -16.14 dB.
+    let deep = BassFill {
+        max_db: 24.0,
+        top_db: 6.0,
+    };
+    let fill = deep.at(analog_gain(70, loudness).unwrap());
+    assert!((fill - 22.14).abs() < 1e-9, "{fill}");
+
+    assert!(curve.validate().is_ok());
+    for bad in [
+        BassFill {
+            max_db: 30.0,
+            ..curve
+        },
+        BassFill {
+            top_db: -1.0,
+            ..curve
+        },
+        BassFill {
+            max_db: 6.0,
+            top_db: 12.0,
+        },
+    ] {
+        assert!(bad.validate().is_err(), "{bad:?}");
+    }
+}
+
+fn patches(log: &[Value]) -> Vec<f64> {
+    log.iter()
+        .filter_map(|c| c["PatchConfig"]["filters"]["bass_boost"]["parameters"]["gain"].as_f64())
+        .collect()
+}
+
+#[tokio::test]
+async fn the_bass_fill_follows_the_volume() {
+    let (addr, log) = fake_camilla_with(config_with_loudness()).await;
+    let dir = temp_dir("bass");
+    let store = VolumeStore::new(dir.join("volume.json"));
+    let v = Volume {
+        settings: StdMutex::new(store.load()),
+        store,
+        camilla: Camilla { addr },
+        codec: None,
+        loudness: Default::default(),
+        codec_muted: Default::default(),
+        bass: Bass::load(dir.join("bass.json")),
+    };
+    v.set_limit(100).await.unwrap();
+    let curve = BassFill {
+        max_db: 18.0,
+        top_db: 6.0,
+    };
+    v.set_bass_fill(curve).await.unwrap();
+    v.set_volume(40).await.unwrap(); // the same +18 dB: nothing sent
+    v.set_volume(80).await.unwrap(); // -12.6 dB (-12.36 with the make-up): still +18
+    v.set_volume(90).await.unwrap(); // -6.3 dB: 6 + 6.3
+    v.set_volume(100).await.unwrap();
+    // The default curve's +6 dB when the limit was raised, then +18 at 75 %
+    // when the curve was set, then 90 and 100 %.
+    assert_eq!(patches(&log.lock().unwrap()), vec![6.0, 18.0, 12.3, 6.0]);
+    // Both the fill and the bass compressor's view of it are patched.
+    let last = log
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|c| c.get("PatchConfig").is_some())
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        last["PatchConfig"]["filters"]["boosted_view"]["parameters"]["gain"],
+        6.0
+    );
+    // The curve is kept for the next start.
+    assert_eq!(Bass::load(dir.join("bass.json")).curve(), curve);
+    assert!(v
+        .set_bass_fill(BassFill {
+            top_db: 20.0,
+            ..curve
+        })
+        .await
+        .is_err());
+    assert_eq!(v.bass_fill(), curve, "a bad curve changes nothing");
+}
+
+#[tokio::test]
+async fn the_bass_fill_over_ipc() {
+    let (addr, log) = fake_camilla().await;
+    let v = volume(&addr, "bass-ipc");
+    let services = Services {
+        volume: Some(Arc::clone(&v)),
+        ..Services::default()
+    };
+    let arb = Arc::new(Mutex::new(Arbitrator::new()));
+    let call = |request: Value| handle_full(request, Arc::clone(&arb), &services);
+
+    let r = call(json!({"cmd": "bass_fill"})).await;
+    assert_eq!(r, json!({"ok": true, "max_db": 6.0, "top_db": 6.0}));
+    let r = call(json!({"cmd": "set_bass_fill", "max_db": 18.0, "top_db": 6.0})).await;
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["max_db"], 18.0);
+    assert!(
+        !patches(&log.lock().unwrap()).is_empty(),
+        "applied at the current volume"
+    );
+    for bad in [
+        json!({"cmd": "set_bass_fill", "max_db": 40.0, "top_db": 6.0}),
+        json!({"cmd": "set_bass_fill", "max_db": 18.0}),
+    ] {
+        assert_eq!(call(bad.clone()).await["ok"], false, "{bad}");
+    }
 }
