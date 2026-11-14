@@ -1,0 +1,70 @@
+From 449c6eb1c8419662b3a72b4042bcd4a70eb8739f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 14 Nov 2026 09:43:02 +0100
+Subject: [PATCH] Flush small biquad states before they decay into subnormals
+
+The state of a slowly decaying biquad, such as a low highpass, could pass
+through the subnormal range during a chunk, since only subnormal states were
+flushed, at the end of each chunk. Some CPUs are very slow with subnormal
+numbers; on the ARM1176 of the Raspberry Pi Zero, a pipeline with many
+biquads then took over twice real time after a mute. Flush states below
+1e-20 instead, before they can get there.
+---
+ src/filters/biquad.rs | 31 ++++++++++++++++++++++++++-----
+ 1 file changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/src/filters/biquad.rs b/src/filters/biquad.rs
+index de82d42..f1415b2 100644
+--- a/src/filters/biquad.rs
++++ b/src/filters/biquad.rs
+@@ -439,14 +439,15 @@ impl Biquad {
+         out
+     }
+ 
+-    /// Flush stored subnormal numbers to zero.
++    /// Flush stored numbers so small that they could decay into subnormals
++    /// during the next chunk. Some CPUs, like the ARM1176 in the Raspberry Pi
++    /// Zero, are very slow with subnormal numbers.
+     fn flush_subnormals(&mut self) {
+-        if self.s1.is_subnormal() {
+-            trace!("Biquad filter '{}', flushing subnormal s1", self.name);
++        const SMALL: PrcFmt = 1.0e-20;
++        if self.s1.abs() < SMALL {
+             self.s1 = 0.0;
+         }
+-        if self.s2.is_subnormal() {
+-            trace!("Biquad filter '{}', flushing subnormal s2", self.name);
++        if self.s2.abs() < SMALL {
+             self.s2 = 0.0;
+         }
+     }
+@@ -628,6 +629,26 @@ mod tests {
+         (gain, phase)
+     }
+ 
++    #[test]
++    fn decay_never_reaches_subnormals() {
++        // A low highpass decays slowly, a whole chunk at a time, after the
++        // signal stops.
++        let conf = BiquadParameters::Highpass {
++            freq: 40.0,
++            q: 0.707,
++        };
++        let coeffs = BiquadCoefficients::from_config(48000, conf);
++        let mut filter = Biquad::new("test", 48000, coeffs);
++        let mut wave: Vec<PrcFmt> = (0..1024).map(|n| (n as PrcFmt * 0.01).sin()).collect();
++        filter.process_waveform(&mut wave).unwrap();
++        for _ in 0..2000 {
++            let mut silence = vec![0.0; 1024];
++            filter.process_waveform(&mut silence).unwrap();
++            assert!(silence.iter().all(|v| !v.is_subnormal()));
++        }
++        assert_eq!((filter.s1, filter.s2), (0.0, 0.0));
++    }
++
+     #[test]
+     fn check_result() {
+         let conf = BiquadParameters::Lowpass {
+-- 
+2.51.0
+

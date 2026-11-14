@@ -127,6 +127,7 @@ fn volume(addr: &str, dir: &str) -> Arc<Volume> {
         camilla: Camilla { addr: addr.into() },
         codec: None,
         loudness: Default::default(),
+        codec_muted: Default::default(),
     })
 }
 
@@ -344,21 +345,46 @@ async fn the_volume_is_set_on_the_amplifier_with_camilla_at_0_db() {
         camilla: Camilla { addr },
         codec: Some(codec),
         loudness: Default::default(),
+        codec_muted: Default::default(),
     };
     v.set_volume(50).await.unwrap();
     assert_eq!(
         std::fs::read_to_string(&amixer_log).unwrap(),
-        "-q -c IQaudIOCODEC cset name=Lineout Volume 32\n"
+        "-q -c IQaudIOCODEC cset name=Lineout Volume 32\n\
+         -q -c IQaudIOCODEC cset name=DAC Soft Mute Switch off\n",
+        "the first change also makes sure the codec isn't muted"
     );
     assert_eq!(
         *log.lock().unwrap(),
         vec![json!({"SetVolume": 0.0}), json!({"SetMute": false})],
         "the DAC gets the whole signal"
     );
+    // The next step is one amixer call: the mute state is known.
+    v.set_volume(60).await.unwrap();
+    let steps = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(
+        steps.ends_with("Mute Switch off\n-q -c IQaudIOCODEC cset name=Lineout Volume 38\n"),
+        "{steps}"
+    );
+    // 0 % is the codec's soft mute, not CamillaDSP's.
     v.set_volume(0).await.unwrap();
+    let steps = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(
+        steps.ends_with("cset name=DAC Soft Mute Switch on\n"),
+        "{steps}"
+    );
     assert_eq!(
         log.lock().unwrap().last().unwrap(),
-        &json!({"SetMute": true})
+        &json!({"SetMute": false})
+    );
+    // Back up: unmuted again.
+    v.set_volume(40).await.unwrap();
+    let steps = std::fs::read_to_string(&amixer_log).unwrap();
+    assert!(
+        steps.ends_with(
+            "Lineout Volume 25\n-q -c IQaudIOCODEC cset name=DAC Soft Mute Switch off\n"
+        ),
+        "{steps}"
     );
 }
 
@@ -373,6 +399,7 @@ async fn without_the_codec_camilla_plays_the_volume() {
         camilla: Camilla { addr },
         codec: Some(codec),
         loudness: Default::default(),
+        codec_muted: Default::default(),
     };
     v.set_volume(50).await.unwrap();
     assert_eq!(
@@ -418,18 +445,20 @@ async fn loudness_follows_the_volume_and_the_amplifier_makes_up_the_mids() {
         camilla: Camilla { addr },
         codec: Some(codec),
         loudness: Default::default(),
+        codec_muted: Default::default(),
     };
     // 50 %: -31.5 dB, 19.5 dB below the reference: the mids are cut 7.8 dB,
     // so the amplifier is at 63 - 31.5 + 7.8 = 39.3, step 39 (32 without).
     v.set_volume(50).await.unwrap();
     assert_eq!(
         std::fs::read_to_string(&amixer_log).unwrap(),
-        "-q -c IQaudIOCODEC cset name=Lineout Volume 39\n"
+        "-q -c IQaudIOCODEC cset name=Lineout Volume 39\n\
+         -q -c IQaudIOCODEC cset name=DAC Soft Mute Switch off\n"
     );
     assert_eq!(
         *log.lock().unwrap(),
         vec![
-            json!({"SetFaderVolume": [1, -31.5]}),
+            json!({"SetFaderExternalVolume": [1, -31.5]}),
             json!({"SetVolume": 0.0}),
             json!({"SetMute": false})
         ],

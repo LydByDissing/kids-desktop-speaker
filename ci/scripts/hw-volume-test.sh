@@ -72,7 +72,13 @@ w.writeframes(b"".join(struct.pack("<hh", int(a*math.sin(2*math.pi*1000*i/48000)
 PY
 "${SCP[@]}" "$WORK/tone.wav" "$PI_HOST:/tmp/kds-volume-tone.wav"
 remote "aplay -q -D speaker /tmp/kds-volume-tone.wav" &
-sleep 2.5
+# The SSH connection takes a second or two before aplay runs: wait for the
+# tone to arrive, then let the levels settle.
+for _ in $(seq 20); do
+    python3 -c "import sys; sys.exit(0 if $(value GetCaptureSignalPeak) > -30 else 1)" && break
+    sleep 0.5
+done
+sleep 1
 cap=$(value GetCaptureSignalPeak); out=$(value GetPlaybackSignalPeak)
 wait
 log "  -6 dBFS tone at 40 %: in $cap dB, out $out dB"
@@ -81,8 +87,19 @@ log "  -6 dBFS tone at 40 %: in $cap dB, out $out dB"
 check "the DAC gets the tone at -6 dB less the 8 dB mid cut (-14 dB)" "$(near "$out" -14 0.7)" yes
 
 log "=== Mute"
+since=$(remote date +%s)
 r=$(api POST /api/audio/volume '{"volume": 0}')
-check "0 % mutes CamillaDSP" "$(value GetMute)" True
+check "0 % soft-mutes the codec (DEC-050)" \
+    "$(remote "amixer -c IQaudIOCODEC cget name='DAC Soft Mute Switch'" | sed -n 's/.*: values=//p')" on
+check "and leaves CamillaDSP running unmuted" "$(value GetMute)" False
+# Muting feeds the filters exact zeros; without the anti-denormal dither the
+# Pi Zero's FPU stalled CamillaDSP right after (DEC-051).
+sleep 3
+r=$(api POST /api/audio/volume-limit '{"limit": 100}')
+r=$(api POST /api/audio/volume '{"volume": 60}')
+sleep 5
+check "muting and unmuting doesn't stall CamillaDSP" \
+    "$(remote "journalctl -u camilladsp --since @$since -o cat --no-pager" | grep -ciE 'underrun|stalled|above 100')" 0
 
 if [ "$fail" = 0 ]; then log "All volume tests passed."; else log "Some volume tests FAILED."; fi
 exit "$fail"

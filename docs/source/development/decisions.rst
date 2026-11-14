@@ -2644,7 +2644,8 @@ the limit and the curve are set when it is in the cabinet, together with the
 DSP tuning (KDS-9jt.6).
 
 **Superseded in part by DEC-050 (2026-11-13)**: the volume is now the HAT
-amplifier's analog gain over 63 dB, with CamillaDSP at 0 dB.
+amplifier's analog gain over 63 dB, with CamillaDSP at 0 dB. 0 % is the codec's soft mute, and its
+line-out ramps each gain step (no clicks).
 
 **Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
 an even curve in loudness. The limit caps the percentage: asking for more than
@@ -2964,7 +2965,9 @@ Decided with the user (KDS-9jt.6). Refines DEC-040.
 the DA7213 codec's line-out on the HAT; its ``Lineout Volume`` is an analog
 gain after the DAC, 0-63 in 1 dB steps (48 is 0 dB). The volume maps onto its
 whole range: 100 % is step 63 (``LINEOUT_FULL``, full output), each 1.6 % is
-about one step, 0 % mutes CamillaDSP. CamillaDSP's volume stays at 0 dB, so
+about one step. 0 % is the codec's soft mute (``DAC Soft Mute Switch``, a
+ramp instead of a click), and the line-out ramps each gain step (``Lineout Gain
+Ramping Switch``, set by ``kds-hat-init``). CamillaDSP's volume stays at 0 dB, so
 the DAC always gets the whole digital signal and its noise drops with the
 volume. If the codec can't be set (no HAT, the VM), CamillaDSP's volume takes
 over on the same 63 dB curve. If 1 dB steps turn out too coarse, CamillaDSP
@@ -3050,6 +3053,48 @@ dBFS) next to 1 kHz at -8 dBFS costs the mids 0.4 dB; full-scale bass and
 treble peak at -0.6 dBFS with the clipper never acting; loudness lifts the
 bass 6.2 dB relative to the mids 20 dB below the reference; 25 Hz is 18.5 dB
 down.
+
+**Stalls after a mute (found on the Pi)**: CamillaDSP sometimes fell into an
+overrun, stall and underrun loop after a mute, with chunks taking up to 287 %
+of real time. Two things combined:
+
+- The Audio Player set the loudness fader with ``SetFaderVolume``, which only
+  moves a fader's target (a Volume filter ramps its current value, and there
+  is none for Aux1). It now uses ``SetFaderExternalVolume``, meant for an
+  external volume; with that alone the mute sequence runs clean.
+- Subnormal numbers: CamillaDSP flushes biquad states at the end of each
+  chunk once they *are* subnormal, so a slowly decaying state computes with
+  subnormals for the rest of that chunk. The Pi Zero's ARM1176 traps every such
+  operation to software.
+
+Fixes compared on the Pi with the old fader commands as a reliable trigger
+(two runs each, idle CPU of CamillaDSP):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Fix
+     - Errors
+     - CPU
+   * - none
+     - 10, 7
+     - 24 %
+   * - dither at the input (-187 dBFS)
+     - 0, 0
+     - 26 %
+   * - FPU flush-to-zero in the processing threads (hardware)
+     - 5, 5
+     - 24 %
+   * - flush biquad states below 1e-20 at chunk end
+     - 0, 0
+     - 24 %
+
+The last is used: ``ci/camilladsp/patches/0002-flush-small-biquad-states.patch``
+changes CamillaDSP's existing flush to act before a state can reach the
+subnormal range, with a unit test that fails without it. It costs nothing and
+adds no noise; the hardware flush-to-zero did not catch every case on this
+CPU. It is a small bug fix for upstream (ask which branch first, as their
+contribution guide says).
 
 **The values are placeholders** until the box is measured (crossover, boost,
 high-pass, loudness reference). Next: the analog clip point of the line-out at

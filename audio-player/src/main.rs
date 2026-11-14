@@ -110,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         },
         codec: Some(Codec::iqaudio()),
         loudness: Default::default(),
+        codec_muted: Default::default(),
     });
     let applier = Arc::clone(&volume);
     tokio::spawn(async move { applier.apply_when_ready().await });

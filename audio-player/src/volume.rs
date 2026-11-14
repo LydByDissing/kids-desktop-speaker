@@ -72,6 +72,8 @@ pub struct Codec {
     pub program: String,
     pub card: String,
     pub control: String,
+    /// The codec's soft mute, which ramps the DAC down and up without clicks.
+    pub mute_control: String,
 }
 
 impl Codec {
@@ -81,14 +83,25 @@ impl Codec {
             program: "amixer".into(),
             card: "IQaudIOCODEC".into(),
             control: "Lineout Volume".into(),
+            mute_control: "DAC Soft Mute Switch".into(),
         }
     }
 
     pub async fn set(&self, step: u8) -> Result<(), String> {
+        self.cset(&self.control, &step.to_string()).await
+    }
+
+    /// Mutes or unmutes in hardware (0 %, DEC-050).
+    pub async fn set_muted(&self, muted: bool) -> Result<(), String> {
+        self.cset(&self.mute_control, if muted { "on" } else { "off" })
+            .await
+    }
+
+    async fn cset(&self, control: &str, value: &str) -> Result<(), String> {
         let status = tokio::process::Command::new(&self.program)
             .args(["-q", "-c", &self.card, "cset"])
-            .arg(format!("name={}", self.control))
-            .arg(step.to_string())
+            .arg(format!("name={control}"))
+            .arg(value)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -98,8 +111,8 @@ impl Codec {
             Ok(())
         } else {
             Err(format!(
-                "{} could not set {}: {status}",
-                self.program, self.control
+                "{} could not set {control}: {status}",
+                self.program
             ))
         }
     }
@@ -260,6 +273,9 @@ pub struct Volume {
     pub codec: Option<Codec>,
     /// The loudness filter, read from CamillaDSP once it answers.
     pub loudness: std::sync::Mutex<Option<Option<Loudness>>>,
+    /// Whether the codec's soft mute is on, once set: it is only changed
+    /// when that changes, so a volume step is a single amixer call.
+    pub codec_muted: std::sync::Mutex<Option<bool>>,
     pub settings: std::sync::Mutex<Settings>,
 }
 
@@ -317,20 +333,46 @@ impl Volume {
             },
             _ => false,
         };
+        // 0 % is the codec's soft mute, which ramps without clicks;
+        // CamillaDSP mutes only when the codec can't.
+        let muted_on_codec = match &self.codec {
+            Some(codec) if step.is_none() || on_codec => {
+                let mute = step.is_none();
+                let known = self.codec_muted.lock().ok().and_then(|m| *m);
+                if known == Some(mute) {
+                    true
+                } else {
+                    match codec.set_muted(mute).await {
+                        Ok(()) => {
+                            if let Ok(mut m) = self.codec_muted.lock() {
+                                *m = Some(mute);
+                            }
+                            true
+                        }
+                        Err(e) => {
+                            eprintln!("audio-player: {e}; muting with CamillaDSP");
+                            false
+                        }
+                    }
+                }
+            }
+            _ => false,
+        };
         if let Some(db) = to_db(percent) {
             if loudness.is_some() {
-                // Only the loudness filter reads this fader.
-                let fader = json!({"SetFaderVolume": [LOUDNESS_FADER, (db * 10.0).round() / 10.0]});
+                // Only the loudness filter reads this fader. "External" sets the
+                // fader's current value too: no Volume filter ramps it.
+                let fader =
+                    json!({"SetFaderExternalVolume": [LOUDNESS_FADER, (db * 10.0).round() / 10.0]});
                 self.camilla.send(&[fader]).await?;
             }
         }
-        let db = to_db(percent).map(|db| {
-            if on_codec {
-                0.0
-            } else {
-                (db + makeup(db)).min(0.0)
-            }
-        });
+        let db = match to_db(percent) {
+            None if muted_on_codec => Some(0.0),
+            None => None,
+            Some(_) if on_codec => Some(0.0),
+            Some(db) => Some((db + makeup(db)).min(0.0)),
+        };
         self.camilla.apply_db(db).await
     }
 
