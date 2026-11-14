@@ -3220,3 +3220,12 @@ being covered upstream by ``flush-small-biquad-states`` (7f49531, on
 (eecdd8b) is what our patches 0001 and 0003 come from. Upstream asks for an
 issue before a new feature and for the target branch before a fix; nothing has
 been proposed yet.
+
+**Tuning and listening**: CamillaGUI 4.1 rejects a config with a filter type it
+doesn't know, so ``make -C ci dsp-tune`` plays the variant without the virtual
+bass while the GUI runs and restores the installed config when it stops.
+``make -C ci dsp-variant VARIANT=...`` switches the running speaker between
+variants of the config for A/B listening (``installed``, ``no-vb``,
+``no-duck``, ``no-loudness``, ``no-fill``, ``flat``), each checked by the
+speaker's CamillaDSP before it loads.
+
