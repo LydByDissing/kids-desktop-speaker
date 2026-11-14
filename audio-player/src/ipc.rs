@@ -390,6 +390,25 @@ pub async fn handle_full(
                 Err(e) => error(e),
             }
         }
+        Some(cmd @ ("bass_fill" | "set_bass_fill")) => {
+            // The bass fill that follows the volume (DEC-053).
+            let Some(volume) = &services.volume else {
+                return error("volume unavailable");
+            };
+            if cmd == "bass_fill" {
+                return ok(json!(volume.bass_fill()));
+            }
+            let curve = match serde_json::from_value::<crate::volume::BassFill>(request.clone()) {
+                Ok(c) => c,
+                Err(_) => {
+                    return error("set_bass_fill needs max_db and top_db");
+                }
+            };
+            match volume.set_bass_fill(curve).await {
+                Ok(c) => ok(json!(c)),
+                Err(e) => error(e),
+            }
+        }
         Some(cmd @ ("volume" | "set_volume" | "set_limit")) => {
             let Some(volume) = &services.volume else {
                 return error("volume unavailable");

@@ -3,6 +3,8 @@
 # ======================================================================================
 # Usage: PI_HOST=root@host hw-volume-test.sh
 #
+# Also the bass fill that is counted back from full volume (DEC-053).
+#
 # Sets the volume and the limit through the API (from the Pi itself, which needs
 # no token) and checks the amplifier's gain (the codec's Lineout Volume,
 # DEC-050), that CamillaDSP stays at 0 dB (through an SSH tunnel to its
@@ -21,6 +23,7 @@ api() { # method path [json] -> prints the body
     remote "curl -s -X $1 -H 'content-type: application/json' ${3:+-d '$3'} http://127.0.0.1:8080$2"
 }
 before=$(api GET /api/audio/volume)
+bass_before=$(api GET /api/audio/bass | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"max_db": d["max_db"], "top_db": d["top_db"]}))')
 PORT=$((20000 + RANDOM % 10000))
 ssh -o BatchMode=yes "${SSH_EXTRA[@]}" -p "${HW_SSH_PORT:-22}" -f -N -o ExitOnForwardFailure=yes \
     -L "$PORT:127.0.0.1:1234" "$PI_HOST" || { echo "error: cannot open a tunnel to CamillaDSP" >&2; exit 2; }
@@ -31,6 +34,7 @@ restore() {
     l=$(echo "$before" | python3 -c 'import json,sys; print(json.load(sys.stdin)["limit"])')
     api POST /api/audio/volume-limit "{\"limit\": $l}" >/dev/null
     api POST /api/audio/volume "{\"volume\": $v}" >/dev/null
+    api POST /api/audio/bass "$bass_before" >/dev/null
     kill "$tunnel" 2>/dev/null
     rm -rf "$WORK"
     speaker_unmute
@@ -85,6 +89,25 @@ log "  -6 dBFS tone at 40 %: in $cap dB, out $out dB"
 # The volume is analog now: the DAC gets the tone at its own level, less the
 # loudness filter's 8 dB mid cut at 40 % (the amplifier makes that up).
 check "the DAC gets the tone at -6 dB less the 8 dB mid cut (-14 dB)" "$(near "$out" -14 0.7)" yes
+
+log "=== The bass fill is counted back from 100 % (DEC-053)"
+# The running config's bass fill and the bass compressor's view of it.
+fill() { ws GetConfigJson | python3 -c 'import json,sys; c=json.loads(json.load(sys.stdin)["GetConfigJson"]["value"]); f=c["filters"]; print(f["bass_boost"]["parameters"]["gain"], f["boosted_view"]["parameters"]["gain"])'; }
+since=$(remote date +%s)
+r=$(api POST /api/audio/volume-limit '{"limit": 100}')
+r=$(api POST /api/audio/bass '{"max_db": 18, "top_db": 6}')
+check "the API takes the curve" "$(field "$r" max_db)" 18.0
+r=$(api POST /api/audio/volume '{"volume": 100}')
+check "100 %: top_db, what the system can play" "$(fill)" "6.0 6.0"
+r=$(api POST /api/audio/volume '{"volume": 90}')
+check "90 % (-6.3 dB): 6.3 dB more" "$(fill)" "12.3 12.3"
+r=$(api POST /api/audio/volume '{"volume": 50}')
+check "50 %: the full box correction" "$(fill)" "18.0 18.0"
+r=$(api POST /api/audio/bass '{"max_db": 6, "top_db": 12}')
+check "a curve above max_db is refused" "$(echo "$r" | grep -c error)" 1
+sleep 3
+check "patching the fill doesn't stall CamillaDSP" \
+    "$(remote "journalctl -u camilladsp --since @$since -o cat --no-pager" | grep -ciE 'underrun|stalled|above 100')" 0
 
 log "=== Mute"
 since=$(remote date +%s)

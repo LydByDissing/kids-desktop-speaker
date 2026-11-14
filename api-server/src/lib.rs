@@ -74,6 +74,10 @@ pub fn app(state: AppState) -> Router {
             get(routes::audio::get_volume).post(routes::audio::set_volume),
         )
         .route(
+            "/api/audio/bass",
+            get(routes::audio::get_bass_fill).post(routes::audio::set_bass_fill),
+        )
+        .route(
             "/api/audio/volume-limit",
             get(routes::audio::get_volume_limit).post(routes::audio::set_volume_limit),
         )

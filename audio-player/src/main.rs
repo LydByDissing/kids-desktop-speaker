@@ -9,7 +9,9 @@ use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
 use audio_player::stream::{PlayState, Player};
 use audio_player::switcher::{BtClient, DeviceStopper};
-use audio_player::volume::{Camilla, Codec, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
+use audio_player::volume::{
+    Bass, Camilla, Codec, Volume, VolumeStore, BASS_FILE, CAMILLA_ADDR, VOLUME_FILE,
+};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -111,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         codec: Some(Codec::iqaudio()),
         loudness: Default::default(),
         codec_muted: Default::default(),
+        bass: Bass::load(BASS_FILE),
     });
     let applier = Arc::clone(&volume);
     tokio::spawn(async move { applier.apply_when_ready().await });

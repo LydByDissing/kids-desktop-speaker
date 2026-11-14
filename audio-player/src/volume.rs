@@ -63,6 +63,105 @@ impl Loudness {
     }
 }
 
+/// Where the bass fill curve is kept (DEC-053).
+pub const BASS_FILE: &str = "/data/audio/bass.json";
+
+/// How much the bass fill (CamillaDSP's `bass_boost`, and the bass
+/// compressor's view of it, `boosted_view`) lifts the bass (DEC-053),
+/// counted back from 100 %: `top_db` at the amplifier's full gain, the most
+/// bass the amplifier and driver can play, and 1 dB more for each dB the gain
+/// is lower, up to the box correction `max_db`. The bass (gain plus fill)
+/// never plays louder than at 100 %, so no volume asks more of the system.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BassFill {
+    pub max_db: f64,
+    pub top_db: f64,
+}
+
+impl Default for BassFill {
+    /// The same fill at every volume: the config's static +6 dB.
+    fn default() -> Self {
+        BassFill {
+            max_db: 6.0,
+            top_db: 6.0,
+        }
+    }
+}
+
+impl BassFill {
+    /// The fill in dB at `gain_db`, the amplifier's gain below full (0 or
+    /// less; see [`analog_gain`]).
+    pub fn at(&self, gain_db: f64) -> f64 {
+        (self.top_db - gain_db.min(0.0)).min(self.max_db)
+    }
+
+    /// The gain in dB below full where the fill starts to fall.
+    pub fn knee_db(&self) -> f64 {
+        self.top_db - self.max_db
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, db) in [("max_db", self.max_db), ("top_db", self.top_db)] {
+            if !(0.0..=24.0).contains(&db) {
+                return Err(format!("{name} must be from 0 to 24 dB"));
+            }
+        }
+        if self.top_db > self.max_db {
+            return Err("top_db can't be more than max_db".into());
+        }
+        Ok(())
+    }
+}
+
+/// The amplifier's gain in dB below full at `percent` (None for 0 %): the
+/// volume plus the loudness filter's mid cut it makes up (DEC-050/051).
+pub fn analog_gain(percent: u8, loudness: Option<Loudness>) -> Option<f64> {
+    to_db(percent).map(|db| (db + loudness.map(|l| l.mid_cut(db)).unwrap_or(0.0)).min(0.0))
+}
+
+/// The bass fill curve, kept in a file, and the value last sent.
+#[derive(Default)]
+pub struct Bass {
+    pub file: Option<PathBuf>,
+    pub curve: std::sync::Mutex<BassFill>,
+    pub sent: std::sync::Mutex<Option<f64>>,
+}
+
+impl Bass {
+    /// The curve saved in `file`, or the default.
+    pub fn load(file: impl Into<PathBuf>) -> Self {
+        let file = file.into();
+        let curve = std::fs::read(&file)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<BassFill>(&b).ok())
+            .filter(|c| c.validate().is_ok())
+            .unwrap_or_default();
+        Bass {
+            file: Some(file),
+            curve: std::sync::Mutex::new(curve),
+            sent: Default::default(),
+        }
+    }
+
+    pub fn curve(&self) -> BassFill {
+        self.curve.lock().map(|c| *c).unwrap_or_default()
+    }
+
+    fn save(&self, curve: &BassFill) -> Result<(), String> {
+        let Some(file) = &self.file else {
+            return Ok(());
+        };
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("cannot save the bass fill: {e}"))?;
+        }
+        let temp = file.with_extension("json.tmp");
+        let json = serde_json::to_vec_pretty(curve).map_err(|e| e.to_string())?;
+        std::fs::write(&temp, json)
+            .and_then(|()| std::fs::rename(&temp, file))
+            .map_err(|e| format!("cannot save the bass fill: {e}"))
+    }
+}
+
 /// CamillaDSP's fader that only the loudness filter reads.
 pub const LOUDNESS_FADER: usize = 1;
 
@@ -253,6 +352,18 @@ impl Camilla {
         self.send(&commands).await.map(|_| ())
     }
 
+    /// Sets the bass fill on the running config (DEC-053): the fill itself
+    /// and the bass compressor's view of it. A config without them (a
+    /// listening variant) is left alone.
+    pub async fn set_bass_fill(&self, db: f64) -> Result<(), String> {
+        let db = (db * 10.0).round() / 10.0;
+        let patch = json!({"PatchConfig": {"filters": {
+            "bass_boost": {"parameters": {"gain": db}},
+            "boosted_view": {"parameters": {"gain": db}},
+        }}});
+        self.send(&[patch]).await.map(|_| ())
+    }
+
     /// The running config's loudness filter, if it has one.
     pub async fn loudness(&self) -> Result<Option<Loudness>, String> {
         let replies = self.send(&[json!("GetConfigJson")]).await?;
@@ -276,6 +387,8 @@ pub struct Volume {
     /// Whether the codec's soft mute is on, once set: it is only changed
     /// when that changes, so a volume step is a single amixer call.
     pub codec_muted: std::sync::Mutex<Option<bool>>,
+    /// The bass fill that follows the volume (DEC-053).
+    pub bass: Bass,
     pub settings: std::sync::Mutex<Settings>,
 }
 
@@ -373,7 +486,53 @@ impl Volume {
             Some(_) if on_codec => Some(0.0),
             Some(db) => Some((db + makeup(db)).min(0.0)),
         };
-        self.camilla.apply_db(db).await
+        self.camilla.apply_db(db).await?;
+        if let Some(gain) = analog_gain(percent, loudness) {
+            self.apply_bass_fill(gain).await;
+        }
+        Ok(())
+    }
+
+    /// Sends the bass fill for the amplifier's `gain` when it differs from
+    /// the last sent.
+    async fn apply_bass_fill(&self, gain: f64) {
+        let fill = self.bass.curve().at(gain);
+        let last = self.bass.sent.lock().ok().and_then(|s| *s);
+        if last.is_some_and(|l| (l - fill).abs() < 0.05) {
+            return;
+        }
+        match self.camilla.set_bass_fill(fill).await {
+            Ok(()) => {
+                if let Ok(mut sent) = self.bass.sent.lock() {
+                    *sent = Some(fill);
+                }
+            }
+            // A listening variant without the fill filters, or CamillaDSP down.
+            Err(e) => eprintln!("audio-player: bass fill not applied: {e}"),
+        }
+    }
+
+    /// The bass fill curve (DEC-053).
+    pub fn bass_fill(&self) -> BassFill {
+        self.bass.curve()
+    }
+
+    /// Changes the bass fill curve, saves it and applies it at the current
+    /// volume.
+    pub async fn set_bass_fill(&self, curve: BassFill) -> Result<BassFill, String> {
+        curve.validate()?;
+        self.bass.save(&curve)?;
+        if let Ok(mut c) = self.bass.curve.lock() {
+            *c = curve;
+        }
+        if let Ok(mut sent) = self.bass.sent.lock() {
+            *sent = None;
+        }
+        let loudness = self.loudness().await;
+        if let Some(gain) = analog_gain(self.current().volume, loudness) {
+            self.apply_bass_fill(gain).await;
+        }
+        Ok(curve)
     }
 
     pub async fn set_limit(&self, limit: u8) -> Result<(Settings, Option<String>), String> {

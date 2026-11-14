@@ -3229,3 +3229,47 @@ variants of the config for A/B listening (``installed``, ``no-vb``,
 ``no-duck``, ``no-loudness``, ``no-fill``, ``flat``), each checked by the
 speaker's CamillaDSP before it loads.
 
+DEC-053 — The Bass Fill Is Counted Back from Full Volume
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_053
+   :status: resolved
+   :date: 2026-11-14
+   :tags: audio, dsp, volume
+
+Decided with the user (KDS-9jt.6).
+
+**Context**: by ear, the bass sounded natural with the fill (``bass_boost``)
+at about +18 dB, which works at medium volume but not at 100 %: +18 dB is 63
+times the power, more than the 1.3 W amplifier and the driver can give, so the
+bass compressor pulled the bass back hard at the top.
+
+**Decision**: the fill is counted back from 100 %, so no volume asks more of
+the amplifier and driver than full volume does. At the amplifier's full gain
+the fill is ``top_db``, the most bass the system can play; for each dB the
+gain is lower the fill is 1 dB more, up to the box correction ``max_db``. So
+the bass (gain plus fill) never plays louder than at 100 %: below the knee
+(``top_db - max_db`` dB below full) the box gets its full correction, above it
+the fill falls exactly as fast as the volume rises, which is how the driver's
+excursion and the amplifier's headroom run out (both follow the drive
+voltage). The gain counted is the amplifier's, the volume plus the loudness
+filter's mid cut it makes up (DEC-051).
+
+What it is not: it is not loudness compensation. Hearing needs a steady
+0.3-0.4 dB less bass for each dB louder at 63-125 Hz at every level from 40 to
+90 phon (ISO 226 equal-loudness contours), with no knee; the loudness filter
+does that already (8 dB over its 20 dB range, 0.4 dB per dB). A taper in the
+fill on top would count it twice; the first version of this decision (a
+straight line from ``taper_from`` % to ``top_db``) did, and fell at neither
+rate.
+
+The Audio Player sets the fill and the bass compressor's view of it
+(``bass_boost`` and ``boosted_view``) with CamillaDSP's ``PatchConfig`` on each
+volume change, only when the value changes; a config without those filters (a
+listening variant) is left alone. The ducking stays as the safety net. The
+curve is kept in ``/data/audio/bass.json`` and changed with ``POST
+/api/audio/bass`` (an admin token over HTTPS); the default, +6 dB at every
+volume, is the static fill. The values come from voicing in the new
+cabinet; the lowest octave is left to the virtual bass rather than boosted.
+
