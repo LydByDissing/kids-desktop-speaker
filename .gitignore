@@ -35,3 +35,5 @@ __pycache__/
 
 # Local secrets for development (see .env.example)
 .env
+ci/dsp/camillagui/
+ci/dsp/work/

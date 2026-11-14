@@ -6,11 +6,12 @@
 # Runs on the build host against the image installed on the Pi. Reads
 # CamillaDSP's meters through an SSH tunnel to its localhost websocket and plays
 # test tones into "speaker":
-#   - a -6 dBFS tone arrives at -6 dB and leaves untouched (no gain error)
-#   - a full-scale tone leaves at the -1 dBFS limit, with no clipped samples
+#   - a -6 dBFS 1 kHz tone arrives at -6 dB and leaves at -6 dB (mono mix,
+#     no gain error; the bass stages leave it alone, DEC-051)
+#   - a full-scale tone is held by the look-ahead limiter, with no clipped samples
 #   - the loopback's rate follows the HAT, and CamillaDSP keeps up
 # With KDS_AIRPLAY_SINK set (this host streams AirPlay through PipeWire), it
-# also checks that the sender's volume changes the level on the Pi. With
+# also checks that the sender's volume sets the speaker volume (DEC-049). With
 # KDS_DSP_SOAK_MIN=<minutes> it plays DR P3 that long and counts underruns.
 # The speaker is muted unless KDS_HW_AUDIBLE=1.
 
@@ -80,15 +81,19 @@ check "it is processing" "$(value GetState)" Running
 check "its websocket is reachable only on localhost" "$(remote "ss -ltnH 'sport = :1234'" | awk '{print $4}' | sort -u | paste -sd,)" "127.0.0.1:1234"
 clipped_before=$(value GetClippedSamples)
 
-log "=== Levels"
+log "=== Levels (DEC-051: 1 kHz passes the bass stages untouched)"
+# At 100 % the loudness filter does nothing, and a 1 kHz tone is in the
+# "rest" band: it leaves at its own level, and the look-ahead limiter holds
+# full scale just under its -1.5 dBFS threshold, before the -0.5 dBFS clipper.
 tone tone-6 -6 48000 6
 play_and_measure tone-6
 check "-6 dBFS arrives at -6 dB" "$(near "$CAP" -6 0.3)" yes
-check "-6 dBFS leaves untouched" "$(near "$PLAY" -6 0.3)" yes
+check "-6 dBFS leaves at -6 dB" "$(near "$PLAY" -6 0.5)" yes
 tone tone-0 0 44100 6
 play_and_measure tone-0
 check "full scale arrives at 0 dB (44.1 kHz converted)" "$(near "$CAP" 0 0.3)" yes
-check "full scale leaves at the -1 dBFS limit" "$(near "$PLAY" -1 0.1)" yes
+check "full scale leaves held by the limiter, under -1 dBFS" "$(atmost "$PLAY" -1.0)" yes
+check "and not far under (-2 dBFS or more)" "$(atmost -2.0 "$PLAY")" yes
 check "no samples were clipped" "$CLIP" "$clipped_before"
 
 log "=== Timing"
@@ -99,22 +104,29 @@ check "processing load is below 50 %" "$(atmost "$load" 50)" yes
 check "no underruns or overruns while the tones played" "$XRUNS" 0
 
 if [ -n "${KDS_AIRPLAY_SINK:-}" ]; then
-    log "=== The sender's volume reaches the Pi (AirPlay from this host)"
+    log "=== The sender's volume sets the speaker volume (AirPlay from this host, DEC-049)"
     node=$(wpctl status | grep -m1 -i "$(echo "$KDS_AIRPLAY_SINK" | sed -E 's/^raop_sink\.([^.]*).*/\1/')" | grep -oE '[0-9]+' | head -1)
     tone airplay -6 44100 40
-    wpctl set-volume "$node" 1.0
+    device_volume() { remote "curl -s http://127.0.0.1:8080/api/audio/volume" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volume"])'; }
     pw-play --target "$KDS_AIRPLAY_SINK" "$WORK/airplay.wav" >/dev/null 2>&1 &
     sender=$!
-    sleep 12
+    # The session starts at the sink's previous volume; set it once it runs.
+    sleep 4
+    wpctl set-volume "$node" 1.0
+    sleep 8
     loud=$(value GetCaptureSignalPeak)
+    at_full=$(device_volume)
     wpctl set-volume "$node" 0.5
     sleep 6
     quiet=$(value GetCaptureSignalPeak)
+    at_half=$(device_volume)
     wpctl set-volume "$node" 1.0
     kill $sender 2>/dev/null
-    log "  capture peak at volume 1.0: $loud dB, at 0.5: $quiet dB"
-    check "full sender volume arrives at -6 dB" "$(near "$loud" -6 0.5)" yes
-    check "halving the sender's volume lowers the level by at least 6 dB" "$(atmost "$quiet" "$loud - 6")" yes
+    log "  capture peak at sender volume 1.0: $loud dB, at 0.5: $quiet dB; speaker volume $at_full % then $at_half %"
+    check "the audio arrives at full level (-6 dB)" "$(near "$loud" -6 0.5)" yes
+    check "the sender's volume doesn't scale the audio" "$(near "$quiet" "$loud" 0.5)" yes
+    check "sender at full volume: the speaker plays at its limit" "$at_full" 100
+    check "turning the sender down turns the speaker down" "$(atmost "$at_half" 90)" yes
 fi
 
 if [ -n "${KDS_DSP_SOAK_MIN:-}" ]; then

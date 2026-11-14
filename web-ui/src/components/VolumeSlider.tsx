@@ -14,7 +14,7 @@ export function VolumeSlider({ volume, limit, onChange }: { volume: number; limi
           type="range"
           min={0}
           max={limit}
-          step={5}
+          step={1}
           value={volume}
           style={{ width: `${Math.max(limit, 10)}%` }}
           aria-valuetext={`${volume} %`}

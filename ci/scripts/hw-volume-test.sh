@@ -4,8 +4,9 @@
 # Usage: PI_HOST=root@host hw-volume-test.sh
 #
 # Sets the volume and the limit through the API (from the Pi itself, which needs
-# no token) and checks CamillaDSP's main volume through an SSH tunnel to its
-# websocket, including the level of a -6 dBFS tone leaving it. Restores the
+# no token) and checks the amplifier's gain (the codec's Lineout Volume,
+# DEC-050), that CamillaDSP stays at 0 dB (through an SSH tunnel to its
+# websocket) and the level of a -6 dBFS tone leaving it. Restores the
 # settings afterwards. The speaker is muted unless KDS_HW_AUDIBLE=1.
 
 set -uo pipefail
@@ -41,21 +42,26 @@ ws() { python3 "$REPO/ci/scripts/cdsp-ws.py" "127.0.0.1:$PORT" "$@"; }
 value() { ws "$1" | python3 -c 'import json,sys; v=list(json.load(sys.stdin).values())[0]["value"]; print(v[0] if isinstance(v, list) else v)'; }
 field() { echo "$1" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$2\"])"; }
 near() { python3 -c "import sys; sys.exit(0 if abs($1 - ($2)) <= $3 else 1)" && echo yes || echo "no ($1)"; }
+# The amplifier's gain (DEC-050): the codec's Lineout Volume step, 48 = 0 dB.
+lineout() { remote "amixer -c IQaudIOCODEC cget name='Lineout Volume'" | sed -n 's/.*: values=//p'; }
 
 log "=== Volume"
 r=$(api POST /api/audio/volume-limit '{"limit": 75}')
 r=$(api POST /api/audio/volume '{"volume": 50}')
-check "the API reports 50 % as -30 dB" "$(field "$r" db)" -30.0
-check "CamillaDSP is at -30 dB" "$(near "$(value GetVolume)" -30 0.1)" yes
+check "the API reports 50 % as -31.5 dB" "$(field "$r" db)" -31.5
+# Loudness (DEC-051) cuts the mids by 7.8 dB at 50 %; the amplifier makes it
+# up: 63 - 31.5 + 7.8 = step 39.
+check "the amplifier is at step 39" "$(lineout)" 39
+check "CamillaDSP stays at 0 dB" "$(near "$(value GetVolume)" 0 0.1)" yes
 check "and not muted" "$(value GetMute)" False
 
 log "=== The limit"
 r=$(api POST /api/audio/volume '{"volume": 95}')
 check "asking for 95 % gives the 75 % limit" "$(field "$r" volume)" 75
-check "CamillaDSP is at -15 dB" "$(near "$(value GetVolume)" -15 0.1)" yes
+check "the amplifier is at step 49 (75 %: 63 - 15.75 + 1.5)" "$(lineout)" 49
 r=$(api POST /api/audio/volume-limit '{"limit": 40}')
 check "lowering the limit to 40 % lowers the volume" "$(field "$r" volume)" 40
-check "CamillaDSP is at -36 dB" "$(near "$(value GetVolume)" -36 0.1)" yes
+check "the amplifier is at step 33 (40 %: 63 - 37.8 + 8)" "$(lineout)" 33
 
 log "=== It applies to the sound"
 python3 - "$WORK/tone.wav" <<'PY'
@@ -66,15 +72,32 @@ w.writeframes(b"".join(struct.pack("<hh", int(a*math.sin(2*math.pi*1000*i/48000)
 PY
 "${SCP[@]}" "$WORK/tone.wav" "$PI_HOST:/tmp/kds-volume-tone.wav"
 remote "aplay -q -D speaker /tmp/kds-volume-tone.wav" &
-sleep 2.5
+# The SSH connection takes a second or two before aplay runs: wait for the
+# tone to arrive, then let the levels settle.
+for _ in $(seq 20); do
+    python3 -c "import sys; sys.exit(0 if $(value GetCaptureSignalPeak) > -30 else 1)" && break
+    sleep 0.5
+done
+sleep 1
 cap=$(value GetCaptureSignalPeak); out=$(value GetPlaybackSignalPeak)
 wait
 log "  -6 dBFS tone at 40 %: in $cap dB, out $out dB"
-check "the tone leaves 36 dB lower (-42 dB)" "$(near "$out" -42 0.5)" yes
+# The volume is analog now: the DAC gets the tone at its own level, less the
+# loudness filter's 8 dB mid cut at 40 % (the amplifier makes that up).
+check "the DAC gets the tone at -6 dB less the 8 dB mid cut (-14 dB)" "$(near "$out" -14 0.7)" yes
 
 log "=== Mute"
+since=$(remote date +%s)
 r=$(api POST /api/audio/volume '{"volume": 0}')
 check "0 % mutes CamillaDSP" "$(value GetMute)" True
+# Muting feeds the filters exact zeros; without the anti-denormal dither the
+# Pi Zero's FPU stalled CamillaDSP right after (DEC-051).
+sleep 3
+r=$(api POST /api/audio/volume-limit '{"limit": 100}')
+r=$(api POST /api/audio/volume '{"volume": 60}')
+sleep 5
+check "muting and unmuting doesn't stall CamillaDSP" \
+    "$(remote "journalctl -u camilladsp --since @$since -o cat --no-pager" | grep -ciE 'underrun|stalled|above 100')" 0
 
 if [ "$fail" = 0 ]; then log "All volume tests passed."; else log "Some volume tests FAILED."; fi
 exit "$fail"

@@ -5,9 +5,29 @@
 # stereo stream and plays it on the HAT. The loopback runs on its own clock, so
 # CamillaDSP adjusts the loopback's rate to match the HAT's (rate adjust).
 #
-# The pipeline is flat for now: a limiter just under full scale stops clipping
-# whatever the sources and their volumes do. The speaker's bass EQ comes with
-# DSP tuning (KDS-1o1 follow-up).
+# Bass for a small box without losing loudness (DSP_REQ_001, DEC-051). One
+# driver, so everything is mono. The values are placeholders until the box is
+# measured; tune live with make -C ci dsp-tune.
+#
+#   mono ─ dither ─┬─ bass:  subsonic HPF ─ LR4 low-pass ─ +6 dB ─ 5 ms delay ─ ducked ─┐
+#                  ├─ rest:  LR4 high-pass ──────────────────────── 5 ms delay ─────────┼─ sum
+#                  └─ watch: subsonic HPF ─ low shelf +6 dB (what the sum will be) ─────┘ (side chain)
+#   (the dither keeps the filters off subnormal numbers, see anti_denormal)
+#   sum ─ loudness (follows the volume, lowers the mids) ─┬─ 5 ms delay ─ limited ─ clipper ─ both HAT channels
+#                                                         └─ watch (side chain)
+#
+# - The static boost fills the box's dip; the bass compressor turns down only
+#   the bass, and only when the sum would pass full scale, so loud passages
+#   keep their mids and the speaker its maximum level.
+# - Loudness adds bass (and a little treble) as the volume drops, as ears
+#   need (equal-loudness contours). It lowers the mids instead of raising the
+#   ends; the Audio Player makes that up with the amplifier's analog gain
+#   (DEC-050) and mirrors the volume into fader Aux1, which only loudness reads.
+# - Both compressors watch the signal 5 ms ahead of the audio they turn down,
+#   so they act before a peak arrives; the clipper at -0.5 dBFS is a last guard
+#   that should not act.
+# The device volume is the amplifier's analog gain, so CamillaDSP's own volume
+# stays at 0 dB.
 title: Kids Desktop Speaker
 devices:
   samplerate: 48000
@@ -16,12 +36,104 @@ devices:
   enable_rate_adjust: true
   # The defaults (a buffer of one chunk, corrected every 10 s) let the HAT run
   # dry every 30-50 s on the single-core Pi Zero: 15 underruns in 10 minutes
-  # of radio. Two chunks (43 ms) corrected every 3 s gave none.
-  target_level: 2048
+  # of radio. Two chunks (43 ms) corrected every 3 s gave none. Four chunks
+  # (85 ms) ride out the CPU spike when Spotify starts a new track.
+  target_level: 4096
   adjust_period: 3
   capture: {type: Alsa, channels: 2, device: "hw:Loopback,1,0", format: S16_LE}
   playback: {type: Alsa, channels: 2, device: "hw:IQaudIOCODEC,0", format: S32_LE}
+mixers:
+  to_mono:
+    channels: {in: 2, out: 1}
+    mapping:
+      - dest: 0
+        sources:
+          - {channel: 0, gain: -6.02, inverted: false}
+          - {channel: 1, gain: -6.02, inverted: false}
+  # 0: bass, 1: the rest, 2: the bass side chain's view of the sum.
+  split_bass:
+    channels: {in: 1, out: 3}
+    mapping:
+      - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
+      - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
+      - {dest: 2, sources: [{channel: 0, gain: 0, inverted: false}]}
+  join_bass:
+    channels: {in: 3, out: 1}
+    mapping:
+      - dest: 0
+        sources:
+          - {channel: 0, gain: 0, inverted: false}
+          - {channel: 1, gain: 0, inverted: false}
+  # 0: the audio, 1: the limiter's side chain.
+  split_limit:
+    channels: {in: 1, out: 2}
+    mapping:
+      - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
+      - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
+  to_both:
+    channels: {in: 2, out: 2}
+    mapping:
+      - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
+      - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
 filters:
-  limiter: {type: Limiter, parameters: {clip_limit: -1.0, soft_clip: false}}
+  # Keeps every filter state away from subnormal numbers, which the Pi Zero's
+  # ARM1176 FPU traps to slow software: after a mute (exact zeros), 13 biquads
+  # and two compressors decaying through them made a chunk take 224 % of real
+  # time and stalled CamillaDSP. Flat noise at the 32-bit floor, ~-187 dBFS.
+  anti_denormal: {type: Dither, parameters: {type: Flat, bits: 32, amplitude: 2.0}}
+  # Below what the driver can play: no swing spent on it.
+  subsonic: {type: BiquadCombo, parameters: {type: ButterworthHighpass, freq: 40, order: 6}}
+  bass_band: {type: BiquadCombo, parameters: {type: LinkwitzRileyLowpass, freq: 150, order: 4}}
+  rest_band: {type: BiquadCombo, parameters: {type: LinkwitzRileyHighpass, freq: 150, order: 4}}
+  # Fills the box's dip (to be measured).
+  bass_boost: {type: Gain, parameters: {gain: 6.0}}
+  # The side chain's estimate of the boosted sum.
+  boosted_view: {type: Biquad, parameters: {type: Lowshelf, freq: 150, gain: 6.0, slope: 12}}
+  lookahead: {type: Delay, parameters: {delay: 5, unit: ms, subsample: false}}
+  # Ears hear less bass when it is quiet: up to +8 dB bass and +2 dB treble
+  # as the volume (fader Aux1) drops 20 dB below -12 dB, as cut mids.
+  loudness: {type: Loudness, parameters: {fader: Aux1, reference_level: -12, low_boost: 8, high_boost: 2, attenuate_mid: true}}
+  clipper: {type: Limiter, parameters: {clip_limit: -0.5, soft_clip: false}}
+processors:
+  # Turns down only the bass when the sum would pass -4 dBFS, early enough
+  # that the limiter rarely has to touch the mids. CamillaDSP follows each
+  # sample's level in dB: a short release sags between the peaks of a bass
+  # note, so the release holds it; the look-ahead makes a fast attack safe.
+  bass_duck:
+    type: Compressor
+    parameters:
+      channels: 3
+      monitor_channels: [2]
+      process_channels: [0]
+      attack: 0.0005
+      release: 0.4
+      threshold: -4.0
+      factor: 20
+      makeup_gain: 0
+  # A look-ahead limiter on everything, just under the clipper.
+  limiter:
+    type: Compressor
+    parameters:
+      channels: 2
+      monitor_channels: [1]
+      process_channels: [0]
+      attack: 0.0002
+      release: 0.5
+      threshold: -1.5
+      factor: 100
+      makeup_gain: 0
 pipeline:
-  - {type: Filter, channels: [0, 1], names: [limiter]}
+  - {type: Mixer, name: to_mono}
+  - {type: Filter, channels: [0], names: [anti_denormal]}
+  - {type: Mixer, name: split_bass}
+  - {type: Filter, channels: [0], names: [subsonic, bass_band, bass_boost, lookahead]}
+  - {type: Filter, channels: [1], names: [rest_band, lookahead]}
+  - {type: Filter, channels: [2], names: [subsonic, boosted_view]}
+  - {type: Processor, name: bass_duck}
+  - {type: Mixer, name: join_bass}
+  - {type: Filter, channels: [0], names: [loudness]}
+  - {type: Mixer, name: split_limit}
+  - {type: Filter, channels: [0], names: [lookahead]}
+  - {type: Processor, name: limiter}
+  - {type: Filter, channels: [0], names: [clipper]}
+  - {type: Mixer, name: to_both}

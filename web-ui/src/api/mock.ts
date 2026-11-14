@@ -133,7 +133,7 @@ export class MockClient implements ApiClient {
   private volumeReply = (): Volume => ({
     volume: this.volumeValue,
     limit: this.limit,
-    db: this.volumeValue === 0 ? null : -60 * (1 - this.volumeValue / 100),
+    db: this.volumeValue === 0 ? null : Math.round(-63 * (1 - this.volumeValue / 100) * 10) / 10,
   });
   volume = () => this.answer(this.volumeReply);
   setVolume = (v: number) => this.answer(() => { this.volumeValue = Math.min(v, this.limit); return this.volumeReply(); });

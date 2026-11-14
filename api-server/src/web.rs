@@ -33,9 +33,11 @@ pub fn fallback(dir: PathBuf) -> Router {
                     return (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" })))
                         .into_response();
                 }
+                // Serving files can't fail (the error type is Infallible); a
+                // missing file is the index page or a 404 response.
                 match files.oneshot(request).await {
                     Ok(response) => response.map(Body::new),
-                    Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+                    Err(never) => match never {},
                 }
             }
         })

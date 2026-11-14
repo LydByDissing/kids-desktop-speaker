@@ -66,11 +66,19 @@ async fn main() -> anyhow::Result<()> {
     if let Some(bus) = ctx.bus.clone() {
         join_set.spawn(register_until_done(bus.clone()));
         // Tell the Audio Player when a phone starts or stops streaming, so only
-        // one source plays at a time (DEC-039).
+        // one source plays at a time (DEC-039), and when it changes its volume,
+        // which is the speaker's one volume (DEC-049).
         join_set.spawn(async move {
-            let report = |active: bool| async move {
-                let state = if active { "active" } else { "inactive" };
-                let request = serde_json::json!({"cmd": "source_event", "source": "bluetooth", "state": state});
+            let report = |event: bluez::TransportEvent| async move {
+                let request = match event {
+                    bluez::TransportEvent::Streaming(active) => {
+                        let state = if active { "active" } else { "inactive" };
+                        serde_json::json!({"cmd": "source_event", "source": "bluetooth", "state": state})
+                    }
+                    bluez::TransportEvent::Volume(v) => {
+                        serde_json::json!({"cmd": "source_volume", "source": "bluetooth", "value": v})
+                    }
+                };
                 if let Err(e) = kds_ipc::request("/run/kds/audio.sock", &request).await {
                     eprintln!("bluetooth-service: could not tell the Audio Player: {e}");
                 }

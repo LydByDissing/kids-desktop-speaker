@@ -36,6 +36,16 @@ fn spotify_keeps_credentials_but_caches_no_audio() {
 }
 
 #[test]
+fn spotify_plays_at_full_level_and_reports_its_volume() {
+    // The speaker's volume is the only one (DEC-049): librespot doesn't turn
+    // the audio down; its volume events reach the Audio Player instead.
+    let args = spotify_args("x");
+    assert_eq!(value_of(&args, "--volume-ctrl"), Some("fixed"));
+    assert_eq!(value_of(&args, "--volume-steps"), Some("100"));
+    assert!(value_of(&args, "--onevent").is_some());
+}
+
+#[test]
 fn a_name_with_spaces_stays_one_argument() {
     let args = spotify_args("Kids Room");
     assert_eq!(value_of(&args, "--name"), Some("Kids Room"));

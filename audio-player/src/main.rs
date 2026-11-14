@@ -9,7 +9,7 @@ use audio_player::radio::{StationStore, STATIONS_FILE};
 use audio_player::sources;
 use audio_player::stream::{PlayState, Player};
 use audio_player::switcher::{BtClient, DeviceStopper};
-use audio_player::volume::{Camilla, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
+use audio_player::volume::{Camilla, Codec, Volume, VolumeStore, CAMILLA_ADDR, VOLUME_FILE};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -28,9 +28,17 @@ const AUDIO_SOCKET: &str = "/run/kds/audio.sock";
 const BT_SOCKET: &str = "/run/kds/bt.sock";
 
 /// `audio-player notify <source> <event>`: what the receivers' hooks run to
-/// report that they started or stopped playing (DEC-039).
-async fn notify(source: &str, event: &str) -> anyhow::Result<()> {
-    let request = serde_json::json!({"cmd": "source_event", "source": source, "state": event});
+/// report that they started or stopped playing (DEC-039), and
+/// `audio-player notify <source> volume <value>` when the phone changes its
+/// volume (DEC-049).
+async fn notify(source: &str, event: &str, value: Option<&str>) -> anyhow::Result<()> {
+    let request = match (event, value) {
+        ("volume", Some(value)) => {
+            serde_json::json!({"cmd": "source_volume", "source": source, "value": value})
+        }
+        ("volume", None) => anyhow::bail!("usage: audio-player notify <source> volume <value>"),
+        _ => serde_json::json!({"cmd": "source_event", "source": source, "state": event}),
+    };
     kds_ipc::request(AUDIO_SOCKET, &request).await?;
     Ok(())
 }
@@ -42,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         let (Some(source), Some(event)) = (args.get(2), args.get(3)) else {
             anyhow::bail!("usage: audio-player notify <source> <event>");
         };
-        return notify(source, event).await;
+        return notify(source, event, args.get(4).map(String::as_str)).await;
     }
     println!("audio-player: starting");
 
@@ -91,8 +99,8 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // The device volume and limit (VOL_REQ_001, DEC-040), applied once
-    // CamillaDSP answers.
+    // The device volume and limit (VOL_REQ_001, DEC-040), on the HAT's
+    // amplifier (DEC-050), applied once CamillaDSP answers.
     let store = VolumeStore::new(VOLUME_FILE);
     let volume = Arc::new(Volume {
         settings: std::sync::Mutex::new(store.load()),
@@ -100,6 +108,8 @@ async fn main() -> anyhow::Result<()> {
         camilla: Camilla {
             addr: CAMILLA_ADDR.into(),
         },
+        codec: Some(Codec::iqaudio()),
+        loudness: Default::default(),
     });
     let applier = Arc::clone(&volume);
     tokio::spawn(async move { applier.apply_when_ready().await });

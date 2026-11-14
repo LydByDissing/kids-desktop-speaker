@@ -103,6 +103,13 @@ jobs:
         run: make test
         working-directory: ci
 
+      # The bass stages, limiter and loudness, through the image's own
+      # CamillaDSP with test signals (DEC-051).
+      - name: Test the DSP config
+        run: |
+          sudo apt-get install -y -qq python3-numpy
+          make -C ci test-dsp
+
       - name: Test on emulated Pi Zero W CPU
         run: make test-armv6
         working-directory: ci

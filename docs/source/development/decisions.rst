@@ -2477,6 +2477,17 @@ HAT's (``enable_rate_adjust``). A ``camilladsp`` ALSA plugin was not needed.
 The speaker's bass EQ (DSP_REQ_001) comes with DSP tuning, measured on the
 speaker.
 
+**Update (2026-11-12, KDS-9jt.6): mono, headroom, room to breathe.** The
+speaker has one driver and the amplifier runs at full gain, so the pipeline is
+now: left plus right (-6 dB each) to one channel, a headroom cut (-10 dB, at
+least the voicing EQ's largest boost), the voicing EQ (to come), the limiter,
+then the same signal to both HAT channels. The codec's own mono mix is off; it
+would add the two identical channels again after the limiter. Against
+Spotify's pauses as a track starts: the shared dmix buffer is 340 ms (was
+170), CamillaDSP's target level four chunks (85 ms, was 43) and it runs with
+real-time scheduling. Tuning is live with ``make -C ci dsp-tune`` (CamillaGUI
+on a laptop through an SSH tunnel; nothing is saved on the speaker).
+
 **Decision 3: built from source.** CamillaDSP is GPL-3.0. CI builds it from the
 pinned v4.1.3 release archive (SHA-256 checked) with our own ``Cargo.lock``
 (the tag ships none), cross-compiled like librespot (DEC-034) with the shared
@@ -2631,6 +2642,9 @@ restores the level if CamillaDSP restarts on its own.
 provisional: the speaker is a raw driver without its cabinet, so the default,
 the limit and the curve are set when it is in the cabinet, together with the
 DSP tuning (KDS-9jt.6).
+
+**Superseded in part by DEC-050 (2026-11-13)**: the volume is now the HAT
+amplifier's analog gain over 63 dB, with CamillaDSP at 0 dB.
 
 **Curve**: 0 % mutes; 1-100 % maps linearly onto -60 to 0 dB (50 % is -30 dB),
 an even curve in loudness. The limit caps the percentage: asking for more than
@@ -2897,4 +2911,160 @@ that drops reconnects 3 times; the image loses MPD's packages. symphonia is
 MPL-2.0 (file-level copyleft), now allowed in ``deny.toml``: it is used
 unmodified and its source is the published crate, as for librespot's MPL-2.0
 crates (DEC-034).
+
+DEC-049 — One Volume: the Phone's Volume Sets the Speaker's
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_049
+   :status: resolved
+   :date: 2026-11-12
+   :tags: audio, volume
+
+Decided with the user (KDS-9jt.6, VOL_REQ_002).
+
+**Context**: every source already plays through CamillaDSP and its device
+volume (DEC-040), but AirPlay and Spotify also scaled their audio by the
+phone's volume (librespot at 50 % by default), so music sat well below the
+chimes and messages that interrupted it, and each source kept its own level.
+
+**Decision**: senders play at full level and their volume becomes the device
+volume:
+
+- **AirPlay**: shairport-sync ignores the volume for the audio
+  (``ignore_volume_control``) and runs
+  ``audio-player notify airplay volume <dB>`` on each change (-30 to 0 dB,
+  -144 for mute).
+- **Spotify**: librespot's volume is fixed (``--volume-ctrl fixed``, 100
+  steps); its ``volume_changed`` event (0-65535) goes through the event hook.
+- **Bluetooth**: BlueALSA uses native volume (``--a2dp-volume``), so it doesn't
+  scale the audio; the Bluetooth Service watches BlueZ's
+  ``MediaTransport1.Volume`` (AVRCP, 0-127) and reports it.
+
+The Audio Player's ``source_volume {source, value}`` maps the sender's whole
+range onto 0 to the maximum volume (a phone all the way up plays at the limit,
+and every step of its slider counts) and sets the device volume, which the
+next source keeps. The Web UI's slider moves in 1 % steps.
+
+**Not yet**: the speaker's volume isn't sent back to the phone, so a phone's
+slider shows its own last value until it is moved.
+
+DEC-050 — Volume on the Amplifier; Headroom for the Bass Boost
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_050
+   :status: resolved
+   :date: 2026-11-13
+   :tags: audio, volume, dsp
+
+Decided with the user (KDS-9jt.6). Refines DEC-040.
+
+**Decision 1: the device volume is the amplifier's gain.** The amplifier is
+the DA7213 codec's line-out on the HAT; its ``Lineout Volume`` is an analog
+gain after the DAC, 0-63 in 1 dB steps (48 is 0 dB). The volume maps onto its
+whole range: 100 % is step 63 (``LINEOUT_FULL``, full output), each 1.6 % is
+about one step, 0 % mutes CamillaDSP. CamillaDSP's volume stays at 0 dB, so
+the DAC always gets the whole digital signal and its noise drops with the
+volume. If the codec can't be set (no HAT, the VM), CamillaDSP's volume takes
+over on the same 63 dB curve. If 1 dB steps turn out too coarse, CamillaDSP
+adds the steps in between.
+
+**Decision 2: how the bass boost avoids clipping without costing loudness**
+(implemented in DEC-051).
+
+*It is not a resolution problem.* CamillaDSP calculates in 64-bit floating
+point, so nothing clips inside the pipeline, however large the boost; a signal
+clips only where it is converted to the DAC's integers (S32_LE) and exceeds
+full scale. A 32-bit output has far more resolution than the DA7213's DAC
+(about 24 bits, ~100 dB). Cutting the digital level by 10 dB and making it up
+with the analog gain after the DAC costs at most those 10 dB of the DAC's
+signal-to-noise ratio (~90 dB left): measurable, not audible on this speaker.
+
+*What limits loudness is the amplifier's voltage swing.* A +10 dB bass boost
+on music that already peaks at full scale needs 10 dB more swing than there
+is, whatever the DSP does. So the plan is:
+
+1. **Headroom made up in analog**: the digital cut before the EQ equals its
+   largest boost; with the volume on the amplifier (Decision 1) the analog gain
+   makes it up, so the top of the volume range still reaches full output.
+2. **Loudness-style bass**: full boost at low and middle volume, fading
+   towards the top, so the loudest setting plays nearly flat at the
+   amplifier's full output. CamillaDSP's Loudness filter follows a fader; the
+   Audio Player sets that fader to mirror the volume (CamillaDSP's own volume
+   stays at 0 dB).
+3. **A high-pass below what the driver can play**, so no swing is spent on
+   bass the driver can't reproduce.
+4. **A compressor or soft limiter last**, so rare peaks are tamed instead of
+   forcing more static headroom.
+
+The amounts (boost, high-pass, where the boost fades, ``LINEOUT_FULL``) come
+from voicing with the cabinet and a measurement microphone.
+
+DEC-051 — Bass for a Small Box: Static Fill, Dynamic Ducking, Loudness
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_051
+   :status: resolved
+   :date: 2026-11-13
+   :tags: audio, dsp
+
+Decided with the user (KDS-9jt.6). Implements DEC-050's plan.
+
+**Context**: the driver and box leave a large dip at 35-200 Hz. The amplifier
+gives only 1.3 W (the driver is efficient, over 90 dB SPL), so the bass must
+come up without lowering the speaker's maximum level, and it must never clip
+audibly. A static boost needs static headroom equal to the boost, which costs
+exactly that maximum level.
+
+**Decision**: CamillaDSP's pipeline (``ci/device/camilladsp.yml``), mono:
+
+1. **Subsonic high-pass** at 40 Hz (Butterworth, 6th order): nothing is spent
+   on bass the driver can't play.
+2. **Static fill**: a Linkwitz-Riley crossover at 150 Hz splits off the bass,
+   which gets +6 dB for the box's dip.
+3. **Bass ducking**: a compressor turns down only the bass, watching an
+   estimate of the summed signal (a low shelf of the same boost) and acting
+   when it would pass -4 dBFS. Loud passages keep their mids; the bass gives
+   way. It watches the signal 5 ms ahead of the audio (a delay on the audio
+   path), so it acts before a peak arrives.
+4. **Loudness** (equal-loudness contours): as the volume drops below -12 dB,
+   up to +8 dB bass and +2 dB treble relative to the mids, done by cutting the
+   mids (``attenuate_mid``) so no digital headroom is needed. The Audio Player
+   mirrors the volume into fader Aux1, which only this filter reads, reads the
+   filter's settings from the running config, and raises the amplifier's
+   analog gain by the mid cut (DEC-050).
+5. **Look-ahead limiter** (a compressor with a 5 ms look-ahead, -1.5 dBFS,
+   ratio 100) on everything, then a **clipper at -0.5 dBFS** that should never
+   act.
+
+CamillaDSP's compressor follows each sample's level in dB: a short release
+sags between the peaks of a bass note and lets peaks through, so both
+compressors hold with long releases (0.4 and 0.5 s) and attack fast (0.5 and
+0.2 ms), which the look-ahead makes safe.
+
+**Validated offline** (``make -C ci test-dsp``, also in CI): the config runs
+through the image's own CamillaDSP with test signals. Loud bass (80 Hz at -2
+dBFS) next to 1 kHz at -8 dBFS costs the mids 0.4 dB; full-scale bass and
+treble peak at -0.6 dBFS with the clipper never acting; loudness lifts the
+bass 6.2 dB relative to the mids 20 dB below the reference; 25 Hz is 18.5 dB
+down.
+
+**Denormals (found on the Pi)**: after a mute, the filters get exact zeros
+and their states decay through subnormal numbers, which the Pi Zero's ARM1176
+FPU traps to slow kernel support code. With 13 biquads and two compressors a
+chunk then took 224 % of real time; the capture overran and CamillaDSP's
+recovery looped (overrun, stall, rate change, underrun) until it was
+restarted. More buffering can't help a pipeline slower than real time. A
+flat dither at the 32-bit floor (~-187 dBFS) as the first stage keeps every
+state above the subnormal range; the same mute sequence then gives no errors,
+and ``hw-volume-test`` checks it. Setting the FPU's flush-to-zero mode in our
+CamillaDSP patch set would do the same for free and is a candidate for
+upstream.
+
+**The values are placeholders** until the box is measured (crossover, boost,
+high-pass, loudness reference). Next: the analog clip point of the line-out at
+full scale, to set ``LINEOUT_FULL``; then psychoacoustic bass (harmonics of
+35-80 Hz) to aim higher.
 
