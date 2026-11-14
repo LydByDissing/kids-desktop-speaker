@@ -3204,3 +3204,12 @@ it carries.
 **Next**: listening tests on the speaker (``gain``, the band and the weights;
 whether the side chain instance is worth its CPU), then the upstream PR.
 
+**On the Pi (2026-11-14)**: the virtual bass adds about 4 % CPU (CamillaDSP idles
+at 28 % instead of 24 %). Its own filter states and envelope were flushed only
+once subnormal, like CamillaDSP's biquads before patch 0002, so after a mute
+they decayed through the subnormal range mid-chunk and chunks took up to 170 %
+of real time. ``0003-flush-small-virtual-bass-states.patch`` flushes them below
+1e-20 and treats a smaller envelope as silence; its unit test fails without
+it. With it, mute and unmute, a 5-minute radio soak and the hardware tests run
+without underruns or stalls. The upstream-ready branch in the fork needs the
+same change before it is proposed.
