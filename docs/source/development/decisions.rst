@@ -3211,5 +3211,12 @@ they decayed through the subnormal range mid-chunk and chunks took up to 170 %
 of real time. ``0003-flush-small-virtual-bass-states.patch`` flushes them below
 1e-20 and treats a smaller envelope as silence; its unit test fails without
 it. With it, mute and unmute, a 5-minute radio soak and the hardware tests run
-without underruns or stalls. The upstream-ready branch in the fork needs the
-same change before it is proposed.
+without underruns or stalls. In the fork (``LydByDissing/camilladsp-1``), following
+upstream's ``AGENTS.md`` (tests in the file's own test module, a changelog line,
+``cargo test --workspace`` with f64 and f32 samples on ARMv6, all passing):
+``virtual-bass`` (5d8921c, on ``next5``) has the envelope flush, the biquads
+being covered upstream by ``flush-small-biquad-states`` (7f49531, on
+``next5``, the same change as our patch 0002), and ``virtual-bass-v4.1.3``
+(eecdd8b) is what our patches 0001 and 0003 come from. Upstream asks for an
+issue before a new feature and for the target branch before a fix; nothing has
+been proposed yet.
