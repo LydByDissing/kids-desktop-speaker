@@ -4,7 +4,9 @@
 Usage: dsp-variant.py VARIANT [config.yml] > variant.yml
 
 Variants (each leaves one part of the bass processing out, DEC-051/052):
-  installed    the config as it is
+  installed    the speaker's installed config (dsp-variant.sh loads it as is)
+  repo         the repo's config as it is (a box EQ just imported, DEC-054)
+  no-eq        the repo's config without the box EQ
   no-vb        without the virtual bass (also what CamillaGUI 4.1 can show)
   no-duck      without the bass ducking compressor (the limiter still guards)
   no-loudness  without loudness (the Audio Player still raises the amplifier
@@ -17,7 +19,7 @@ import sys
 
 import yaml
 
-VARIANTS = ["installed", "no-vb", "no-duck", "no-loudness", "no-fill", "flat"]
+VARIANTS = ["installed", "repo", "no-eq", "no-vb", "no-duck", "no-loudness", "no-fill", "flat"]
 
 
 def without_filter(conf, name):
@@ -35,7 +37,11 @@ def without_filter(conf, name):
 
 
 def variant(conf, name):
-    if name == "installed":
+    if name in ("installed", "repo"):
+        return conf
+    if name == "no-eq":
+        for eq in [k for k in conf["filters"] if k.startswith("eq_")]:
+            conf = without_filter(conf, eq)
         return conf
     if name == "no-vb":
         return without_filter(conf, "virtual_bass")

@@ -5,7 +5,7 @@
 #        (or: make -C ci dsp-variant PI_HOST=... VARIANT=no-vb)
 #
 # Writes the variant of ci/device/camilladsp.yml (see dsp-variant.py: installed,
-# no-vb, no-duck, no-loudness, no-fill, flat), copies it to the speaker and has
+# repo, no-eq, no-vb, no-duck, no-loudness, no-fill, flat), copies it to the speaker and has
 # the running CamillaDSP load it, with a short break in the sound. Nothing is
 # saved: VARIANT=installed, or restarting CamillaDSP, goes back to the
 # installed config.

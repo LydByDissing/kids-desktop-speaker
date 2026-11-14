@@ -21,6 +21,9 @@
 #   path, so the bass compressor ducks them with the bass (its side chain
 #   makes the same harmonics) and loud bass doesn't push the limiter into the
 #   mids; they never cost the maximum level or clip.
+# - The box EQ (DEC-054), fitted by REW to the house curve and imported with
+#   make -C ci dsp-import-rew, acts on the mono signal before the split, so
+#   every band and the side chain see it.
 # - The static boost fills the box's dip; the bass compressor turns down only
 #   the bass, and only when the sum would pass full scale, so loud passages
 #   keep their mids and the speaker its maximum level.
@@ -81,6 +84,8 @@ mixers:
       - {dest: 0, sources: [{channel: 0, gain: 0, inverted: false}]}
       - {dest: 1, sources: [{channel: 0, gain: 0, inverted: false}]}
 filters:
+  # >>> box EQ (DEC-054): none imported yet (make -C ci dsp-import-rew)
+  # <<< box EQ
   # Below what the driver can play: no swing spent on it.
   subsonic: {type: BiquadCombo, parameters: {type: ButterworthHighpass, freq: 40, order: 6}}
   bass_band: {type: BiquadCombo, parameters: {type: LinkwitzRileyLowpass, freq: 150, order: 4}}
@@ -140,6 +145,8 @@ processors:
       makeup_gain: 0
 pipeline:
   - {type: Mixer, name: to_mono}
+  # >>> box EQ
+  # <<< box EQ
   - {type: Mixer, name: split_bass}
   - {type: Filter, channels: [0], names: [subsonic, bass_band, bass_boost]}
   - {type: Filter, channels: [0], names: [virtual_bass]}

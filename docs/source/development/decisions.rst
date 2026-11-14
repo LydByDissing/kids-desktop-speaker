@@ -3273,3 +3273,51 @@ curve is kept in ``/data/audio/bass.json`` and changed with ``POST
 volume, is the static fill. The values come from voicing in the new
 cabinet; the lowest octave is left to the virtual bass rather than boosted.
 
+DEC-054 — Box EQ from REW, Imported Within Limits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. meta::
+   :decision-id: DEC_054
+   :status: resolved
+   :date: 2026-11-14
+   :tags: audio, dsp, tooling
+
+Decided with the user (KDS-9jt.9, DSP_REQ_002).
+
+**Context**: the new cabinet needs voicing from measurements rather than by
+ear alone. REW measures the speaker and its Auto EQ fits filters towards a
+target curve; it exports them as text. The EQ has to fit the pipeline of
+DEC-051: the bass is split at 150 Hz, filled, compressed through a side chain
+and limited, so an EQ placed on one band would need routing per filter and
+would not be seen by the side chain.
+
+**Decision**:
+
+- The target is a house curve in the repo (``ci/voicing/house-curve.txt``,
+  REW's target format): flat through the mids, a steady roll-off below
+  150 Hz that the bass fill and the virtual bass make up for (DEC-052/053),
+  and a slight treble tilt. REW is asked to match it, not a flat line, so the
+  EQ doesn't chase bass the box can't play.
+- REW's Auto EQ runs with a maximum number of filters, a frequency range and a
+  maximum boost (prefer cuts), and the filters are exported as text (REW's
+  generic filter settings or the Equalizer APO format).
+- ``make -C ci dsp-import-rew FILE=...`` (``ci/scripts/dsp-import-rew.py``)
+  converts the peaking and shelf filters to CamillaDSP Biquads (``eq_1`` ...)
+  in a generated block of ``ci/device/camilladsp.yml`` and one step right after
+  ``to_mono``, before ``split_bass``: every band and the side chain see the
+  EQ, with no routing per filter. It refuses an export with other filter
+  types, or outside the limits: number of filters (10), band (60 Hz-12 kHz),
+  Q (0.3-10), boost (+6 dB) and cut (-18 dB) per filter, and the total boost
+  of the filters together (+6 dB anywhere from 20 Hz to 20 kHz, from their
+  combined response). REW's preamp is ignored: the limiter guards the level.
+- The export is copied to ``ci/voicing/rew-export.txt``, so each iteration is a
+  commit; the generated block names it and its checksum.
+- After the import it runs ``make -C ci test-dsp``, which checks the EQ's
+  response through the image's CamillaDSP against the filters' design, and
+  ``make -C ci dsp-variant VARIANT=repo`` / ``VARIANT=no-eq`` plays the repo's
+  config with and without the EQ on the speaker for A/B listening.
+
+**Consequences**: voicing is measured, reviewed in the diff and reverted
+with git. The bass fill (DEC-053) stays separate from the EQ: the EQ shapes
+the response at a fixed volume, the fill is what changes with the volume.
+

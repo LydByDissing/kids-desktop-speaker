@@ -142,6 +142,41 @@ The same 100-character sentence.
 All the working engines are faster than real time. espeak-ng is fastest but sounds
 robotic; flite's 16 kHz voices sound more natural at about a third of real time.
 
+Voicing the Box with REW
+------------------------
+
+The box EQ (DSP_REQ_002, DEC-054) comes from measurements with Room EQ Wizard
+and a calibrated USB measurement microphone. Each iteration is one commit.
+
+1. **Set up.** The speaker on its desk where it will be used, the microphone
+   on a stand at listening distance (about 50 cm) and height, pointing at the
+   driver; no one between them. The microphone's calibration file loaded in
+   REW.
+2. **Play the measurement as the speaker plays music.** REW plays its sweep
+   through the speaker over AirPlay (or Bluetooth) at a fixed volume below
+   the bass fill's knee (DEC-053), so the fill is at its full box correction;
+   50 % works. Measure with the EQ in the installed config switched off:
+   ``make -C ci dsp-variant PI_HOST=... VARIANT=no-eq``. Keep the volume the
+   same for every iteration.
+3. **Measure several positions.** Five to nine sweeps, moving the microphone
+   about 10 cm around the listening position, then REW's vector average of
+   them: one position fits the EQ to its own reflections.
+4. **Load the target.** In REW's EQ window, *House curve*:
+   ``ci/voicing/house-curve.txt``. Equaliser *Generic*; target level so
+   the curve sits on the measurement between 300 Hz and 3 kHz.
+5. **Fit within the limits.** Auto EQ with at most 10 filters, match range
+   60 Hz-12 kHz, maximum boost 6 dB (prefer cuts: *flatness target* loose,
+   individual max boost 3-6 dB), maximum Q 10. Leave out the shelves unless
+   needed.
+6. **Export** the filter settings as text (*Export filter settings as text*,
+   or the Equalizer APO format) and import them:
+   ``make -C ci dsp-import-rew FILE=~/rew-eq.txt``. It refuses filters outside
+   the limits and says which; it then checks the config offline.
+7. **Listen and verify.** ``make -C ci dsp-variant PI_HOST=... VARIANT=repo``
+   against ``VARIANT=no-eq``; measure once more with ``repo`` to see the
+   result against the target. Commit ``ci/voicing/rew-export.txt`` and the
+   config together, with the REW measurement files' names in the message.
+
 Not yet measured
 ----------------
 

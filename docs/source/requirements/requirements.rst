@@ -278,6 +278,22 @@ Software — DSP
 
    Reference: https://github.com/HEnquist/camilladsp
 
+.. req:: DSP_REQ_002
+   :id: DSP_REQ_002
+   :status: open
+   :tags: software, dsp, tooling
+
+   The box's frequency response shall be corrected towards a house curve kept
+   in the repository, from measurements made with Room EQ Wizard (REW). An
+   EQ fitted by REW shall be imported into the CamillaDSP config by one
+   command that refuses filters outside set limits (number of filters,
+   frequency band, Q, boost and cut, and the total boost of all filters
+   together), so an import can't overload the driver or fight the bass
+   processing. The EQ shall act on the mono signal before the bass split, so
+   the bass compressor's side chain sees it, and each import shall be kept in
+   the repository and testable offline and by A/B listening (DEC-054,
+   KDS-9jt.9).
+
 Software — User Interface
 -------------------------
 

@@ -13,7 +13,9 @@ Camilladsp
    We build it from the pinned release plus our patches
    (``ci/camilladsp/patches``): the **VirtualBass** filter (DEC-052) adds
    harmonics of the 35-90 Hz bass at 90-300 Hz, on the bass path and the bass
-   compressor's side chain.
+   compressor's side chain. A box EQ imported from REW measurements
+   (DSP_REQ_002, DEC-054) acts on the mono signal before the bass split; see
+   :doc:`../../development/hardware-measurements` for the protocol.
    The 6-channel design below is kept for reference.
 
 Software DSP engine for the Kids Desktop Speaker. Handles EQ, crossover, bass

@@ -13,11 +13,15 @@ comes out:
 - loud bass is turned down while the mids keep their level;
 - loudness lifts the bass relative to the mids as the volume drops;
 - the subsonic filter removes what the driver can't play;
-- the virtual bass adds harmonics of deep bass, and nothing to the mids.
+- the virtual bass adds harmonics of deep bass, and nothing to the mids;
+- the box EQ (DEC-054), the imported one and an example REW export, comes
+  out of CamillaDSP as the filters were designed. The other checks run
+  without it: they are about the bass processing.
 
 Needs the image (make -C ci build) and numpy. CAMILLADSP=/path/to/camilladsp
 runs a local build instead of the image's, for quick iterations.
 """
+import importlib.util
 import os
 import subprocess
 import sys
@@ -31,6 +35,11 @@ CONFIG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO, "ci/device/cam
 IMAGE = sys.argv[2] if len(sys.argv) > 2 else "kids-desktop-speaker:latest"
 LOCAL = os.environ.get("CAMILLADSP")
 failures = 0
+_spec = importlib.util.spec_from_file_location("rew", os.path.join(REPO, "ci/scripts/dsp-import-rew.py"))
+rew = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(rew)
+with open(CONFIG) as _f:
+    CONFIG_TEXT = _f.read()
 
 
 def check(name, ok, detail=""):
@@ -39,13 +48,15 @@ def check(name, ok, detail=""):
     failures += 0 if ok else 1
 
 
-def offline_config(text, virtual_bass=True):
+def offline_config(text, virtual_bass=True, eq=True):
     """The config with stdin/stdout instead of ALSA, and no rate adjust;
-    optionally without the virtual bass step, as a reference."""
+    optionally without the virtual bass or the box EQ step, as a reference."""
     out = []
     for line in text.splitlines():
         stripped = line.strip()
         if not virtual_bass and stripped.startswith("- {type: Filter") and "[virtual_bass]" in stripped:
+            continue
+        if not eq and stripped.startswith("- {type: Filter") and "[eq_1" in stripped:
             continue
         if stripped.startswith("capture:"):
             line = "  capture: {type: Stdin, channels: 2, format: S16_LE}"
@@ -62,15 +73,16 @@ def tone(freq, dbfs, seconds):
     return 10 ** (dbfs / 20) * np.sin(2 * np.pi * freq * t)
 
 
-def run(signal, aux1_db=0.0, virtual_bass=True):
-    """Plays a mono float signal (both channels) through CamillaDSP; returns
-    channel 0 of the output as floats (1.0 = full scale)."""
+def run(signal, aux1_db=0.0, virtual_bass=True, eq=False, config=None):
+    """Plays a mono float signal (both channels) through CamillaDSP (the
+    config, or `config` text; the box EQ only with `eq`); returns channel 0
+    of the output as floats (1.0 = full scale)."""
     pcm = np.clip(np.round(signal * 32767), -32768, 32767).astype("<i2")
     stereo = np.repeat(pcm, 2)
     with tempfile.TemporaryDirectory() as tmp:
         work = tmp if LOCAL else "/work"
         with open(os.path.join(tmp, "c.yml"), "w") as f:
-            f.write(offline_config(open(CONFIG).read(), virtual_bass))
+            f.write(offline_config(config or CONFIG_TEXT, virtual_bass, eq))
         with open(os.path.join(tmp, "state.yml"), "w") as f:
             f.write(f"config_path: {work}/c.yml\nmute: [false, false, false, false, false]\n"
                     f"volume: [0.0, {aux1_db}, 0.0, 0.0, 0.0]\n")
@@ -157,6 +169,22 @@ check("full-scale deep bass: the clipper hardly acts", at_guard < 0.001, f"{at_g
 loud = run(tone(50, -6, 2))
 gain = level(loud, 100) - level(run(tone(50, -6, 2), virtual_bass=False), 100)
 check("loud deep bass still gains 100 Hz", gain >= 20, f"{gain:+.1f} dB")
+
+print("=== Box EQ: CamillaDSP plays the filters as designed (DEC-054)")
+with open(os.path.join(REPO, "ci/scripts/testdata/rew-apo-example.txt")) as f:
+    example = rew.parse(f.read())[0]
+for name, filters, config in (("the imported EQ", rew.imported(CONFIG_TEXT), CONFIG_TEXT),
+                              ("an example REW export", example, rew.rewrite(CONFIG_TEXT, example))):
+    if not filters:
+        print(f"  {name}: none")
+        continue
+    # Quiet tones at the filters' centres and between them: nothing else acts.
+    freqs = sorted({round(f["freq"]) for f in filters} | {200, 1000, 5000})
+    signal = sum(tone(f, -36, 2) for f in freqs)
+    with_eq, without_eq = run(signal, eq=True, config=config), run(signal, config=config)
+    worst = max(abs(level(with_eq, f) - level(without_eq, f) - rew.response_db(filters, f)) for f in freqs)
+    check(f"{name}: {len(filters)} filters within 0.5 dB of the design at {len(freqs)} frequencies",
+          worst <= 0.5, f"worst {worst:.2f} dB")
 
 print("All DSP config tests passed." if failures == 0 else f"{failures} DSP config tests FAILED.")
 sys.exit(1 if failures else 0)
